@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 
 interface AssessmentUploadProps {
   onUploadSuccess?: () => void;
+  assessmentType?: 'pre' | 'post';
 }
 
 interface CompetencyRange {
@@ -33,7 +34,10 @@ interface RatingBatchItem {
   length_working: string | null;
 }
 
-const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) => {
+const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ 
+  onUploadSuccess, 
+  assessmentType = 'pre' 
+}) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('');
@@ -61,7 +65,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
     }
 
     setUploading(true);
-    setMessage('Reading Excel file...');
+    setMessage(`Uploading ${assessmentType.toUpperCase()} assessment...`);
 
     const reader = new FileReader();
     reader.onload = async (evt: ProgressEvent<FileReader>) => {
@@ -72,35 +76,55 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
         const sheet = workbook.Sheets[sheetName];
         const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
 
-        if (rows.length === 0) {
+        if (rows.length < 2) {
           toast.error("The file is empty.");
           setUploading(false);
           return;
         }
 
         const headers = rows[0];
-        const dataRows = rows.slice(1).filter(row => row.length > 0 && row[3]); // index 3 is email
+        
+        /* 
+          EXACT MAPPING BASED ON PROVIDED HEADERS:
+          Index 6: Your Name (Rater Name)
+          Index 8: Delivery Unit / Department
+          Index 9: Name of i-ELEVATE Participant (ACTUAL PARTICIPANT)
+          Index 10: Your Relationship
+          Index 11: Length of Time Working
+          Index 12: Ratings Start
+        */
+        const pNameIdx = 9;
+        const deptIdx = 8;
+        const rNameIdx = 6;
+        const relIdx = 10;
+        const timeIdx = 11;
+        const ratingStartIdx = 12;
+
+        const dataRows = rows.slice(1).filter(row => row.length > 0 && row[pNameIdx]);
 
         let processed = 0;
         let errors = 0;
 
         for (const row of dataRows) {
-          const email = row[3]?.toString().trim().toLowerCase();
-          if (!email) {
+          const participantName = row[pNameIdx]?.toString().trim();
+          if (!participantName) {
             errors++;
             continue;
           }
 
-          // Find or create participant
+          // Use name as identifier since email isn't in the specific participant column
+          // We generate a consistent internal email for the DB unique constraint
+          const internalEmail = `${participantName.toLowerCase().replace(/\s+/g, '.')}@internal.tcdex`;
+
+          // 1. Ensure Participant exists
           let participantId: string;
           const { data: existing, error: fetchError } = await supabase
             .from('participants')
             .select('id')
-            .eq('email', email)
+            .eq('name', participantName)
             .maybeSingle();
 
           if (fetchError) {
-            console.error('Fetch participant error:', fetchError);
             errors++;
             continue;
           }
@@ -108,22 +132,21 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
           if (existing) {
             participantId = existing.id;
           } else {
-            const name = row[4]?.toString().trim() || 'Unknown';
-            const department = row[5]?.toString().trim() || 'Unknown';
+            const department = row[deptIdx]?.toString().trim() || 'Unknown';
             const { data: newPart, error: insertError } = await supabase
               .from('participants')
-              .insert({ email, name, department })
+              .insert({ email: internalEmail, name: participantName, department })
               .select()
               .single();
             if (insertError) {
-              console.error('Insert participant error:', insertError);
+              console.error('Insert Error:', insertError);
               errors++;
               continue;
             }
             participantId = newPart.id;
           }
 
-          // Prepare batch insert for indicator responses
+          // 2. Process 34 Rating Indicators
           const ratingsBatch: RatingBatchItem[] = [];
           const competencySums: Record<string, CompetencySum> = {
             Challenge: { sum: 0, count: 0 },
@@ -134,18 +157,16 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
           };
 
           for (let i = 0; i < 34; i++) {
-            const raw = row[12 + i]?.toString().trim().toLowerCase() || '';
+            const raw = row[ratingStartIdx + i]?.toString().trim().toLowerCase() || '';
             let rating: number | null = null;
+            
             if (raw.includes('not applicable')) rating = 1;
             else if (raw.includes('rarely')) rating = 2;
             else if (raw.includes('sometimes')) rating = 3;
             else if (raw.includes('often')) rating = 4;
             else if (raw.includes('consistently')) rating = 5;
-            else {
-              continue;
-            }
+            else continue;
 
-            // Determine competency
             let comp: string | null = null;
             for (const cr of competencyRanges) {
               if (i >= cr.start && i <= cr.end) {
@@ -155,57 +176,47 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
             }
             if (!comp) continue;
 
-            const indicatorText = headers[12 + i]?.toString() || `Indicator ${i+1}`;
+            const indicatorText = headers[ratingStartIdx + i]?.toString() || `Indicator ${i+1}`;
 
             ratingsBatch.push({
               participant_id: participantId,
-              assessment_type: 'pre',
+              assessment_type: assessmentType,
               indicator_text: indicatorText,
               competency: comp,
               rating,
-              rater_name: row[6]?.toString().trim() || null,
-              relationship: row[10]?.toString().trim() || null,
-              length_working: row[11]?.toString().trim() || null
+              rater_name: row[rNameIdx]?.toString().trim() || null,
+              relationship: row[relIdx]?.toString().trim() || null,
+              length_working: row[timeIdx]?.toString().trim() || null
             });
 
             competencySums[comp].sum += rating;
             competencySums[comp].count++;
           }
 
-          // Insert all ratings for this participant in one batch
           if (ratingsBatch.length > 0) {
-            const { error: batchError } = await supabase
-              .from('indicator_responses')
-              .insert(ratingsBatch);
-            if (batchError) {
-              console.error('Batch insert error:', batchError);
-              errors++;
-              continue;
-            }
+            await supabase.from('indicator_responses').insert(ratingsBatch);
           }
 
-          // Insert competency averages
+          // 3. Update Competency Averages
           for (const [comp, data] of Object.entries(competencySums)) {
             if (data.count > 0) {
               const avg = data.sum / data.count;
-              await supabase
-                .from('competency_scores')
-                .insert({
-                  participant_id: participantId,
-                  assessment_type: 'pre',
-                  competency: comp,
-                  average_score: avg
-                });
+              await supabase.from('competency_scores').insert({
+                participant_id: participantId,
+                assessment_type: assessmentType,
+                competency: comp,
+                average_score: avg
+              });
             }
           }
           processed++;
         }
 
-        setMessage(`Successfully processed ${processed} assessment rows. Errors: ${errors}`);
-        toast.success(`Processed ${processed} rows successfully.`);
-        if (processed > 0 && onUploadSuccess) onUploadSuccess();
+        setMessage(`Successfully processed ${processed} rows for ${assessmentType}. Errors: ${errors}`);
+        toast.success(`Upload complete for ${assessmentType}.`);
+        if (onUploadSuccess) onUploadSuccess();
       } catch (err: any) {
-        setMessage('Error: ' + err.message);
+        console.error(err);
         toast.error('Processing failed: ' + err.message);
       } finally {
         setUploading(false);
@@ -215,16 +226,18 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
   };
 
   const handleResetData = async () => {
-    if (!window.confirm("WARNING: Delete all assessment data?")) return;
+    if (!window.confirm("CRITICAL: This will permanently delete ALL participants and their scores. Continue?")) return;
     setUploading(true);
     try {
-      await supabase.from('competency_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('indicator_responses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      setMessage('Database cleared.');
-      toast.success('All L&T assessment data has been reset.');
+      // Clear tables in order to respect potential foreign keys
+      await supabase.from('competency_scores').delete().filter('id', 'not.is', null);
+      await supabase.from('indicator_responses').delete().filter('id', 'not.is', null);
+      await supabase.from('participants').delete().filter('id', 'not.is', null);
+      
+      setMessage('All data wiped. Refreshing dashboard...');
+      toast.success('Database cleared.');
       if (onUploadSuccess) onUploadSuccess();
     } catch (err: any) {
-      setMessage('Reset Error: ' + err.message);
       toast.error('Reset failed: ' + err.message);
     } finally {
       setUploading(false);
@@ -236,44 +249,32 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({ onUploadSuccess }) 
       <CardHeader>
         <div className="flex justify-between items-center">
           <div>
-            <CardTitle>Upload Pre‑Assessment Data</CardTitle>
-            <CardDescription>Select an Excel file (.xlsx) to process leadership assessments.</CardDescription>
+            <CardTitle>Upload Assessment Data</CardTitle>
+            <CardDescription>Format: Microsoft Forms Excel Export (360 Degree Feedback)</CardDescription>
           </div>
-          <Button variant="outline" size="sm" onClick={handleResetData} className="text-destructive hover:text-destructive border-destructive hover:bg-destructive/10">
-            Reset Data
+          <Button variant="destructive" size="sm" onClick={handleResetData} disabled={uploading}>
+            Wipe All Data
           </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-          <div className="grid w-full max-w-sm items-center gap-1.5">
-            <input 
-              id="file" 
-              type="file" 
-              accept=".xlsx,.xls" 
-              onChange={handleFileSelection} 
-              disabled={uploading}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-            />
-          </div>
+          <input 
+            type="file" 
+            accept=".xlsx,.xls" 
+            onChange={handleFileSelection} 
+            disabled={uploading}
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+          />
           <Button 
             onClick={processFile} 
             disabled={!selectedFile || uploading}
-            className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
+            className="bg-[#0046ab] hover:bg-[#003a8f] text-white whitespace-nowrap"
           >
-            {uploading ? (
-              <>
-                <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
-                Processing...
-              </>
-            ) : 'Process File'}
+            {uploading ? 'Processing...' : `Process ${assessmentType.toUpperCase()} File`}
           </Button>
         </div>
-        {message && (
-          <div className="p-3 bg-muted rounded-md text-sm border">
-            {message}
-          </div>
-        )}
+        {message && <div className="p-3 bg-blue-50 text-blue-700 rounded-md text-sm border border-blue-100">{message}</div>}
       </CardContent>
     </Card>
   );
