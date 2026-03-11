@@ -4,7 +4,7 @@ import { useState } from "react"
 import { Sidebar } from "@/components/sidebar"
 import { cn } from "@/lib/utils"
 
-export default function LMSLayout({ children }: { children: React.ReactNode }) {
+export default function LTLayout({ children }: { children: React.ReactNode }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
 
   return (
