@@ -59,6 +59,13 @@ export default function LoginPage() {
       return
     }
 
+    // ERG Role login
+    if (values.username === "tcdexerg" && values.password === "tcdexerg123") {
+      toast.success("ERG login successful")
+      router.push("/erg")
+      return
+    }
+
     try {
       // For Supabase Auth, we'll use an internal email format
       const email = `${values.username}@internal.tcdex`
