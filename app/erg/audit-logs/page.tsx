@@ -8,7 +8,9 @@ import {
   FileSpreadsheet,
   Trash2,
   AlertTriangle,
-  History
+  History,
+  Eye,
+  ArrowLeft
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -31,6 +33,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 interface AuditLog {
   id: string
@@ -45,6 +48,11 @@ export default function ERGAuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [deleteId, setDeleteId] = useState<string | null>(null)
+  
+  // View Data States
+  const [viewingLog, setViewLog] = useState<AuditLog | null>(null)
+  const [viewData, setViewData] = useState<any[]>([])
+  const [viewColumns, setViewColumns] = useState<string[]>([])
 
   useEffect(() => {
     const existingLogs = localStorage.getItem("erg_audit_logs")
@@ -57,9 +65,25 @@ export default function ERGAuditLogsPage() {
     if (!deleteId) return
     const updatedLogs = logs.filter(log => log.id !== deleteId)
     localStorage.setItem("erg_audit_logs", JSON.stringify(updatedLogs))
+    // Clean up associated data
+    localStorage.removeItem(`erg_data_${deleteId}`)
     setLogs(updatedLogs)
     setDeleteId(null)
-    toast.success("Log entry removed from history")
+    toast.success("Log entry and associated data removed")
+  }
+
+  const handleViewContent = (log: AuditLog) => {
+    const storedData = localStorage.getItem(`erg_data_${log.id}`)
+    if (storedData) {
+      const parsed = JSON.parse(storedData)
+      setViewData(parsed)
+      if (parsed.length > 0) {
+        setViewColumns(Object.keys(parsed[0]).filter(k => k !== 'id'))
+      }
+      setViewLog(log)
+    } else {
+      toast.error("File content no longer available in local storage.")
+    }
   }
 
   const filteredLogs = logs.filter(log => 
@@ -71,8 +95,8 @@ export default function ERGAuditLogsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">ERG Audit Logs</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">Track and manage your data upload history.</p>
+          <h1 className="text-3xl font-bold">ERG Audit Logs</h1>
+          <p className="text-zinc-500">Track and manage your data upload history.</p>
         </div>
       </div>
 
@@ -85,7 +109,7 @@ export default function ERGAuditLogsPage() {
                 Upload History
               </CardTitle>
               <CardDescription>
-                History of files processed and imported into the ERG module.
+                Click the view icon to see the contents of an uploaded file.
               </CardDescription>
             </div>
             <div className="relative w-full md:w-64">
@@ -135,15 +159,26 @@ export default function ERGAuditLogsPage() {
                     <TableCell className="text-zinc-500 text-sm">{log.date}</TableCell>
                     <TableCell className="text-right font-mono text-xs">{log.count.toLocaleString()}</TableCell>
                     <TableCell className="text-right">
-                      <Button 
-                        variant="ghost" 
-                        size="icon" 
-                        className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
-                        onClick={() => setDeleteId(log.id)}
-                        title="Delete Log"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
+                      <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-blue-500 hover:bg-blue-50"
+                          onClick={() => handleViewContent(log)}
+                          title="View Content"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
+                          onClick={() => setDeleteId(log.id)}
+                          title="Delete Log"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -153,6 +188,55 @@ export default function ERGAuditLogsPage() {
         </CardContent>
       </Card>
 
+      {/* Content Viewer Modal */}
+      <Dialog open={!!viewingLog} onOpenChange={() => setViewLog(null)}>
+        <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-full h-[90vh] flex flex-col p-0 overflow-hidden">
+          <DialogHeader className="p-6 border-b bg-white dark:bg-zinc-900 sticky top-0 z-10">
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="text-xl flex items-center gap-2">
+                  <FileSpreadsheet className="h-5 w-5 text-green-600" />
+                  {viewingLog?.fileName}
+                </DialogTitle>
+                <DialogDescription>
+                  Displaying {viewingLog?.count} records from {viewingLog?.templateName}
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          
+          <div className="flex-1 overflow-hidden">
+            <ScrollArea className="h-full">
+              <Table>
+                <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+                  <TableRow>
+                    {viewColumns.map(col => (
+                      <TableHead key={col} className="text-xs whitespace-nowrap min-w-[150px]">{col}</TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {viewData.map((row, i) => (
+                    <TableRow key={i}>
+                      {viewColumns.map(col => (
+                        <TableCell key={col} className="text-[11px] py-2">{String(row[col] || "")}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </div>
+
+          <DialogFooter className="p-4 border-t bg-zinc-50 dark:bg-zinc-900/50">
+            <Button variant="outline" onClick={() => setViewLog(null)} className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Back to Logs
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <DialogContent>
           <DialogHeader>
@@ -161,13 +245,13 @@ export default function ERGAuditLogsPage() {
               Confirm Deletion
             </DialogTitle>
             <DialogDescription>
-              This will remove this upload's summary from the audit trail. 
-              Note: This action does not automatically revert data changes in the dashboard.
+              This will remove this upload's summary and its stored file content. 
+              Dashboard KPIs will remain but this specific historical view will be lost.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete Entry</Button>
+            <Button variant="destructive" onClick={handleDelete}>Delete Permanently</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
