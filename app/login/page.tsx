@@ -52,9 +52,9 @@ export default function LoginPage() {
       return
     }
 
-    // LMS Role login
-    if (values.username === "tcdexlms" && values.password === "tcdexlms123") {
-      toast.success("LMS login successful")
+    // Generic login for all users since they have the same access
+    if (values.username === "tcdexuser" && values.password === "tcdex123") {
+      toast.success("Login successful")
       router.push("/lms")
       return
     }
@@ -75,7 +75,7 @@ export default function LoginPage() {
       }
 
       toast.success("Login successful")
-      router.push("/")
+      router.push("/lms")
     } catch {
       toast.error("An error occurred. Please try again.")
     } finally {

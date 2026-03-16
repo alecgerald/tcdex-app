@@ -17,18 +17,9 @@ import {
   FormMessage,
 } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useRouter } from "next/navigation"
-
-const roles = ["TCDEXmanager", "LMS", "LTD", "ERG", "Comms"] as const
 
 const formSchema = z.object({
   username: z.string().min(2, {
@@ -36,9 +27,6 @@ const formSchema = z.object({
   }),
   password: z.string().min(6, {
     message: "Password must be at least 6 characters.",
-  }),
-  role: z.enum(roles, {
-    required_error: "Please select a role.",
   }),
 })
 
@@ -51,22 +39,17 @@ export default function AdminPage() {
     defaultValues: {
       username: "",
       password: "tcdex.123",
-      role: "TCDEXmanager",
     },
   })
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
-    // In a real application, you would call an API route or server action
-    // to create the user in Supabase Auth (likely via service role key)
-    // and a 'profiles' table for the role.
     
     setTimeout(() => {
-      toast.success(`Account created for ${values.username} with role ${values.role}`)
+      toast.success(`Account created for ${values.username}`)
       form.reset({
         username: "",
         password: "tcdex.123",
-        role: "TCDEXmanager",
       })
       setIsLoading(false)
     }, 1500)
@@ -90,7 +73,7 @@ export default function AdminPage() {
       <main className="max-w-5xl mx-auto p-6 lg:p-12">
         <div className="mb-10">
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50 mb-2">Dashboard</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">Manage internal company accounts and roles.</p>
+          <p className="text-zinc-500 dark:text-zinc-400">Manage internal company accounts.</p>
         </div>
 
         <Tabs defaultValue="create" className="space-y-6">
@@ -111,7 +94,7 @@ export default function AdminPage() {
                 <CardHeader>
                   <CardTitle className="text-xl">Add New User</CardTitle>
                   <CardDescription>
-                    Create a new internal account with specific access roles.
+                    Create a new internal account.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -143,30 +126,6 @@ export default function AdminPage() {
                           </FormItem>
                         )}
                       />
-                      <FormField
-                        control={form.control}
-                        name="role"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Department Role</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
-                              <FormControl>
-                                <SelectTrigger>
-                                  <SelectValue placeholder="Select a role" />
-                                </SelectTrigger>
-                              </FormControl>
-                              <SelectContent>
-                                {roles.map((role) => (
-                                  <SelectItem key={role} value={role}>
-                                    {role}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
                       <Button 
                         type="submit" 
                         className="w-full bg-[#0046ab] hover:bg-[#003a8f] text-white"
@@ -188,18 +147,13 @@ export default function AdminPage() {
                     <p>• Usernames should follow the company format (e.g., first.last).</p>
                     <p>• Default password is set to <strong>tcdex.123</strong> for all new accounts.</p>
                     <p>• Users will be prompted to change their password on first login.</p>
-                    <p>• Roles determine access levels across the TCDEX suite.</p>
                   </CardContent>
                 </Card>
                 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div className="bg-white p-4 rounded-xl border shadow-sm">
                     <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Total Users</p>
                     <p className="text-2xl font-bold">124</p>
-                  </div>
-                  <div className="bg-white p-4 rounded-xl border shadow-sm">
-                    <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Active Roles</p>
-                    <p className="text-2xl font-bold">5</p>
                   </div>
                 </div>
               </div>

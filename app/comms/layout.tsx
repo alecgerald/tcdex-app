@@ -86,10 +86,10 @@ const sidebarCategories = [
   },
 ]
 
-export default function LMSLayout({ children }: { children: React.ReactNode }) {
+export default function CommsLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [openCategories, setOpenCategories] = useState<string[]>(["lms"])
+  const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
   const username = "tcdex.user"
 
   const toggleCategory = (id: string) => {
