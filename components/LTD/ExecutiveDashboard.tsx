@@ -26,9 +26,22 @@ import {
   Minus,
   Building2,
   LayoutDashboard,
-  User
+  User,
+  Check,
+  ChevronsUpDown
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { 
+  Command, 
+  CommandEmpty, 
+  CommandGroup, 
+  CommandInput, 
+  CommandItem, 
+  CommandList 
+} from '@/components/ui/command';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 interface ExecutiveDashboardProps {
   refreshTrigger?: number | string;
@@ -67,6 +80,21 @@ interface CohortMetrics {
 type ViewMode = 'pre' | 'post' | 'compare';
 type DashboardType = 'individual' | 'cohort';
 
+// Mapping for backward compatibility with old database names
+const competencyMap: Record<string, string> = {
+  'Self': 'Self-Leadership',
+  'Challenge': 'Challenge Orientation',
+  'Relationship': 'Relationship-Building',
+  'HR': 'HR Partnership',
+  'Strategic': 'Strategic & Inclusive',
+  // Include identity mapping for new names
+  'Self-Leadership': 'Self-Leadership',
+  'Challenge Orientation': 'Challenge Orientation',
+  'Relationship-Building': 'Relationship-Building',
+  'HR Partnership': 'HR Partnership',
+  'Strategic & Inclusive': 'Strategic & Inclusive'
+};
+
 const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger }) => {
   const [dashboardType, setDashboardType] = useState<DashboardType>('individual');
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -76,10 +104,21 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
   const [cohortMetrics, setCohortMetrics] = useState<CohortMetrics | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [selectedCohortCompetency, setSelectedCohortCompetency] = useState<string>('Challenge');
+  const [selectedCohortCompetency, setSelectedCohortCompetency] = useState<string>('Challenge Orientation');
   
+  // Combobox state
+  const [open, setOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const filteredParticipants = useMemo(() => {
+    if (!searchQuery) return participants;
+    return participants.filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [participants, searchQuery]);
+
   const supabase = createClient();
-  const competencies = ['Challenge', 'Relationship', 'Self', 'HR', 'Strategic'];
+  const competencies = ['Challenge Orientation', 'Relationship-Building', 'Self-Leadership', 'HR Partnership', 'Strategic & Inclusive'];
 
   // 1. Fetch Participants and Cohort Data
   const fetchBaseData = useCallback(async () => {
@@ -113,7 +152,8 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
         const participantsSeen = new Set<string>();
 
         indicators.forEach((ind: any) => {
-          const { rating, competency, participant_id, participants: p } = ind;
+          const { rating, competency: rawComp, participant_id, participants: p } = ind;
+          const competency = competencyMap[rawComp] || rawComp; // Map to new name
           const dept = p?.department || 'Unknown';
           participantsSeen.add(participant_id);
 
@@ -192,7 +232,14 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
         .eq('participant_id', participantId);
 
       if (error) throw error;
-      setIndividualScores(data || []);
+      
+      // Map incoming scores to new names
+      const mappedData = (data || []).map(s => ({
+        ...s,
+        competency: competencyMap[s.competency] || s.competency
+      }));
+      
+      setIndividualScores(mappedData);
     } catch (err) {
       console.error('Error fetching individual scores:', err);
     } finally {
@@ -279,19 +326,54 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
           <div className="flex flex-1 flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="w-full sm:w-[300px]">
               <label className="text-[10px] font-bold uppercase text-muted-foreground mb-1 block">Participant</label>
-              <Select 
-                onValueChange={(id) => setSelectedParticipant(participants.find(p => p.id === id) || null)} 
-                value={selectedParticipant?.id}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a Participant" />
-                </SelectTrigger>
-                <SelectContent>
-                  {participants.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={open}
+                    className="w-full justify-between font-normal"
+                  >
+                    {selectedParticipant
+                      ? selectedParticipant.name
+                      : "Select participant..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[300px] p-0">
+                  <Command shouldFilter={false}>
+                    <CommandInput 
+                      placeholder="Search participant..." 
+                      value={searchQuery}
+                      onValueChange={setSearchQuery}
+                    />
+                    <CommandList>
+                      <CommandEmpty>No participant found.</CommandEmpty>
+                      <CommandGroup>
+                        {filteredParticipants.map((participant) => (
+                          <CommandItem
+                            key={participant.id}
+                            value={participant.id}
+                            onSelect={() => {
+                              setSelectedParticipant(participant);
+                              setOpen(false);
+                              setSearchQuery("");
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedParticipant?.id === participant.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            {participant.name}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
             </div>
 
             {selectedParticipant && (

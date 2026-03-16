@@ -44,11 +44,11 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
   const supabase = createClient();
 
   const competencyRanges: CompetencyRange[] = [
-    { name: 'Challenge', start: 0, end: 8 },    // 9 items
-    { name: 'Relationship', start: 9, end: 17 }, // 9 items
-    { name: 'Self', start: 18, end: 23 },        // 6 items
-    { name: 'HR', start: 24, end: 28 },          // 5 items
-    { name: 'Strategic', start: 29, end: 33 }    // 5 items
+    { name: 'Challenge Orientation', start: 0, end: 8 },    // 9 items
+    { name: 'Relationship-Building', start: 9, end: 17 }, // 9 items
+    { name: 'Self-Leadership', start: 18, end: 23 },        // 6 items
+    { name: 'HR Partnership', start: 24, end: 28 },          // 5 items
+    { name: 'Strategic & Inclusive', start: 29, end: 33 }    // 5 items
   ];
 
   const handleFileSelection = (e: ChangeEvent<HTMLInputElement>) => {
@@ -250,7 +250,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
         <div className="flex justify-between items-center">
           <div>
             <CardTitle>Upload Assessment Data</CardTitle>
-            <CardDescription>Format: Microsoft Forms Excel Export (360 Degree Feedback)</CardDescription>
+            <CardDescription>Format: Microsoft Forms Excel Export (Pre & Post Assessment)</CardDescription>
           </div>
           <Button variant="destructive" size="sm" onClick={handleResetData} disabled={uploading}>
             Wipe All Data

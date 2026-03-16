@@ -17,7 +17,8 @@ import {
   Megaphone,
   Shield,
   FileClock,
-  Heart
+  Heart,
+  Presentation
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -39,9 +40,11 @@ const sidebarCategories = [
     id: "ltd",
     icon: Briefcase,
     items: [
-      { name: "Dashboard", href: "/lt/dashboard", icon: LayoutDashboard },
+      { name: "Leadership Dashboard", href: "/lt/dashboard", icon: LayoutDashboard },
+      { name: "Training Reports", href: "/lt/training-reports", icon: BarChart3 },
+      { name: "Self-Paced", href: "/lt/self-paced", icon: GraduationCap },
+      { name: "LeadX & BuildX Reports", href: "/lt/leadx-reports", icon: Presentation },
       { name: "Import Excel", href: "/lt/import", icon: FileUp },
-      { name: "Reports", href: "/lt/reports", icon: BarChart3 },
     ],
   },
   {
