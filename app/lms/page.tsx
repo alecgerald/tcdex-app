@@ -14,7 +14,8 @@ import {
   Building2,
   UserCheck,
   ClipboardList,
-  GraduationCap
+  GraduationCap,
+  Search
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -35,6 +36,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from "@/components/ui/input"
 
 interface SummaryItem {
   status: string
@@ -110,6 +112,12 @@ export default function LMSDashboard() {
   const [selectedLogId, setSelectedLogId] = useState<string>("")
   const [dashboardType, setDashboardType] = useState<'status' | 'courses'>('status')
   const [isLoading, setIsLoading] = useState(true)
+  
+  // Search states
+  const [deptSearch, setDeptSearch] = useState("")
+  const [mgrSearch, setMgrSearch] = useState("")
+  const [courseDeptSearch, setCourseDeptSearch] = useState("")
+  const [employeeSearch, setEmployeeSearch] = useState("")
 
   useEffect(() => {
     const existingLogs = localStorage.getItem("lms_audit_logs")
@@ -154,6 +162,20 @@ export default function LMSDashboard() {
   const selectedLog = logs.find(log => log.id === selectedLogId)
   const filteredLogsForType = logs.filter(l => (l.importType || 'status') === dashboardType)
 
+  const statusSummary = selectedLog?.statusSummary || []
+  
+  const filteredDeptSummary = (selectedLog?.deptSummary as BreakoutItem[] || []).filter(item => 
+    item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
+  )
+  
+  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter(item => 
+    item.name.toLowerCase().includes(mgrSearch.toLowerCase())
+  )
+
+  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter(item => 
+    item.name.toLowerCase().includes(employeeSearch.toLowerCase())
+  )
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Completed": return "bg-green-500"
@@ -178,7 +200,7 @@ export default function LMSDashboard() {
           <FileSpreadsheet className="h-10 w-10 text-zinc-400" />
         </div>
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">No Data Available</h1>
-        <p className="text-zinc-500 max-w-sm">
+        <p className="text-zinc-500 max-sm">
           Please upload an Academy LMS Excel file in the <strong>Import Excel</strong> section to generate the dashboard.
         </p>
       </div>
@@ -258,7 +280,7 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selectedLog.statusSummary || []).map((row) => (
+                    {statusSummary.map((row) => (
                       <TableRow key={row.status}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
@@ -288,7 +310,7 @@ export default function LMSDashboard() {
               <CardContent>
                 <div className="flex flex-col items-center justify-center h-full pt-4">
                   <div className="relative h-56 w-56 flex items-center justify-center mb-6">
-                    <PieChart data={selectedLog.statusSummary || []} />
+                    <PieChart data={statusSummary} />
                     <div className="absolute inset-12 bg-white rounded-full dark:bg-zinc-900 flex flex-col items-center justify-center shadow-sm border text-center">
                       <span className="text-2xl font-bold">
                         {(selectedLog.deptSummary as BreakoutItem[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0 
@@ -299,7 +321,7 @@ export default function LMSDashboard() {
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4 w-full pt-4 border-t">
-                    {(selectedLog.statusSummary || []).map((s) => (
+                    {statusSummary.map((s) => (
                       <div key={s.status} className="flex flex-col items-center">
                         <div className={`h-2.5 w-2.5 rounded-full mb-1 ${getStatusColor(s.status)}`} />
                         <span className="text-[10px] font-medium text-zinc-500 uppercase">{s.status}</span>
@@ -314,10 +336,21 @@ export default function LMSDashboard() {
 
           {/* Output 2: Department Completion */}
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-zinc-400" />
-                <CardTitle>Department Completion</CardTitle>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Department Completion</CardTitle>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                  <Input 
+                    placeholder="Search department..." 
+                    className="pl-9 h-9"
+                    value={deptSearch}
+                    onChange={(e) => setDeptSearch(e.target.value)}
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -334,23 +367,29 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selectedLog.deptSummary as BreakoutItem[]).map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
-                        <TableCell className="text-right text-red-500">{row.notStarted ?? "-"}</TableCell>
-                        <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
-                        <TableCell className="text-right font-bold">{row.total}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            <span className="font-bold text-[#0046ab]">{row.rate}</span>
-                            <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
-                              <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
-                            </div>
-                          </div>
-                        </TableCell>
+                    {filteredDeptSummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredDeptSummary.map((row) => (
+                        <TableRow key={row.name}>
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
+                          <TableCell className="text-right text-red-500">{row.notStarted ?? "-"}</TableCell>
+                          <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
+                          <TableCell className="text-right font-bold">{row.total}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-3">
+                              <span className="font-bold text-[#0046ab]">{row.rate}</span>
+                              <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
+                                <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>
@@ -359,10 +398,21 @@ export default function LMSDashboard() {
 
           {/* Output 3: Manager Completion */}
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <UserCheck className="h-5 w-5 text-zinc-400" />
-                <CardTitle>Manager Completion</CardTitle>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <UserCheck className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Manager Completion</CardTitle>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                  <Input 
+                    placeholder="Search manager..." 
+                    className="pl-9 h-9"
+                    value={mgrSearch}
+                    onChange={(e) => setMgrSearch(e.target.value)}
+                  />
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -379,23 +429,29 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selectedLog.mgrSummary || []).map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
-                        <TableCell className="text-right text-red-500">{row.notStarted ?? "-"}</TableCell>
-                        <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
-                        <TableCell className="text-right font-bold">{row.total}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-3">
-                            <span className="font-bold text-[#0046ab]">{row.rate}</span>
-                            <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
-                              <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
-                            </div>
-                          </div>
-                        </TableCell>
+                    {filteredMgrSummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No managers found matching your search.</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      filteredMgrSummary.map((row) => (
+                        <TableRow key={row.name}>
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
+                          <TableCell className="text-right text-red-500">{row.notStarted ?? "-"}</TableCell>
+                          <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
+                          <TableCell className="text-right font-bold">{row.total}</TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-3">
+                              <span className="font-bold text-[#0046ab]">{row.rate}</span>
+                              <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
+                                <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>
@@ -456,10 +512,21 @@ export default function LMSDashboard() {
           </div>
 
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Building2 className="h-5 w-5 text-zinc-400" />
-                <CardTitle>Department Analysis</CardTitle>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Department Analysis</CardTitle>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                  <Input 
+                    placeholder="Search department..." 
+                    className="pl-9 h-9"
+                    value={courseDeptSearch}
+                    onChange={(e) => setCourseDeptSearch(e.target.value)}
+                  />
+                </div>
               </div>
               <CardDescription>Sum of courses per Delivery Unit</CardDescription>
             </CardHeader>
@@ -475,16 +542,22 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selectedLog.deptSummary as CourseItem[]).map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-right">
-                          <Badge className="bg-[#0046ab] hover:bg-[#0046ab] font-mono">{row.rate}</Badge>
-                        </TableCell>
+                    {filteredDeptSummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (filteredDeptSummary as CourseItem[]).map((row) => (
+                        <TableRow key={row.name}>
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right">
+                            <Badge className="bg-[#0046ab] hover:bg-[#0046ab] font-mono">{row.rate}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>
@@ -492,10 +565,21 @@ export default function LMSDashboard() {
           </Card>
 
           <Card className="border-none shadow-sm">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-zinc-400" />
-                <CardTitle>Employee Analysis</CardTitle>
+            <CardHeader className="pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <Users className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Employee Analysis</CardTitle>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                  <Input 
+                    placeholder="Search employee..." 
+                    className="pl-9 h-9"
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                  />
+                </div>
               </div>
               <CardDescription>Individual course completion performance</CardDescription>
             </CardHeader>
@@ -511,14 +595,20 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(selectedLog.employeeSummary || []).map((row) => (
-                      <TableRow key={row.name}>
-                        <TableCell className="font-medium">{row.name}</TableCell>
-                        <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
-                        <TableCell className="text-right font-bold text-[#0046ab]">{row.rate}</TableCell>
+                    {filteredEmployeeSummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      (filteredEmployeeSummary as CourseItem[]).map((row) => (
+                        <TableRow key={row.name}>
+                          <TableCell className="font-medium">{row.name}</TableCell>
+                          <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
+                          <TableCell className="text-right font-bold text-[#0046ab]">{row.rate}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </ScrollArea>
