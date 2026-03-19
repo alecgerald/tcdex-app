@@ -15,7 +15,9 @@ import {
   UserCheck,
   ClipboardList,
   GraduationCap,
-  Search
+  Search,
+  Download,
+  FileText
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -37,6 +39,10 @@ import {
 } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { utils, writeFile } from "xlsx"
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
 
 interface SummaryItem {
   status: string
@@ -164,15 +170,15 @@ export default function LMSDashboard() {
 
   const statusSummary = selectedLog?.statusSummary || []
   
-  const filteredDeptSummary = (selectedLog?.deptSummary as BreakoutItem[] || []).filter(item => 
+  const filteredDeptSummary = (selectedLog?.deptSummary || []).filter((item: any) => 
     item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
   )
   
-  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter(item => 
+  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter((item: any) => 
     item.name.toLowerCase().includes(mgrSearch.toLowerCase())
   )
 
-  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter(item => 
+  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter((item: any) => 
     item.name.toLowerCase().includes(employeeSearch.toLowerCase())
   )
 
@@ -183,6 +189,124 @@ export default function LMSDashboard() {
       case "Not Started": return "bg-red-500"
       default: return "bg-zinc-400"
     }
+  }
+
+  const handleDownloadExcel = () => {
+    if (!selectedLog || !selectedLog.cleanedData) return
+    
+    // Clean data for excel (remove the 'id' field we added during upload)
+    const dataToExport = selectedLog.cleanedData.map(({ id, ...rest }) => rest)
+    
+    const ws = utils.json_to_sheet(dataToExport)
+    const wb = utils.book_new()
+    utils.book_append_sheet(wb, ws, "Cleaned Data")
+    writeFile(wb, `${selectedLog.fileName}_cleaned.xlsx`)
+  }
+
+  const handleDownloadPDF = () => {
+    if (!selectedLog) return
+    
+    const doc = new jsPDF()
+    const timestamp = new Date().toLocaleString()
+    
+    // Header
+    doc.setFontSize(20)
+    doc.setTextColor(0, 70, 171) // #0046ab
+    doc.text("LMS Dashboard Summary", 14, 22)
+    
+    doc.setFontSize(10)
+    doc.setTextColor(100)
+    doc.text(`Source: ${selectedLog.fileName}`, 14, 30)
+    doc.text(`Import Type: ${selectedLog.importType === 'courses' ? 'Assigned/Completed Courses' : 'Status Completion'}`, 14, 35)
+    doc.text(`Generated on: ${timestamp}`, 14, 40)
+    
+    if (selectedLog.importType === 'status') {
+      // Status Distribution Table
+      doc.setFontSize(14)
+      doc.setTextColor(0)
+      doc.text("Status Distribution", 14, 50)
+      
+      autoTable(doc, {
+        startY: 55,
+        head: [['Status', 'Count', 'Percentage (%)']],
+        body: (selectedLog.statusSummary || []).map(s => [s.status, s.count, s.rate]),
+        theme: 'striped',
+        headStyles: { fillColor: [0, 70, 171] }
+      })
+
+      // Department Summary Table
+      doc.text("Department Completion", 14, (doc as any).lastAutoTable.finalY + 15)
+      
+      autoTable(doc, {
+        startY: (doc as any).lastAutoTable.finalY + 20,
+        head: [['Department', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
+        body: (selectedLog.deptSummary as BreakoutItem[]).map(d => [
+          d.name, d.completed, d.notStarted ?? 0, d.ongoing ?? 0, d.total, d.rate
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [0, 70, 171] }
+      })
+
+      // Manager Summary Table
+      if (selectedLog.mgrSummary && selectedLog.mgrSummary.length > 0) {
+        if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
+        doc.text("Manager Completion", 14, (doc as any).lastAutoTable.finalY + 15)
+        
+        autoTable(doc, {
+          startY: (doc as any).lastAutoTable.finalY + 20,
+          head: [['Manager', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
+          body: selectedLog.mgrSummary.map(m => [
+            m.name, m.completed, m.notStarted ?? 0, m.ongoing ?? 0, m.total, m.rate
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 70, 171] }
+        })
+      }
+    } else {
+      // Courses Analysis
+      const totalAssigned = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.assigned || 0), 0)
+      const totalCompleted = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.completed || 0), 0)
+      const overallRate = ((totalCompleted / (totalAssigned || 1)) * 100).toFixed(1) + "%"
+
+      doc.setFontSize(14)
+      doc.text("Overall Metrics", 14, 50)
+      doc.setFontSize(11)
+      doc.text(`Total Courses Assigned: ${totalAssigned.toLocaleString()}`, 14, 60)
+      doc.text(`Total Courses Completed: ${totalCompleted.toLocaleString()}`, 14, 67)
+      doc.text(`Overall Completion Rate: ${overallRate}`, 14, 74)
+
+      // Department Analysis Table
+      doc.setFontSize(14)
+      doc.text("Department Analysis", 14, 85)
+      
+      autoTable(doc, {
+        startY: 90,
+        head: [['Department', 'Assigned Courses', 'Completed Courses', 'Rate']],
+        body: (selectedLog.deptSummary as CourseItem[]).map(d => [
+          d.name, d.assigned.toLocaleString(), d.completed.toLocaleString(), d.rate
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [0, 70, 171] }
+      })
+
+      // Employee Analysis Table
+      if (selectedLog.employeeSummary && selectedLog.employeeSummary.length > 0) {
+        if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
+        doc.text("Employee Analysis", 14, (doc as any).lastAutoTable.finalY + 15)
+        
+        autoTable(doc, {
+          startY: (doc as any).lastAutoTable.finalY + 20,
+          head: [['Employee Name', 'Assigned', 'Completed', 'Rate']],
+          body: selectedLog.employeeSummary.map(e => [
+            e.name, e.assigned.toLocaleString(), e.completed.toLocaleString(), e.rate
+          ]),
+          theme: 'striped',
+          headStyles: { fillColor: [0, 70, 171] }
+        })
+      }
+    }
+    
+    doc.save(`${selectedLog.fileName}_summary.pdf`)
   }
 
   if (isLoading) {
@@ -215,7 +339,29 @@ export default function LMSDashboard() {
           <p className="text-zinc-500 dark:text-zinc-400">Academy Analytics - Source Isolated Reporting</p>
         </div>
         
-        <div className="flex flex-col items-end gap-2">
+        <div className="flex flex-col items-end gap-3">
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-9 gap-2 text-[#0046ab] border-[#0046ab]/20 hover:bg-[#0046ab]/5"
+              onClick={handleDownloadExcel}
+              disabled={!selectedLog}
+            >
+              <Download className="h-4 w-4" />
+              Download Excel
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="h-9 gap-2 text-red-600 border-red-200 hover:bg-red-50"
+              onClick={handleDownloadPDF}
+              disabled={!selectedLog}
+            >
+              <FileText className="h-4 w-4" />
+              Download PDF
+            </Button>
+          </div>
           <div className="flex items-center gap-3 bg-white border rounded-lg px-3 py-1.5 shadow-sm dark:bg-zinc-900">
             <Database className="h-4 w-4 text-[#0046ab]" />
             <span className="text-sm font-medium text-zinc-500">Source:</span>
@@ -313,8 +459,8 @@ export default function LMSDashboard() {
                     <PieChart data={statusSummary} />
                     <div className="absolute inset-12 bg-white rounded-full dark:bg-zinc-900 flex flex-col items-center justify-center shadow-sm border text-center">
                       <span className="text-2xl font-bold">
-                        {(selectedLog.deptSummary as BreakoutItem[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0 
-                          ? (((selectedLog.deptSummary as BreakoutItem[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
+                        {(selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0 
+                          ? (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
                           : "0.0"}%
                       </span>
                       <span className="text-[10px] text-zinc-400 uppercase font-bold leading-tight">Total<br/>Completion</span>
@@ -372,7 +518,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredDeptSummary.map((row) => (
+                      filteredDeptSummary.map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -434,7 +580,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No managers found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredMgrSummary.map((row) => (
+                      filteredMgrSummary.map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -472,7 +618,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Total Courses Assigned</p>
                     <h3 className="text-2xl font-bold">
-                      {(selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.assigned || 0), 0).toLocaleString()}
+                      {(selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.assigned || 0), 0).toLocaleString()}
                     </h3>
                   </div>
                 </div>
@@ -487,7 +633,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Total Courses Completed</p>
                     <h3 className="text-2xl font-bold">
-                      {(selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.completed || 0), 0).toLocaleString()}
+                      {(selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0).toLocaleString()}
                     </h3>
                   </div>
                 </div>
@@ -502,8 +648,8 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Overall Completion Rate</p>
                     <h3 className="text-2xl font-bold">
-                      {((selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.completed || 0), 0) / 
-                        ((selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.assigned || 1), 0)) * 100).toFixed(1)}%
+                      {((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0) / 
+                        ((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.assigned || 1), 0)) * 100).toFixed(1)}%
                     </h3>
                   </div>
                 </div>
@@ -547,7 +693,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      (filteredDeptSummary as CourseItem[]).map((row) => (
+                      filteredDeptSummary.map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
@@ -600,7 +746,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      (filteredEmployeeSummary as CourseItem[]).map((row) => (
+                      filteredEmployeeSummary.map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>

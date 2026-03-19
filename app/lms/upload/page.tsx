@@ -101,7 +101,7 @@ export default function ExcelUploadPage() {
 
         // Validate headers for 'courses' type
         if (importType === 'courses') {
-          const headers = Object.keys(jsonData[0])
+          const headers = Object.keys(jsonData[0] as any)
           const required = ['Name', 'Assigned Courses', 'Completed Courses', 'Delivery Unit', 'Project Name', 'Name of Immediate Supervisor']
           const missing = required.filter(r => !headers.some(h => h.toLowerCase() === r.toLowerCase()))
           
