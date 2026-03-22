@@ -12,7 +12,9 @@ import {
   Loader2,
   Filter,
   Check,
-  ChevronRight
+  ChevronRight,
+  ClipboardList,
+  BarChart3
 } from "lucide-react"
 import { toast } from "sonner"
 import { read, utils } from "xlsx"
@@ -32,6 +34,7 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 interface RowData {
   id: string
@@ -39,9 +42,11 @@ interface RowData {
 }
 
 type Step = 'upload' | 'filter' | 'preview'
+type ImportType = 'status' | 'courses'
 
 export default function ExcelUploadPage() {
   const [step, setStep] = useState<Step>('upload')
+  const [importType, setImportType] = useState<ImportType>('status')
   const [rawData, setRawData] = useState<any[]>([])
   const [fileName, setFileName] = useState("")
   const [processedData, setProcessedData] = useState<RowData[]>([])
@@ -60,12 +65,17 @@ export default function ExcelUploadPage() {
   const uniqueFilterValues = useMemo(() => {
     if (rawData.length === 0) return { locations: [], dus: [] }
     const headers = Object.keys(rawData[0])
+    
+    // Auto-detect columns
     const locHeader = headers.find(h => /location|site|region/i.test(h)) || headers[0]
     const duHeader = headers.find(h => /du|delivery unit|department|dept/i.test(h)) || headers[1]
+    
     setLocationCol(locHeader)
     setDuCol(duHeader)
+    
     const locations = Array.from(new Set(rawData.map(r => String(r[locHeader] || "Unknown")))).sort()
     const dus = Array.from(new Set(rawData.map(r => String(r[duHeader] || "Unknown")))).sort()
+    
     return { locations, dus }
   }, [rawData])
 
@@ -82,11 +92,26 @@ export default function ExcelUploadPage() {
         const sheetName = workbook.SheetNames[0]
         const sheet = workbook.Sheets[sheetName]
         const jsonData = utils.sheet_to_json(sheet)
+        
         if (!jsonData || jsonData.length === 0) {
           toast.error("The uploaded file is empty")
           setIsLoading(false)
           return
         }
+
+        // Validate headers for 'courses' type
+        if (importType === 'courses') {
+          const headers = Object.keys(jsonData[0] as any)
+          const required = ['Name', 'Assigned Courses', 'Completed Courses', 'Delivery Unit', 'Project Name', 'Name of Immediate Supervisor']
+          const missing = required.filter(r => !headers.some(h => h.toLowerCase() === r.toLowerCase()))
+          
+          if (missing.length > 0) {
+            toast.error(`Missing columns: ${missing.join(", ")}`)
+            setIsLoading(false)
+            return
+          }
+        }
+
         setRawData(jsonData)
         setStep('filter')
         toast.success("File read successfully. Please select filters.")
@@ -105,20 +130,16 @@ export default function ExcelUploadPage() {
       return
     }
     setIsLoading(true)
+    
     setTimeout(() => {
       const filtered = rawData.filter(row => {
         const loc = String(row[locationCol] || "Unknown")
         const du = String(row[duCol] || "Unknown")
         return selectedLocations.includes(loc) && selectedDUs.includes(du)
-      }).map((row, index) => {
-        const newRow = { ...row }
-        const statusKey = Object.keys(newRow).find(k => /status/i.test(k)) || "Status"
-        const statusVal = newRow[statusKey]
-        if (/^\d+%?$/.test(String(statusVal)) || (typeof statusVal === 'number')) {
-          newRow[statusKey] = "Ongoing"
-        }
-        return { ...newRow, id: `row-${index}-${Date.now()}` }
-      })
+      }).map((row, index) => ({
+        ...row,
+        id: `row-${index}-${Date.now()}`
+      }))
 
       if (filtered.length === 0) {
         toast.error("No records matched the selected filters")
@@ -126,64 +147,123 @@ export default function ExcelUploadPage() {
         return
       }
 
-      // 1. Output 1: Status Summary
-      const statusKey = Object.keys(filtered[0]).find(k => /status/i.test(k)) || "Status"
-      const statusCounts: Record<string, number> = {}
-      filtered.forEach(row => {
-        const status = row[statusKey] || "Not Started"
-        statusCounts[status] = (statusCounts[status] || 0) + 1
-      })
-      const total = filtered.length
-      const statusSummary = Object.entries(statusCounts).map(([status, count]) => {
-        const rate = (count / total) * 100
-        return { status, count, rate: rate < 1 && rate > 0 ? "<1%" : `${rate.toFixed(1)}%` }
-      }).sort((a, b) => b.status.localeCompare(a.status))
-
-      // 2. Output 2: Department Summary
-      const deptKey = Object.keys(filtered[0]).find(k => /department|dept|du|unit/i.test(k)) || duCol
-      const depts: Record<string, { total: number, completed: number }> = {}
-      filtered.forEach(row => {
-        const key = String(row[deptKey] || "Unknown")
-        if (!depts[key]) depts[key] = { total: 0, completed: 0 }
-        depts[key].total += 1
-        if (String(row[statusKey]).toLowerCase() === "completed") depts[key].completed += 1
-      })
-      const deptSummary = Object.entries(depts).map(([name, stats]) => ({
-        name,
-        total: stats.total,
-        completed: stats.completed,
-        rate: `${((stats.completed / stats.total) * 100).toFixed(1)}%`
-      })).sort((a, b) => b.name.localeCompare(a.name))
-
-      // 3. Output 3: Manager Summary
-      const mgrKey = Object.keys(filtered[0]).find(k => /manager|supervisor|immediate/i.test(k)) || "Manager"
-      const mgrs: Record<string, { total: number, completed: number }> = {}
-      filtered.forEach(row => {
-        const key = String(row[mgrKey] || "Unknown")
-        if (!mgrs[key]) mgrs[key] = { total: 0, completed: 0 }
-        mgrs[key].total += 1
-        if (String(row[statusKey]).toLowerCase() === "completed") mgrs[key].completed += 1
-      })
-      const mgrSummary = Object.entries(mgrs).map(([name, stats]) => ({
-        name,
-        total: stats.total,
-        completed: stats.completed,
-        rate: `${((stats.completed / stats.total) * 100).toFixed(1)}%`
-      })).sort((a, b) => b.name.localeCompare(a.name))
-
       const uploadTime = new Date().toLocaleString()
       const existingLogs = JSON.parse(localStorage.getItem("lms_audit_logs") || "[]")
-      
-      const newLog = { 
+      let newLog: any = {
         id: `log-${Date.now()}`,
-        fileName, 
-        date: uploadTime, 
+        fileName,
+        date: uploadTime,
         count: filtered.length,
-        statusSummary,
-        deptSummary,
-        mgrSummary
+        importType,
+        cleanedData: filtered
       }
-      
+
+      if (importType === 'status') {
+        // Status Completion Logic
+        const statusKey = Object.keys(filtered[0]).find(k => /status/i.test(k)) || "Status"
+        
+        // Fix status values if they are numeric
+        const processedFiltered = filtered.map(row => {
+          const statusVal = row[statusKey]
+          if (/^\d+%?$/.test(String(statusVal)) || (typeof statusVal === 'number')) {
+            row[statusKey] = "Ongoing"
+          }
+          return row
+        })
+
+        const statusCounts: Record<string, number> = {}
+        processedFiltered.forEach(row => {
+          const status = row[statusKey] || "Not Started"
+          statusCounts[status] = (statusCounts[status] || 0) + 1
+        })
+        
+        const total = processedFiltered.length
+        const statusSummary = Object.entries(statusCounts).map(([status, count]) => {
+          const rate = (count / total) * 100
+          return { status, count, rate: rate < 1 && rate > 0 ? "<1%" : `${rate.toFixed(1)}%` }
+        }).sort((a, b) => b.status.localeCompare(a.status))
+
+        const deptKey = Object.keys(processedFiltered[0]).find(k => /department|dept|du|unit/i.test(k)) || duCol
+        const depts: Record<string, any> = {}
+        processedFiltered.forEach(row => {
+          const key = String(row[deptKey] || "Unknown")
+          if (!depts[key]) depts[key] = { total: 0, completed: 0, ongoing: 0, notStarted: 0 }
+          depts[key].total += 1
+          const s = String(row[statusKey]).toLowerCase()
+          if (s === "completed") depts[key].completed += 1
+          else if (s === "ongoing") depts[key].ongoing += 1
+          else depts[key].notStarted += 1
+        })
+
+        const deptSummary = Object.entries(depts).map(([name, stats]: [string, any]) => ({
+          name,
+          total: stats.total,
+          completed: stats.completed,
+          ongoing: stats.ongoing,
+          notStarted: stats.notStarted,
+          rate: `${((stats.completed / stats.total) * 100).toFixed(1)}%`
+        })).sort((a, b) => b.name.localeCompare(a.name))
+
+        const mgrKey = Object.keys(processedFiltered[0]).find(k => /manager|supervisor|immediate/i.test(k)) || "Manager"
+        const mgrs: Record<string, any> = {}
+        processedFiltered.forEach(row => {
+          const key = String(row[mgrKey] || "Unknown")
+          if (!mgrs[key]) mgrs[key] = { total: 0, completed: 0, ongoing: 0, notStarted: 0 }
+          mgrs[key].total += 1
+          const s = String(row[statusKey]).toLowerCase()
+          if (s === "completed") mgrs[key].completed += 1
+          else if (s === "ongoing") mgrs[key].ongoing += 1
+          else mgrs[key].notStarted += 1
+        })
+
+        const mgrSummary = Object.entries(mgrs).map(([name, stats]: [string, any]) => ({
+          name,
+          total: stats.total,
+          completed: stats.completed,
+          ongoing: stats.ongoing,
+          notStarted: stats.notStarted,
+          rate: `${((stats.completed / stats.total) * 100).toFixed(1)}%`
+        })).sort((a, b) => b.name.localeCompare(a.name))
+
+        newLog = { ...newLog, statusSummary, deptSummary, mgrSummary }
+      } else {
+        // Assigned/Completed Courses Logic
+        const nameKey = Object.keys(filtered[0]).find(k => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
+        const assignedKey = Object.keys(filtered[0]).find(k => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(filtered[0]).find(k => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        const duKey = Object.keys(filtered[0]).find(k => /delivery unit|department|dept/i.test(k)) || duCol
+        
+        // Dept Aggregation
+        const depts: Record<string, any> = {}
+        filtered.forEach(row => {
+          const key = String(row[duKey] || "Unknown")
+          if (!depts[key]) depts[key] = { name: key, assigned: 0, completed: 0 }
+          depts[key].assigned += Number(row[assignedKey] || 0)
+          depts[key].completed += Number(row[completedKey] || 0)
+        })
+        
+        const deptSummary = Object.entries(depts).map(([_, stats]: [string, any]) => ({
+          ...stats,
+          rate: stats.assigned > 0 ? `${((stats.completed / stats.assigned) * 100).toFixed(1)}%` : "0.0%"
+        })).sort((a, b) => b.assigned - a.assigned)
+
+        // Employee Aggregation
+        const employees: Record<string, any> = {}
+        filtered.forEach(row => {
+          const key = String(row[nameKey] || "Unknown")
+          if (!employees[key]) employees[key] = { name: key, assigned: 0, completed: 0 }
+          employees[key].assigned += Number(row[assignedKey] || 0)
+          employees[key].completed += Number(row[completedKey] || 0)
+        })
+
+        const employeeSummary = Object.entries(employees).map(([_, stats]: [string, any]) => ({
+          ...stats,
+          rate: stats.assigned > 0 ? `${((stats.completed / stats.assigned) * 100).toFixed(1)}%` : "0.0%"
+        })).sort((a, b) => b.assigned - a.assigned)
+
+        newLog = { ...newLog, deptSummary, employeeSummary }
+      }
+
       localStorage.setItem("lms_audit_logs", JSON.stringify([newLog, ...existingLogs]))
       setProcessedData(filtered)
       setColumns(Object.keys(filtered[0]).filter(c => c !== 'id'))
@@ -245,13 +325,34 @@ export default function ExcelUploadPage() {
       </div>
 
       {step === 'upload' && (
-        <Card className="border-dashed border-2 bg-transparent flex flex-col items-center justify-center py-24 text-center">
-          <div className="h-20 w-20 rounded-full bg-zinc-100 flex items-center justify-center mb-6 dark:bg-zinc-800">
-            <FileSpreadsheet className="h-10 w-10 text-zinc-400" />
-          </div>
-          <h3 className="text-xl font-semibold mb-2">Upload Academy LMS data</h3>
-          <p className="text-zinc-500 max-w-md px-4">Upload the Excel file to begin. You will be able to choose which Delivery Units and Locations to process in the next step.</p>
-        </Card>
+        <div className="space-y-6">
+          <Tabs defaultValue="status" className="w-full" onValueChange={(v) => setImportType(v as ImportType)}>
+            <TabsList className="grid w-full grid-cols-2 max-w-md">
+              <TabsTrigger value="status" className="flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Status Completion
+              </TabsTrigger>
+              <TabsTrigger value="courses" className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4" />
+                Assigned/Completed Courses
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          <Card className="border-dashed border-2 bg-transparent flex flex-col items-center justify-center py-24 text-center">
+            <div className="h-20 w-20 rounded-full bg-zinc-100 flex items-center justify-center mb-6 dark:bg-zinc-800">
+              <FileSpreadsheet className="h-10 w-10 text-zinc-400" />
+            </div>
+            <h3 className="text-xl font-semibold mb-2">
+              Upload {importType === 'status' ? 'Status Completion' : 'Assigned/Completed Courses'} data
+            </h3>
+            <p className="text-zinc-500 max-w-md px-4">
+              {importType === 'status' 
+                ? "Upload the Excel file with employee status data. You can filter by Location and DU in the next step."
+                : "Required columns: Name, Assigned Courses, Completed Courses, Delivery Unit, Project Name, Manager Name."}
+            </p>
+          </Card>
+        </div>
       )}
 
       {step === 'filter' && (
