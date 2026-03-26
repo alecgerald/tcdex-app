@@ -11,7 +11,11 @@ import {
   ChevronRight,
   ArrowLeftRight,
   ExternalLink,
-  Search
+  Search,
+  Facebook,
+  Instagram,
+  Play,
+  Linkedin
 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -42,15 +46,17 @@ interface CommsLog {
   id: string
   fileName: string
   uploadedAt: string
-  type?: string
-  newFollowers: any[]
+  type: string
+  rows?: any[]
+  // Legacy fields
+  newFollowers?: any[]
   contentDailyMetrics?: any[]
   contentPostMetrics?: any[]
-  location: any[]
-  jobFunction: any[]
-  seniority: any[]
-  industry: any[]
-  companySize: any[]
+  location?: any[]
+  jobFunction?: any[]
+  seniority?: any[]
+  industry?: any[]
+  companySize?: any[]
 }
 
 export default function CommsAuditLogsPage() {
@@ -75,13 +81,29 @@ export default function CommsAuditLogsPage() {
     const updatedLogs = logs.filter(log => log.id !== id)
     setLogs(updatedLogs)
     localStorage.setItem("comms_audit_logs", JSON.stringify(updatedLogs))
+    
+    // Also update specific platform data if needed
+    const deletedLog = logs.find(l => l.id === id)
+    if (deletedLog) {
+      if (deletedLog.type === "facebook-visits") {
+        // Find most recent facebook log
+        const recentFb = updatedLogs.find(l => l.type === "facebook-visits")
+        if (recentFb) {
+          localStorage.setItem("comms_facebook_visits_data", JSON.stringify(recentFb))
+        } else {
+          localStorage.removeItem("comms_facebook_visits_data")
+        }
+      } else if (deletedLog.type === "instagram-views") {
+        const recentIg = updatedLogs.find(l => l.type === "instagram-views")
+        if (recentIg) {
+          localStorage.setItem("comms_instagram_views_data", JSON.stringify(recentIg))
+        } else {
+          localStorage.removeItem("comms_instagram_views_data")
+        }
+      }
+    }
+    
     toast.success("Log deleted successfully")
-  }
-
-  const handleSetActive = (log: CommsLog, e: React.MouseEvent) => {
-    e.stopPropagation()
-    localStorage.setItem("comms_linkedin_data", JSON.stringify(log))
-    toast.success(`Dashboard data updated to: ${log.fileName}`)
   }
 
   const openLogDetails = (log: CommsLog) => {
@@ -95,7 +117,9 @@ export default function CommsAuditLogsPage() {
 
   const getDateRange = (log: CommsLog) => {
     let dates: any[] = []
-    if (log.type === 'content-posts') {
+    if (log.rows) {
+      dates = log.rows.map(r => r.Date).filter(Boolean)
+    } else if (log.type === 'content-posts') {
       const dailyDates = log.contentDailyMetrics?.map(r => r.Date).filter(Boolean) || []
       const postDates = log.contentPostMetrics?.map(r => r['Created date'] || r.Date).filter(Boolean) || []
       dates = [...dailyDates, ...postDates]
@@ -105,12 +129,12 @@ export default function CommsAuditLogsPage() {
     
     if (dates.length === 0) return "N/A"
     
-    // Simple sort to find min/max
     const sortedDates = [...new Set(dates)].sort()
     return `${sortedDates[0]} - ${sortedDates[sortedDates.length - 1]}`
   }
 
   const getRowCount = (log: CommsLog) => {
+    if (log.rows) return log.rows.length
     if (log.type === 'content-posts') {
       return (log.contentDailyMetrics?.length || 0) + (log.contentPostMetrics?.length || 0)
     }
@@ -118,6 +142,9 @@ export default function CommsAuditLogsPage() {
   }
 
   const getTabs = (log: CommsLog) => {
+    if (log.rows) {
+      return [{ id: "data", label: "Data Records", data: log.rows }]
+    }
     if (log.type === 'content-posts') {
       return [
         { id: "contentDailyMetrics", label: "Daily Metrics", data: log.contentDailyMetrics },
@@ -134,12 +161,32 @@ export default function CommsAuditLogsPage() {
     ]
   }
 
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'facebook-visits': return <Facebook className="h-4 w-4" />
+      case 'instagram-views': return <Instagram className="h-4 w-4" />
+      case 'tiktok-overview': return <Play className="h-4 w-4" />
+      case 'linkedin-analytics': return <Linkedin className="h-4 w-4" />
+      default: return <FileSpreadsheet className="h-4 w-4" />
+    }
+  }
+
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case 'facebook-visits': return 'bg-blue-100 text-blue-700'
+      case 'instagram-views': return 'bg-pink-100 text-pink-700'
+      case 'tiktok-overview': return 'bg-zinc-100 text-zinc-700'
+      case 'linkedin-analytics': return 'bg-blue-100 text-blue-800'
+      default: return 'bg-[#0046ab]/10 text-[#0046ab]'
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Comms Audit Logs</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">History of LinkedIn data uploads and raw data preview</p>
+          <p className="text-zinc-500 dark:text-zinc-400">History of data uploads and raw data preview</p>
         </div>
         <div className="relative w-full md:w-64">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
@@ -180,12 +227,12 @@ export default function CommsAuditLogsPage() {
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded flex items-center justify-center ${log.type === 'content-posts' ? 'bg-amber-100 text-amber-700' : 'bg-[#0046ab]/10 text-[#0046ab]'}`}>
-                          <FileSpreadsheet className="h-4 w-4" />
+                        <div className={`h-8 w-8 rounded flex items-center justify-center ${getTypeColor(log.type)}`}>
+                          {getTypeIcon(log.type)}
                         </div>
                         <div className="flex flex-col truncate">
                           <span className="truncate max-w-[250px]">{log.fileName}</span>
-                          <span className="text-[10px] uppercase font-bold text-zinc-400">{log.type || 'followers'}</span>
+                          <span className="text-[10px] uppercase font-bold text-zinc-400">{log.type?.replace('-', ' ') || 'followers'}</span>
                         </div>
                       </div>
                     </TableCell>
@@ -205,15 +252,6 @@ export default function CommsAuditLogsPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-[#0046ab]"
-                          title="Set as Active for Dashboard"
-                          onClick={(e) => handleSetActive(log, e)}
-                        >
-                          <ArrowLeftRight className="h-4 w-4" />
-                        </Button>
                         <Button 
                           variant="ghost" 
                           size="icon" 
@@ -245,15 +283,15 @@ export default function CommsAuditLogsPage() {
         <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-[1400px] h-[90vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-0 shrink-0">
             <div className="flex items-center gap-4">
-              <div className={`h-10 w-10 rounded-lg flex items-center justify-center shadow-md ${selectedLog?.type === 'content-posts' ? 'bg-amber-500' : 'bg-[#0046ab]'}`}>
-                <FileSpreadsheet className="h-6 w-6 text-white" />
+              <div className={`h-10 w-10 rounded-lg flex items-center justify-center shadow-md ${getTypeColor(selectedLog?.type || '')} text-current`}>
+                {selectedLog && getTypeIcon(selectedLog.type)}
               </div>
               <div>
                 <DialogTitle className="text-xl font-bold">{selectedLog?.fileName}</DialogTitle>
                 <DialogDescription className="flex items-center gap-4 mt-1">
                   <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {selectedLog && new Date(selectedLog.uploadedAt).toLocaleString()}</span>
                   <span className="flex items-center gap-1.5"><Database className="h-3 w-3" /> {selectedLog && getDateRange(selectedLog)}</span>
-                  <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type || 'followers'}</Badge>
+                  <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type?.replace('-', ' ') || 'followers'}</Badge>
                 </DialogDescription>
               </div>
             </div>
@@ -294,18 +332,12 @@ export default function CommsAuditLogsPage() {
           </div>
           
           <DialogFooter className="p-4 border-t bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between sm:justify-between shrink-0">
-            <p className="text-xs text-zinc-500 font-medium italic">Showing full raw data from Excel source.</p>
+            <p className="text-xs text-zinc-500 font-medium italic">Showing full raw data from source.</p>
             <Button 
-              className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
-              onClick={() => {
-                if (selectedLog) {
-                  localStorage.setItem("comms_linkedin_data", JSON.stringify(selectedLog))
-                  toast.success("Updated dashboard data")
-                }
-              }}
+              variant="outline"
+              onClick={() => setIsViewOpen(false)}
             >
-              <ArrowLeftRight className="h-4 w-4 mr-2" />
-              Use for Dashboard
+              Close Preview
             </Button>
           </DialogFooter>
         </DialogContent>

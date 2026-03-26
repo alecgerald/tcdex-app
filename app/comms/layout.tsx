@@ -69,7 +69,6 @@ const sidebarCategories = [
     id: "comms",
     icon: Megaphone,
     items: [
-      { name: "LinkedIn Dashboard", href: "/comms/dashboard", icon: LayoutDashboard },
       { name: "External Brand", href: "/comms/external-brand", icon: Heart },
       { name: "Import Excel", href: "/comms/import-excel", icon: FileUp },
       { name: "Audit Logs", href: "/comms/audit-logs", icon: FileClock },
