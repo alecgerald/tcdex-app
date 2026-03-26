@@ -42,7 +42,10 @@ interface CommsLog {
   id: string
   fileName: string
   uploadedAt: string
+  type?: string
   newFollowers: any[]
+  contentDailyMetrics?: any[]
+  contentPostMetrics?: any[]
   location: any[]
   jobFunction: any[]
   seniority: any[]
@@ -91,10 +94,44 @@ export default function CommsAuditLogsPage() {
   )
 
   const getDateRange = (log: CommsLog) => {
-    if (!log.newFollowers || log.newFollowers.length === 0) return "N/A"
-    const dates = log.newFollowers.map(r => r.Date).filter(Boolean)
+    let dates: any[] = []
+    if (log.type === 'content-posts') {
+      const dailyDates = log.contentDailyMetrics?.map(r => r.Date).filter(Boolean) || []
+      const postDates = log.contentPostMetrics?.map(r => r['Created date'] || r.Date).filter(Boolean) || []
+      dates = [...dailyDates, ...postDates]
+    } else {
+      dates = log.newFollowers?.map(r => r.Date).filter(Boolean) || []
+    }
+    
     if (dates.length === 0) return "N/A"
-    return `${dates[0]} - ${dates[dates.length - 1]}`
+    
+    // Simple sort to find min/max
+    const sortedDates = [...new Set(dates)].sort()
+    return `${sortedDates[0]} - ${sortedDates[sortedDates.length - 1]}`
+  }
+
+  const getRowCount = (log: CommsLog) => {
+    if (log.type === 'content-posts') {
+      return (log.contentDailyMetrics?.length || 0) + (log.contentPostMetrics?.length || 0)
+    }
+    return log.newFollowers?.length || 0
+  }
+
+  const getTabs = (log: CommsLog) => {
+    if (log.type === 'content-posts') {
+      return [
+        { id: "contentDailyMetrics", label: "Daily Metrics", data: log.contentDailyMetrics },
+        { id: "contentPostMetrics", label: "Post Metrics", data: log.contentPostMetrics },
+      ]
+    }
+    return [
+      { id: "newFollowers", label: "New Followers", data: log.newFollowers },
+      { id: "location", label: "Location", data: log.location },
+      { id: "jobFunction", label: "Job Function", data: log.jobFunction },
+      { id: "seniority", label: "Seniority", data: log.seniority },
+      { id: "industry", label: "Industry", data: log.industry },
+      { id: "companySize", label: "Company Size", data: log.companySize },
+    ]
   }
 
   return (
@@ -120,10 +157,10 @@ export default function CommsAuditLogsPage() {
           <Table>
             <TableHeader className="bg-zinc-50 dark:bg-zinc-800">
               <TableRow>
-                <TableHead>File Name</TableHead>
+                <TableHead>File Name / Type</TableHead>
                 <TableHead>Upload Date</TableHead>
                 <TableHead>Date Range</TableHead>
-                <TableHead className="text-right">Rows</TableHead>
+                <TableHead className="text-right">Total Rows</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -143,10 +180,13 @@ export default function CommsAuditLogsPage() {
                   >
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded bg-[#0046ab]/10 flex items-center justify-center">
-                          <FileSpreadsheet className="h-4 w-4 text-[#0046ab]" />
+                        <div className={`h-8 w-8 rounded flex items-center justify-center ${log.type === 'content-posts' ? 'bg-amber-100 text-amber-700' : 'bg-[#0046ab]/10 text-[#0046ab]'}`}>
+                          <FileSpreadsheet className="h-4 w-4" />
                         </div>
-                        <span className="truncate max-w-[250px]">{log.fileName}</span>
+                        <div className="flex flex-col truncate">
+                          <span className="truncate max-w-[250px]">{log.fileName}</span>
+                          <span className="text-[10px] uppercase font-bold text-zinc-400">{log.type || 'followers'}</span>
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -161,7 +201,7 @@ export default function CommsAuditLogsPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
-                      {log.newFollowers.length}
+                      {getRowCount(log)}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -205,7 +245,7 @@ export default function CommsAuditLogsPage() {
         <DialogContent className="max-w-[95vw] sm:max-w-[95vw] w-[1400px] h-[90vh] flex flex-col p-0 overflow-hidden">
           <DialogHeader className="p-6 pb-0 shrink-0">
             <div className="flex items-center gap-4">
-              <div className="h-10 w-10 rounded-lg bg-[#0046ab] flex items-center justify-center shadow-md">
+              <div className={`h-10 w-10 rounded-lg flex items-center justify-center shadow-md ${selectedLog?.type === 'content-posts' ? 'bg-amber-500' : 'bg-[#0046ab]'}`}>
                 <FileSpreadsheet className="h-6 w-6 text-white" />
               </div>
               <div>
@@ -213,55 +253,44 @@ export default function CommsAuditLogsPage() {
                 <DialogDescription className="flex items-center gap-4 mt-1">
                   <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {selectedLog && new Date(selectedLog.uploadedAt).toLocaleString()}</span>
                   <span className="flex items-center gap-1.5"><Database className="h-3 w-3" /> {selectedLog && getDateRange(selectedLog)}</span>
+                  <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type || 'followers'}</Badge>
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
           <div className="flex-1 overflow-hidden flex flex-col mt-6">
-            <Tabs defaultValue="newFollowers" className="flex-1 flex flex-col h-full overflow-hidden">
-              <div className="px-6 border-b bg-zinc-50/50 dark:bg-zinc-900/50 shrink-0">
-                <TabsList className="bg-transparent h-auto p-0 gap-6 justify-start overflow-x-auto whitespace-nowrap scrollbar-none">
-                  {[
-                    { id: "newFollowers", label: "New Followers" },
-                    { id: "location", label: "Location" },
-                    { id: "jobFunction", label: "Job Function" },
-                    { id: "seniority", label: "Seniority" },
-                    { id: "industry", label: "Industry" },
-                    { id: "companySize", label: "Company Size" },
-                  ].map(tab => (
-                    <TabsTrigger 
-                      key={tab.id} 
-                      value={tab.id}
-                      className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-3 pt-2 px-0 text-sm font-semibold shadow-none shrink-0"
-                    >
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </div>
+            {selectedLog && (
+              <Tabs defaultValue={getTabs(selectedLog)[0].id} className="flex-1 flex flex-col h-full overflow-hidden">
+                <div className="px-6 border-b bg-zinc-50/50 dark:bg-zinc-900/50 shrink-0">
+                  <TabsList className="bg-transparent h-auto p-0 gap-6 justify-start overflow-x-auto whitespace-nowrap scrollbar-none">
+                    {getTabs(selectedLog).map(tab => (
+                      <TabsTrigger 
+                        key={tab.id} 
+                        value={tab.id}
+                        className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-3 pt-2 px-0 text-sm font-semibold shadow-none shrink-0"
+                      >
+                        {tab.label}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                </div>
 
-              <div className="flex-1 overflow-hidden">
-                {selectedLog && Object.entries({
-                  newFollowers: selectedLog.newFollowers,
-                  location: selectedLog.location,
-                  jobFunction: selectedLog.jobFunction,
-                  seniority: selectedLog.seniority,
-                  industry: selectedLog.industry,
-                  companySize: selectedLog.companySize
-                }).map(([key, sheetData]) => (
-                  <TabsContent key={key} value={key} className="h-full m-0 focus-visible:ring-0 overflow-hidden">
-                    <ScrollArea className="h-full w-full">
-                      <div className="p-6">
-                        <SheetDataTable data={sheetData} />
-                      </div>
-                      <ScrollBar orientation="horizontal" className="visible" />
-                      <ScrollBar orientation="vertical" />
-                    </ScrollArea>
-                  </TabsContent>
-                ))}
-              </div>
-            </Tabs>
+                <div className="flex-1 overflow-hidden">
+                  {getTabs(selectedLog).map(tab => (
+                    <TabsContent key={tab.id} value={tab.id} className="h-full m-0 focus-visible:ring-0 overflow-hidden">
+                      <ScrollArea className="h-full w-full">
+                        <div className="p-6">
+                          <SheetDataTable data={tab.data || []} />
+                        </div>
+                        <ScrollBar orientation="horizontal" className="visible" />
+                        <ScrollBar orientation="vertical" />
+                      </ScrollArea>
+                    </TabsContent>
+                  ))}
+                </div>
+              </Tabs>
+            )}
           </div>
           
           <DialogFooter className="p-4 border-t bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between sm:justify-between shrink-0">

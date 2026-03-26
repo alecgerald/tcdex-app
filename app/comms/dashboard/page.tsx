@@ -15,7 +15,8 @@ import {
   ArrowDownRight,
   Search,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  BarChart3
 } from "lucide-react"
 import { 
   Chart as ChartJS, 
@@ -46,6 +47,13 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Register ChartJS components
 ChartJS.register(
@@ -64,6 +72,9 @@ ChartJS.register(
 interface CommsData {
   uploadedAt: string
   newFollowers: any[]
+  contentPosts?: any[] // legacy
+  contentDailyMetrics?: any[]
+  contentPostMetrics?: any[]
   location: any[]
   jobFunction: any[]
   seniority: any[]
@@ -103,7 +114,7 @@ export default function CommsDashboard() {
         </div>
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">No LinkedIn Data</h1>
         <p className="text-zinc-500 max-w-sm">
-          Please upload your LinkedIn followers export file to view the analytics dashboard.
+          Please upload your LinkedIn export file to view the analytics dashboard.
         </p>
         <Link href="/comms/import-excel">
           <Button className="bg-[#0046ab] hover:bg-[#003a8f] text-white">
@@ -114,12 +125,14 @@ export default function CommsDashboard() {
     )
   }
 
+  const hasContentData = (data.contentDailyMetrics && data.contentDailyMetrics.length > 0) || (data.contentPosts && data.contentPosts.length > 0)
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Comms Dashboard</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">LinkedIn Followers Analytics & Insights</p>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">LinkedIn Dashboard</h1>
+          <p className="text-zinc-500 dark:text-zinc-400">LinkedIn Analytics & Insights</p>
         </div>
         <div className="text-right">
           <p className="text-xs text-zinc-400 uppercase font-bold tracking-wider">Last Uploaded</p>
@@ -127,54 +140,241 @@ export default function CommsDashboard() {
         </div>
       </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
+      <Tabs defaultValue={hasContentData ? "content-posts" : "followers"} className="space-y-6">
         <div className="flex items-center justify-between">
           <TabsList variant="line" className="h-auto p-0 bg-transparent border-b rounded-none w-full justify-start gap-6">
-            <TabsTrigger value="overview" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Overview</TabsTrigger>
-            <TabsTrigger value="location" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Location</TabsTrigger>
-            <TabsTrigger value="job-function" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Job Function</TabsTrigger>
-            <TabsTrigger value="seniority" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Seniority</TabsTrigger>
-            <TabsTrigger value="industry" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Industry</TabsTrigger>
-            <TabsTrigger value="company-size" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Company Size</TabsTrigger>
+            <TabsTrigger value="content-posts" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Content Posts</TabsTrigger>
+            <TabsTrigger value="followers" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Followers</TabsTrigger>
+            <TabsTrigger value="visitors" className="rounded-none border-b-2 border-transparent data-[state=active]:border-[#0046ab] data-[state=active]:bg-transparent pb-2 px-0">Visitors</TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="overview">
-          <OverviewTab data={data.newFollowers} />
+        <TabsContent value="content-posts">
+          {hasContentData ? (
+            <ContentPostsView data={data} />
+          ) : (
+            <Card className="border-none shadow-sm">
+              <CardContent className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+                <div className="h-16 w-16 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800 text-[#0046ab]">
+                  <FileSpreadsheet className="h-8 w-8" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl">No Content Posts Data</CardTitle>
+                  <CardDescription>Please upload your LinkedIn Content Posts export file.</CardDescription>
+                </div>
+                <Link href="/comms/import-excel">
+                  <Button variant="outline" className="mt-4">
+                    Upload Content Posts
+                  </Button>
+                </Link>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
-        <TabsContent value="location">
-          <DistributionTab data={data.location} title="Location" column="Location" />
+
+        <TabsContent value="followers">
+          <FollowersView data={data} />
         </TabsContent>
-        <TabsContent value="job-function">
-          <DistributionTab data={data.jobFunction} title="Job Function" column="Job function" isDonut={true} />
-        </TabsContent>
-        <TabsContent value="seniority">
-          <DistributionTab data={data.seniority} title="Seniority" column="Seniority" isDonut={true} isPie={true} />
-        </TabsContent>
-        <TabsContent value="industry">
-          <DistributionTab data={data.industry} title="Industry" column="Industry" />
-        </TabsContent>
-        <TabsContent value="company-size">
-          <DistributionTab data={data.companySize} title="Company Size" column="Company size" isDonut={true} isOrdered={true} />
+
+        <TabsContent value="visitors">
+          <Card className="border-none shadow-sm">
+            <CardContent className="flex flex-col items-center justify-center py-20 text-center space-y-4">
+              <div className="h-16 w-16 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800 text-indigo-500">
+                <Users className="h-8 w-8" />
+              </div>
+              <div>
+                <CardTitle className="text-xl">Visitors Analytics</CardTitle>
+                <CardDescription>Understand who is visiting your LinkedIn profile/page.</CardDescription>
+              </div>
+              <Badge variant="secondary" className="px-4 py-1">Coming Soon</Badge>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
   )
 }
 
-function OverviewTab({ data }: { data: any[] }) {
+function ContentPostsView({ data }: { data: CommsData }) {
+  const dailyMetrics = data.contentDailyMetrics || []
+  const postMetrics = data.contentPostMetrics || data.contentPosts || []
+
+  const stats = useMemo(() => {
+    // Helper to extract numeric value from various possible header formats
+    const getVal = (row: any, keys: string[]) => {
+      for (const key of keys) {
+        if (row[key] !== undefined) return Number(row[key]) || 0
+      }
+      // Try fuzzy match
+      const entry = Object.entries(row).find(([k]) => keys.some(target => k.toLowerCase().includes(target.toLowerCase())))
+      return entry ? Number(entry[1]) || 0 : 0
+    }
+
+    // KPI 1: Total Impressions (Formula is SUM(impressions_organic))
+    // Prefer dailyMetrics for organic impressions if available
+    let totalImpressions = 0
+    if (dailyMetrics.length > 0) {
+      totalImpressions = dailyMetrics.reduce((acc, curr) => acc + getVal(curr, ['Impressions (organic)', 'impressions_organic']), 0)
+    } else {
+      totalImpressions = postMetrics.reduce((acc, curr) => acc + getVal(curr, ['Impressions (organic)', 'Impressions', 'impressions_organic']), 0)
+    }
+
+    // KPI 3: Total clicks (SUM(clicks_organic))
+    let totalClicks = 0
+    if (dailyMetrics.length > 0) {
+      totalClicks = dailyMetrics.reduce((acc, curr) => acc + getVal(curr, ['Clicks (organic)', 'clicks_organic']), 0)
+    } else {
+      totalClicks = postMetrics.reduce((acc, curr) => acc + getVal(curr, ['Clicks (organic)', 'Clicks', 'clicks_organic']), 0)
+    }
+    
+    // KPI 4: Avg. engagement rate (AVG(engagement rate organic) * 100)
+    let avgEngRate = 0
+    if (dailyMetrics.length > 0) {
+      avgEngRate = dailyMetrics.reduce((acc, curr) => acc + getVal(curr, ['Engagement rate (organic)', 'Engagement rate', 'engagement rate organic']), 0) / dailyMetrics.length
+    } else if (postMetrics.length > 0) {
+      avgEngRate = postMetrics.reduce((acc, curr) => acc + getVal(curr, ['Engagement rate (organic)', 'Engagement rate', 'engagement rate organic']), 0) / postMetrics.length
+    }
+
+    // KPI 2: Avg. daily impressions (SUM(impressions) / days in range)
+    // Find date range
+    const dates = (dailyMetrics.length > 0 ? dailyMetrics : postMetrics).map(p => {
+      const d = p['Date'] || p['Created date']
+      return d ? new Date(d).getTime() : null
+    }).filter(t => t !== null) as number[]
+
+    let daysInRange = 1
+    if (dates.length > 0) {
+      const minDate = Math.min(...dates)
+      const maxDate = Math.max(...dates)
+      daysInRange = Math.max(1, Math.ceil((maxDate - minDate) / (1000 * 60 * 60 * 24)) + 1)
+    }
+    const avgDailyImpressions = totalImpressions / daysInRange
+
+    return {
+      totalImpressions,
+      totalClicks,
+      avgEngRate: avgEngRate * 100,
+      avgDailyImpressions
+    }
+  }, [dailyMetrics, postMetrics])
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 text-[#0046ab]">
+                <BarChart3 className="h-5 w-5" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-zinc-500 font-medium">Total Impressions</p>
+              <h3 className="text-2xl font-bold">{stats?.totalImpressions.toLocaleString()}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 text-green-600">
+                <TrendingUp className="h-5 w-5" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-zinc-500 font-medium">Avg. Daily Impressions</p>
+              <h3 className="text-2xl font-bold">{stats?.avgDailyImpressions.toLocaleString(undefined, { maximumFractionDigits: 1 })}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 text-amber-500">
+                <MousePointer2 className="h-5 w-5" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-zinc-500 font-medium">Total Clicks</p>
+              <h3 className="text-2xl font-bold">{stats?.totalClicks.toLocaleString()}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-none shadow-sm">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-2">
+              <div className="p-2 rounded-lg bg-zinc-50 dark:bg-zinc-800 text-indigo-500">
+                <Zap className="h-5 w-5" />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm text-zinc-500 font-medium">Avg. Engagement Rate</p>
+              <h3 className="text-2xl font-bold">{stats?.avgEngRate.toFixed(2)}%</h3>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Placeholder for table or more charts if needed */}
+      <Card className="border-none shadow-sm">
+        <CardHeader>
+          <CardTitle className="text-lg">Recent Content Posts</CardTitle>
+          <CardDescription>Detailed breakdown of your latest LinkedIn posts</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <ScrollArea className="h-[400px]">
+            <Table>
+              <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+                <TableRow>
+                  <TableHead>Post title</TableHead>
+                  <TableHead className="text-right">Impressions</TableHead>
+                  <TableHead className="text-right">Clicks</TableHead>
+                  <TableHead className="text-right">Likes</TableHead>
+                  <TableHead className="text-right">Comments</TableHead>
+                  <TableHead className="text-right">Engagement</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {postMetrics.slice(0, 20).map((post, idx) => (
+                  <TableRow key={idx}>
+                    <TableCell className="font-medium max-w-[300px] truncate">{post['Post title'] || post['Title'] || 'No Title'}</TableCell>
+                    <TableCell className="text-right">{(post['Impressions (organic)'] || post['Impressions'] || 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{(post['Clicks (organic)'] || post['Clicks'] || 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{(post['Likes'] || 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">{(post['Comments'] || 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-right">
+                      {((post['Engagement rate (organic)'] || post['Engagement rate'] || 0) * 100).toFixed(2)}%
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+
+function FollowersView({ data }: { data: CommsData }) {
+  const [displayCategory, setDisplayCategory] = useState("daily")
+
   // KPI Calculations
   const stats = useMemo(() => {
-    if (data.length === 0) return null
+    if (data.newFollowers.length === 0) return null
     
-    const total = data.reduce((acc, curr) => acc + (curr['Total followers'] || 0), 0)
-    const organic = data.reduce((acc, curr) => acc + (curr['Organic followers'] || 0), 0)
-    const sponsored = data.reduce((acc, curr) => acc + (curr['Sponsored followers'] || 0), 0)
-    const invited = data.reduce((acc, curr) => acc + (curr['Auto-invited followers'] || 0), 0)
+    const total = data.newFollowers.reduce((acc, curr) => acc + (curr['Total followers'] || 0), 0)
+    const organic = data.newFollowers.reduce((acc, curr) => acc + (curr['Organic followers'] || 0), 0)
+    const sponsored = data.newFollowers.reduce((acc, curr) => acc + (curr['Sponsored followers'] || 0), 0)
+    const invited = data.newFollowers.reduce((acc, curr) => acc + (curr['Auto-invited followers'] || 0), 0)
 
-    const mid = Math.floor(data.length / 2)
-    const firstHalf = data.slice(0, mid)
-    const secondHalf = data.slice(mid)
+    const mid = Math.floor(data.newFollowers.length / 2)
+    const firstHalf = data.newFollowers.slice(0, mid)
+    const secondHalf = data.newFollowers.slice(mid)
 
     const calcTrend = (key: string) => {
       const fSum = firstHalf.reduce((acc, curr) => acc + (curr[key] || 0), 0)
@@ -191,15 +391,15 @@ function OverviewTab({ data }: { data: any[] }) {
         invited: calcTrend('Auto-invited followers')
       }
     }
-  }, [data])
+  }, [data.newFollowers])
 
   // Chart Data
   const lineChartData = {
-    labels: data.map(r => r.Date),
+    labels: data.newFollowers.map(r => r.Date),
     datasets: [
       {
         label: 'Total Followers',
-        data: data.map(r => r['Total followers']),
+        data: data.newFollowers.map(r => r['Total followers']),
         borderColor: '#0046ab',
         backgroundColor: '#0046ab20',
         fill: true,
@@ -207,14 +407,14 @@ function OverviewTab({ data }: { data: any[] }) {
       },
       {
         label: 'Organic',
-        data: data.map(r => r['Organic followers']),
+        data: data.newFollowers.map(r => r['Organic followers']),
         borderColor: '#10b981',
         backgroundColor: 'transparent',
         tension: 0.4
       },
       {
         label: 'Sponsored',
-        data: data.map(r => r['Sponsored followers']),
+        data: data.newFollowers.map(r => r['Sponsored followers']),
         borderColor: '#f59e0b',
         backgroundColor: 'transparent',
         tension: 0.4
@@ -225,8 +425,7 @@ function OverviewTab({ data }: { data: any[] }) {
   // Weekly Grouping for Bar Chart
   const weeklyData = useMemo(() => {
     const weeks: Record<string, any> = {}
-    data.forEach(r => {
-      // Very basic weekly grouping by index-based 7-day chunks or date parsing
+    data.newFollowers.forEach(r => {
       const date = new Date(r.Date)
       const weekStart = new Date(date)
       weekStart.setDate(date.getDate() - date.getDay())
@@ -241,7 +440,7 @@ function OverviewTab({ data }: { data: any[] }) {
       weeks[weekKey].total += (r['Total followers'] || 0)
     })
     return Object.values(weeks)
-  }, [data])
+  }, [data.newFollowers])
 
   const barChartData = {
     labels: weeklyData.map(w => w.label),
@@ -264,28 +463,28 @@ function OverviewTab({ data }: { data: any[] }) {
     ]
   }
 
-  // Table Sorting
+  // Table Sorting (for daily performance)
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'Date', direction: 'desc' })
-  const avgTotal = stats ? stats.total / data.length : 0
+  const avgTotal = stats ? stats.total / data.newFollowers.length : 0
 
   const sortedData = useMemo(() => {
-    return [...data].sort((a, b) => {
+    return [...data.newFollowers].sort((a, b) => {
       const aVal = a[sortConfig.key]
       const bVal = b[sortConfig.key]
       if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1
       return 0
     })
-  }, [data, sortConfig])
+  }, [data.newFollowers, sortConfig])
 
   // Insights
   const insights = useMemo(() => {
-    if (data.length === 0) return null
-    const peak = [...data].sort((a, b) => b['Total followers'] - a['Total followers'])[0]
-    const lowest = [...data].sort((a, b) => a['Total followers'] - b['Total followers'])[0]
+    if (data.newFollowers.length === 0) return null
+    const peak = [...data.newFollowers].sort((a, b) => b['Total followers'] - a['Total followers'])[0]
+    const lowest = [...data.newFollowers].sort((a, b) => a['Total followers'] - b['Total followers'])[0]
     
     const dayOfWeekTotals: Record<number, number> = {}
-    data.forEach(r => {
+    data.newFollowers.forEach(r => {
       const d = new Date(r.Date).getDay()
       dayOfWeekTotals[d] = (dayOfWeekTotals[d] || 0) + r['Total followers']
     })
@@ -297,18 +496,18 @@ function OverviewTab({ data }: { data: any[] }) {
       peakVal: peak['Total followers'],
       lowDay: lowest.Date,
       lowVal: lowest['Total followers'],
-      dailyAvg: (stats?.total || 0) / data.length,
+      dailyAvg: (stats?.total || 0) / data.newFollowers.length,
       bestDayOfWeek: days[parseInt(bestDayIdx)],
       trend: (stats?.trends.total === 'up' ? 'Growing' : 'Declining')
     }
-  }, [data, stats])
+  }, [data.newFollowers, stats])
 
   return (
     <div className="space-y-6">
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total New Followers', value: stats?.total, icon: Users, trend: stats?.trends.total, color: 'text-[#0046ab]' },
+          { label: 'Total Followers', value: stats?.total, icon: Users, trend: stats?.trends.total, color: 'text-[#0046ab]' },
           { label: 'Organic Followers', value: stats?.organic, icon: MousePointer2, trend: stats?.trends.organic, color: 'text-green-600' },
           { label: 'Sponsored Followers', value: stats?.sponsored, icon: Zap, trend: stats?.trends.sponsored, color: 'text-amber-500' },
           { label: 'Auto-invited', value: stats?.invited, icon: UserPlus, trend: stats?.trends.invited, color: 'text-indigo-500' },
@@ -345,7 +544,7 @@ function OverviewTab({ data }: { data: any[] }) {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2 border-none shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg">New Followers Over Time</CardTitle>
+            <CardTitle className="text-lg">Followers Over Time</CardTitle>
             <CardDescription>Daily growth across all channels</CardDescription>
           </CardHeader>
           <CardContent>
@@ -438,72 +637,107 @@ function OverviewTab({ data }: { data: any[] }) {
         </CardContent>
       </Card>
 
+      {/* Dynamic Data Selection Card */}
       <Card className="border-none shadow-sm overflow-hidden">
-        <CardHeader>
-          <CardTitle className="text-lg">Daily Performance Data</CardTitle>
-          <CardDescription>Detailed breakdown of daily follower metrics</CardDescription>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-7">
+          <div>
+            <CardTitle className="text-xl font-bold">
+              {displayCategory === 'daily' ? 'Daily Performance Data' : 
+               displayCategory === 'location' ? 'Location Distribution' :
+               displayCategory === 'job-function' ? 'Job Function Distribution' :
+               displayCategory === 'seniority' ? 'Seniority Distribution' :
+               displayCategory === 'industry' ? 'Industry Distribution' :
+               'Company Size Distribution'}
+            </CardTitle>
+            <CardDescription>
+              {displayCategory === 'daily' ? 'Detailed breakdown of daily follower metrics' : `Distribution of followers by ${displayCategory.replace('-', ' ')}`}
+            </CardDescription>
+          </div>
+          <Select value={displayCategory} onValueChange={setDisplayCategory}>
+            <SelectTrigger className="w-[200px] bg-white dark:bg-zinc-900">
+              <SelectValue placeholder="Select Category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="daily">Daily Performance</SelectItem>
+              <SelectItem value="location">Location</SelectItem>
+              <SelectItem value="job-function">Job Function</SelectItem>
+              <SelectItem value="seniority">Seniority</SelectItem>
+              <SelectItem value="industry">Industry</SelectItem>
+              <SelectItem value="company-size">Company Size</SelectItem>
+            </SelectContent>
+          </Select>
         </CardHeader>
         <CardContent className="p-0">
-          <ScrollArea className="h-[400px]">
-            <Table>
-              <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
-                <TableRow>
-                  <TableHead className="cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Date', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-                    Date {sortConfig.key === 'Date' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
-                  </TableHead>
-                  <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Organic followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-                    Organic {sortConfig.key === 'Organic followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
-                  </TableHead>
-                  <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Sponsored followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-                    Sponsored {sortConfig.key === 'Sponsored followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
-                  </TableHead>
-                  <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Auto-invited followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-                    Auto-invited {sortConfig.key === 'Auto-invited followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
-                  </TableHead>
-                  <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Total followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
-                    Total {sortConfig.key === 'Total followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
-                  </TableHead>
-                  <TableHead className="text-right">vs Avg</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedData.map((row, idx) => {
-                  const diff = row['Total followers'] - avgTotal
-                  return (
-                    <TableRow key={idx}>
-                      <TableCell className="font-medium">{row.Date}</TableCell>
-                      <TableCell className="text-right">{row['Organic followers']}</TableCell>
-                      <TableCell className="text-right">{row['Sponsored followers']}</TableCell>
-                      <TableCell className="text-right">{row['Auto-invited followers']}</TableCell>
-                      <TableCell className="text-right font-bold">{row['Total followers']}</TableCell>
-                      <TableCell className="text-right">
-                        <span className={`text-xs font-bold ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
-                          {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-              <tfoot className="bg-zinc-100 dark:bg-zinc-800/80 sticky bottom-0 z-10 font-bold">
-                <TableRow>
-                  <TableCell>AVERAGE</TableCell>
-                  <TableCell className="text-right">{(data.reduce((a, c) => a + c['Organic followers'], 0) / data.length).toFixed(1)}</TableCell>
-                  <TableCell className="text-right">{(data.reduce((a, c) => a + c['Sponsored followers'], 0) / data.length).toFixed(1)}</TableCell>
-                  <TableCell className="text-right">{(data.reduce((a, c) => a + c['Auto-invited followers'], 0) / data.length).toFixed(1)}</TableCell>
-                  <TableCell className="text-right">{avgTotal.toFixed(1)}</TableCell>
-                  <TableCell className="text-right">-</TableCell>
-                </TableRow>
-              </tfoot>
-            </Table>
-          </ScrollArea>
+          {displayCategory === 'daily' ? (
+            <ScrollArea className="h-[500px]">
+              <Table>
+                <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+                  <TableRow>
+                    <TableHead className="cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Date', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                      Date {sortConfig.key === 'Date' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
+                    </TableHead>
+                    <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Organic followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                      Organic {sortConfig.key === 'Organic followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
+                    </TableHead>
+                    <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Sponsored followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                      Sponsored {sortConfig.key === 'Sponsored followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
+                    </TableHead>
+                    <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Auto-invited followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                      Auto-invited {sortConfig.key === 'Auto-invited followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
+                    </TableHead>
+                    <TableHead className="text-right cursor-pointer hover:text-[#0046ab]" onClick={() => setSortConfig({ key: 'Total followers', direction: sortConfig.direction === 'asc' ? 'desc' : 'asc' })}>
+                      Total {sortConfig.key === 'Total followers' && (sortConfig.direction === 'asc' ? <ChevronUp className="inline h-4 w-4" /> : <ChevronDown className="inline h-4 w-4" />)}
+                    </TableHead>
+                    <TableHead className="text-right">vs Avg</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedData.map((row, idx) => {
+                    const diff = row['Total followers'] - avgTotal
+                    return (
+                      <TableRow key={idx}>
+                        <TableCell className="font-medium">{row.Date}</TableCell>
+                        <TableCell className="text-right">{row['Organic followers']}</TableCell>
+                        <TableCell className="text-right">{row['Sponsored followers']}</TableCell>
+                        <TableCell className="text-right">{row['Auto-invited followers']}</TableCell>
+                        <TableCell className="text-right font-bold">{row['Total followers']}</TableCell>
+                        <TableCell className="text-right">
+                          <span className={`text-xs font-bold ${diff >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+                            {diff >= 0 ? '+' : ''}{diff.toFixed(1)}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+                <tfoot className="bg-zinc-100 dark:bg-zinc-800/80 sticky bottom-0 z-10 font-bold">
+                  <TableRow>
+                    <TableCell>AVERAGE</TableCell>
+                    <TableCell className="text-right">{(data.newFollowers.reduce((a, c) => a + c['Organic followers'], 0) / data.newFollowers.length).toFixed(1)}</TableCell>
+                    <TableCell className="text-right">{(data.newFollowers.reduce((a, c) => a + c['Sponsored followers'], 0) / data.newFollowers.length).toFixed(1)}</TableCell>
+                    <TableCell className="text-right">{(data.newFollowers.reduce((a, c) => a + c['Auto-invited followers'], 0) / data.newFollowers.length).toFixed(1)}</TableCell>
+                    <TableCell className="text-right">{avgTotal.toFixed(1)}</TableCell>
+                    <TableCell className="text-right">-</TableCell>
+                  </TableRow>
+                </tfoot>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <div className="p-6">
+              {displayCategory === 'location' && <DistributionContent data={data.location} title="Location" column="Location" />}
+              {displayCategory === 'job-function' && <DistributionContent data={data.jobFunction} title="Job Function" column="Job function" isDonut={true} />}
+              {displayCategory === 'seniority' && <DistributionContent data={data.seniority} title="Seniority" column="Seniority" isDonut={true} isPie={true} />}
+              {displayCategory === 'industry' && <DistributionContent data={data.industry} title="Industry" column="Industry" />}
+              {displayCategory === 'company-size' && <DistributionContent data={data.companySize} title="Company Size" column="Company size" isDonut={true} isOrdered={true} />}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
   )
 }
 
-function DistributionTab({ 
+function DistributionContent({ 
   data, 
   title, 
   column, 
@@ -576,91 +810,86 @@ function DistributionTab({
   )
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">{title} Breakdown</CardTitle>
-            <CardDescription>
-              {isDonut || isPie ? 'Proportional distribution' : `Top ${chartData.labels.length} ${title}s`}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center justify-center min-h-[400px]">
-            {isDonut || isPie ? (
-              <div className="h-[350px] w-full">
-                <Doughnut 
-                  data={chartData} 
-                  options={{
-                    maintainAspectRatio: false,
-                    cutout: isDonut ? '60%' : '0%',
-                    plugins: {
-                      legend: { position: 'right', labels: { boxWidth: 12, font: { size: 10 } } }
-                    }
-                  }} 
-                />
-              </div>
-            ) : (
-              <div className="h-[400px] w-full">
-                <Bar 
-                  data={chartData} 
-                  options={{
-                    indexAxis: 'y',
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
-                    scales: { x: { beginAtZero: true } }
-                  }} 
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card className="border-none shadow-sm flex flex-col">
-          <CardHeader className="pb-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg">Data Table</CardTitle>
-                <CardDescription>Full list of {title.toLowerCase()} data</CardDescription>
-              </div>
-              <div className="relative w-48">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                <Input 
-                  placeholder="Search..." 
-                  className="pl-9 h-9" 
-                  value={searchTerm} 
-                  onChange={(e) => setSearchTerm(e.target.value)} 
-                />
-              </div>
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      <div className="flex flex-col space-y-4">
+        <div className="flex items-center justify-between">
+          <h4 className="text-sm font-bold uppercase tracking-wider text-zinc-500">Visual Distribution</h4>
+          <Badge variant="outline">{chartData.labels.length} segments</Badge>
+        </div>
+        <div className="flex items-center justify-center min-h-[350px] bg-zinc-50/50 dark:bg-zinc-800/20 rounded-2xl p-4">
+          {isDonut || isPie ? (
+            <div className="h-[300px] w-full">
+              <Doughnut 
+                data={chartData} 
+                options={{
+                  maintainAspectRatio: false,
+                  cutout: isDonut ? '65%' : '0%',
+                  plugins: {
+                    legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 9 }, padding: 15 } }
+                  }
+                }} 
+              />
             </div>
-          </CardHeader>
-          <CardContent className="p-0 flex-1">
-            <ScrollArea className="h-[400px]">
-              <Table>
-                <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
-                  <TableRow>
-                    <TableHead className="w-[60px]">Rank</TableHead>
-                    <TableHead>{title}</TableHead>
-                    <TableHead className="text-right">Followers</TableHead>
-                    <TableHead className="text-right">% of Total</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredTableData.map((item) => (
-                    <TableRow key={item.label}>
-                      <TableCell className="text-zinc-500 font-mono text-xs">{item.rank}</TableCell>
-                      <TableCell className="font-medium">{item.label}</TableCell>
-                      <TableCell className="text-right">{item.value.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="secondary" className="font-mono text-[#0046ab]">{item.percent}%</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </CardContent>
-        </Card>
+          ) : (
+            <div className="h-[350px] w-full">
+              <Bar 
+                data={chartData} 
+                options={{
+                  indexAxis: 'y',
+                  maintainAspectRatio: false,
+                  plugins: { legend: { display: false } },
+                  scales: { 
+                    x: { beginAtZero: true, grid: { display: false } },
+                    y: { grid: { display: false } }
+                  }
+                }} 
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="relative w-full max-w-[200px]">
+            <Search className="absolute left-2 top-2.5 h-3.5 w-3.5 text-zinc-500" />
+            <Input 
+              placeholder="Filter..." 
+              className="pl-8 h-8 text-xs bg-white dark:bg-zinc-900" 
+              value={searchTerm} 
+              onChange={(e) => setSearchTerm(e.target.value)} 
+            />
+          </div>
+          <p className="text-[10px] font-bold text-zinc-400 uppercase">Total: {total.toLocaleString()}</p>
+        </div>
+        <ScrollArea className="h-[350px] border rounded-xl bg-white dark:bg-zinc-900/50">
+          <Table>
+            <TableHeader className="bg-zinc-50 dark:bg-zinc-800 sticky top-0 z-10">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[50px] text-[10px] uppercase font-bold">Rank</TableHead>
+                <TableHead className="text-[10px] uppercase font-bold">{title}</TableHead>
+                <TableHead className="text-right text-[10px] uppercase font-bold">Followers</TableHead>
+                <TableHead className="text-right text-[10px] uppercase font-bold">%</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredTableData.map((item) => (
+                <TableRow key={item.label} className="group">
+                  <TableCell className="text-zinc-400 font-mono text-[10px] py-2">{item.rank}</TableCell>
+                  <TableCell className="font-medium text-sm py-2">{item.label}</TableCell>
+                  <TableCell className="text-right text-sm py-2">{item.value.toLocaleString()}</TableCell>
+                  <TableCell className="text-right py-2">
+                    <span className="text-xs font-mono font-bold text-[#0046ab] bg-[#0046ab10] px-1.5 py-0.5 rounded">
+                      {item.percent}%
+                    </span>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </ScrollArea>
       </div>
     </div>
   )
 }
+

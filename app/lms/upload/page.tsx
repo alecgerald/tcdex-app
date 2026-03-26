@@ -125,8 +125,9 @@ export default function ExcelUploadPage() {
   }
 
   const applyFiltersAndProcess = () => {
-    if (selectedLocations.length === 0 || selectedDUs.length === 0) {
-      toast.error("Please select at least one Location and one Delivery Unit")
+    const isStatus = importType === 'status'
+    if ((isStatus && selectedLocations.length === 0) || selectedDUs.length === 0) {
+      toast.error(`Please select at least one ${isStatus ? 'Location and one ' : ''}Delivery Unit`)
       return
     }
     setIsLoading(true)
@@ -135,7 +136,8 @@ export default function ExcelUploadPage() {
       const filtered = rawData.filter(row => {
         const loc = String(row[locationCol] || "Unknown")
         const du = String(row[duCol] || "Unknown")
-        return selectedLocations.includes(loc) && selectedDUs.includes(du)
+        const locMatch = isStatus ? selectedLocations.includes(loc) : true
+        return locMatch && selectedDUs.includes(du)
       }).map((row, index) => ({
         ...row,
         id: `row-${index}-${Date.now()}`
@@ -356,29 +358,31 @@ export default function ExcelUploadPage() {
       )}
 
       {step === 'filter' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card className="border-none shadow-sm">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Locations</CardTitle>
-              <CardDescription>Detected in column: <span className="font-semibold">{locationCol}</span></CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[300px] pr-4">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2 pb-2 border-b">
-                    <Checkbox id="all-locs" checked={selectedLocations.length === uniqueFilterValues.locations.length} onCheckedChange={(checked) => setSelectedLocations(checked ? uniqueFilterValues.locations : [])} />
-                    <Label htmlFor="all-locs" className="font-bold">Select All Locations</Label>
-                  </div>
-                  {uniqueFilterValues.locations.map(loc => (
-                    <div key={loc} className="flex items-center space-x-2">
-                      <Checkbox id={`loc-${loc}`} checked={selectedLocations.includes(loc)} onCheckedChange={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])} />
-                      <Label htmlFor={`loc-${loc}`}>{loc}</Label>
+        <div className={`grid grid-cols-1 ${importType === 'status' ? 'md:grid-cols-2' : 'max-w-2xl mx-auto w-full'} gap-6`}>
+          {importType === 'status' && (
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Locations</CardTitle>
+                <CardDescription>Detected in column: <span className="font-semibold">{locationCol}</span></CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox id="all-locs" checked={selectedLocations.length === uniqueFilterValues.locations.length} onCheckedChange={(checked) => setSelectedLocations(checked ? uniqueFilterValues.locations : [])} />
+                      <Label htmlFor="all-locs" className="font-bold">Select All Locations</Label>
                     </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-          </Card>
+                    {uniqueFilterValues.locations.map(loc => (
+                      <div key={loc} className="flex items-center space-x-2">
+                        <Checkbox id={`loc-${loc}`} checked={selectedLocations.includes(loc)} onCheckedChange={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])} />
+                        <Label htmlFor={`loc-${loc}`}>{loc}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
 
           <Card className="border-none shadow-sm flex flex-col">
             <CardHeader>
@@ -403,8 +407,10 @@ export default function ExcelUploadPage() {
             </CardContent>
             <div className="p-6 pt-0 border-t">
               <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-zinc-500">{selectedLocations.length} locations & {selectedDUs.length} DUs selected</p>
-                <Button onClick={applyFiltersAndProcess} disabled={isLoading || selectedLocations.length === 0 || selectedDUs.length === 0} className="bg-[#0046ab] hover:bg-[#003a8f] text-white">
+                <p className="text-sm text-zinc-500">
+                  {importType === 'status' ? `${selectedLocations.length} locations & ` : ''}{selectedDUs.length} DUs selected
+                </p>
+                <Button onClick={applyFiltersAndProcess} disabled={isLoading || (importType === 'status' && selectedLocations.length === 0) || selectedDUs.length === 0} className="bg-[#0046ab] hover:bg-[#003a8f] text-white">
                   {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
                   Process Data
                 </Button>
