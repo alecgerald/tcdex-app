@@ -48,6 +48,7 @@ interface CommsLog {
   uploadedAt: string
   type: string
   rows?: any[]
+  sheets?: Record<string, any[]>
   // Legacy fields
   newFollowers?: any[]
   contentDailyMetrics?: any[]
@@ -142,6 +143,13 @@ export default function CommsAuditLogsPage() {
   }
 
   const getTabs = (log: CommsLog) => {
+    if (log.sheets && Object.keys(log.sheets).length > 0) {
+      return Object.entries(log.sheets).map(([sheetName, sheetData]) => ({
+        id: sheetName,
+        label: sheetName,
+        data: sheetData
+      }))
+    }
     if (log.rows) {
       return [{ id: "data", label: "Data Records", data: log.rows }]
     }
@@ -301,7 +309,7 @@ export default function CommsAuditLogsPage() {
             {selectedLog && (
               <Tabs defaultValue={getTabs(selectedLog)[0].id} className="flex-1 flex flex-col h-full overflow-hidden">
                 <div className="px-6 border-b bg-zinc-50/50 dark:bg-zinc-900/50 shrink-0">
-                  <TabsList className="bg-transparent h-auto p-0 gap-6 justify-start overflow-x-auto whitespace-nowrap scrollbar-none">
+                  <TabsList className="bg-transparent h-auto p-0 gap-6 justify-start flex-wrap">
                     {getTabs(selectedLog).map(tab => (
                       <TabsTrigger 
                         key={tab.id} 

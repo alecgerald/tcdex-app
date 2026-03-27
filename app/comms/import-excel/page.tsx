@@ -35,6 +35,7 @@ interface ImportData {
   uploadedAt: string
   type: string
   rows: any[]
+  sheets?: Record<string, any[]>
 }
 
 export default function CommsImportExcelPage() {
@@ -42,6 +43,7 @@ export default function CommsImportExcelPage() {
   const [data, setData] = useState<ImportData | null>(null)
   const [activeUploadType, setActiveUploadType] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState("")
+  const [activeSheet, setActiveSheet] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const uploadTypes = [
@@ -62,44 +64,54 @@ export default function CommsImportExcelPage() {
       if (extension === 'csv') {
         const Papa = (await import('papaparse')).default
         
-        if (activeUploadType === "facebook-visits" || activeUploadType === "instagram-views") {
-          // Read as text to skip the first line manually for CSV
-          const text = await file.text()
-          const lines = text.split(/\r?\n/)
-          const csvWithoutFirstLine = lines.slice(1).join('\n')
-          
-          Papa.parse(csvWithoutFirstLine, {
-            header: true,
-            dynamicTyping: true,
-            skipEmptyLines: 'greedy',
-            complete: (results) => {
-              const importData: ImportData = {
-                id: `log-${Date.now()}`,
-                fileName: file.name,
-                uploadedAt: new Date().toISOString(),
-                type: activeUploadType,
-                rows: results.data
+        Papa.parse(file, {
+          header: false,
+          dynamicTyping: true,
+          skipEmptyLines: 'greedy',
+          complete: (results) => {
+            const dataArray = results.data as any[][];
+            let headerRowIndex = 0;
+
+            if (activeUploadType === "facebook-visits" || activeUploadType === "instagram-views" || activeUploadType === "linkedin-analytics") {
+              for (let i = 0; i < Math.min(5, dataArray.length); i++) {
+                const row = dataArray[i] || [];
+                const isHeaderRow = row.length > 1 && row.some((cell: any) => {
+                  const c = String(cell).trim().toLowerCase();
+                  return c === 'date' || c === 'primary' || c === 'impressions' || c === 'post title' || c === 'campaign name' || c === 'created date';
+                });
+                
+                if (isHeaderRow) {
+                  headerRowIndex = i;
+                  break;
+                }
               }
-              saveAndShowData(importData)
             }
-          })
-        } else {
-          Papa.parse(file, {
-            header: true,
-            dynamicTyping: true,
-            skipEmptyLines: 'greedy',
-            complete: (results) => {
-              const importData: ImportData = {
-                id: `log-${Date.now()}`,
-                fileName: file.name,
-                uploadedAt: new Date().toISOString(),
-                type: activeUploadType,
-                rows: results.data
-              }
-              saveAndShowData(importData)
-            }
-          })
-        }
+
+            const headers = dataArray[headerRowIndex] || [];
+            const dataRows = dataArray.slice(headerRowIndex + 1);
+            
+            const mappedRows = dataRows.map(row => {
+              const obj: any = {};
+              headers.forEach((header: any, index: number) => {
+                // Remove invisible BOM characters effectively ensuring clean keys
+                const cleanHeader = typeof header === 'string' ? header.replace(/^\uFEFF/, '').trim() : header;
+                if (cleanHeader) {
+                  obj[cleanHeader] = row[index];
+                }
+              });
+              return obj;
+            });
+
+            const importData: ImportData = {
+              id: `log-${Date.now()}`,
+              fileName: file.name,
+              uploadedAt: new Date().toISOString(),
+              type: activeUploadType,
+              rows: mappedRows
+            };
+            saveAndShowData(importData);
+          }
+        });
       } else if (extension === 'xlsx' || extension === 'xls') {
         const xlsxModule = await import('xlsx')
         const XLSX = (xlsxModule as any).default || xlsxModule
@@ -109,39 +121,62 @@ export default function CommsImportExcelPage() {
           try {
             const ab = event.target?.result as ArrayBuffer
             const workbook = XLSX.read(new Uint8Array(ab), { type: "array" })
-            const sheet = workbook.Sheets[workbook.SheetNames[0]]
+            let allRows: any[] = []
+            const sheetsData: Record<string, any[]> = {}
             
-            let rows: any[] = []
-            if (activeUploadType === "facebook-visits" || activeUploadType === "instagram-views") {
-              // Use header: 1 to get raw array of arrays
-              const dataArray: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 })
+            workbook.SheetNames.forEach((sheetName: string) => {
+              const currentSheet = workbook.Sheets[sheetName]
               
-              if (dataArray.length > 1) {
-                // Row 0: Title (e.g., "Facebook visits")
-                // Row 1: ["Date", "Primary"]
-                const headers = dataArray[1]
-                const dataRows = dataArray.slice(2)
-                
-                rows = dataRows.map(row => {
-                  const obj: any = {}
-                  headers.forEach((header: string, index: number) => {
-                    if (header) {
-                      obj[header] = row[index]
+              if (activeUploadType === "facebook-visits" || activeUploadType === "instagram-views" || activeUploadType === "linkedin-analytics") {
+                // Apply smart explicit header detection across all major platforms,
+                // bypassing structural variables like rogue meta-title rows entirely.
+                const dataArray: any[][] = XLSX.utils.sheet_to_json(currentSheet, { header: 1 })
+                if (dataArray.length > 0) {
+                  let headerRowIndex = 0;
+                  
+                  // Scan the first 5 rows looking for exact standard column headers
+                  for (let i = 0; i < Math.min(5, dataArray.length); i++) {
+                    const row = dataArray[i] || [];
+                    const isHeaderRow = row.length > 1 && row.some((cell: any) => {
+                      const c = String(cell).trim().toLowerCase();
+                      return c === 'date' || c === 'primary' || c === 'impressions' || c === 'post title' || c === 'campaign name' || c === 'created date';
+                    });
+                    
+                    if (isHeaderRow) {
+                      headerRowIndex = i;
+                      break;
                     }
-                  })
-                  return obj
-                })
-              }
-            } else {
-              rows = XLSX.utils.sheet_to_json(sheet)
-            }
+                  }
 
+                  const headers = dataArray[headerRowIndex]
+                  const dataRows = dataArray.slice(headerRowIndex + 1)
+                  
+                  const sheetRows = dataRows.map(row => {
+                    const obj: any = {}
+                    headers.forEach((header: any, index: number) => {
+                      if (header) {
+                        obj[header] = row[index]
+                      }
+                    })
+                    return obj
+                  })
+                  sheetsData[sheetName] = sheetRows
+                  allRows = [...allRows, ...sheetRows]
+                }
+              } else {
+                const sheetRows = XLSX.utils.sheet_to_json(currentSheet)
+                sheetsData[sheetName] = sheetRows
+                allRows = [...allRows, ...sheetRows]
+              }
+            })
+            
             const importData: ImportData = {
               id: `log-${Date.now()}`,
               fileName: file.name,
               uploadedAt: new Date().toISOString(),
               type: activeUploadType,
-              rows: rows as any[]
+              rows: allRows,
+              sheets: sheetsData
             }
             saveAndShowData(importData)
           } catch (error) {
@@ -164,16 +199,41 @@ export default function CommsImportExcelPage() {
   }
 
   const saveAndShowData = (importData: ImportData) => {
+    if (importData.type === "facebook-visits" || importData.type === "instagram-views" || importData.type === "linkedin-analytics" || importData.type === "tiktok-overview") {
+      importData.rows = importData.rows.map(row => {
+        if (typeof row === 'object' && row !== null) {
+          const newRow = { ...row };
+          for (const key in newRow) {
+            const val = newRow[key];
+            if (typeof val === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(val)) {
+              newRow[key] = val.split('T')[0];
+            }
+          }
+          return newRow;
+        }
+        return row;
+      });
+    }
+
     const logs = JSON.parse(localStorage.getItem("comms_audit_logs") || "[]")
     localStorage.setItem("comms_audit_logs", JSON.stringify([importData, ...logs]))
     
-    if (activeUploadType === "facebook-visits") {
+    if (importData.type === "facebook-visits") {
       localStorage.setItem("comms_facebook_visits_data", JSON.stringify(importData))
-    } else if (activeUploadType === "instagram-views") {
+    } else if (importData.type === "instagram-views") {
       localStorage.setItem("comms_instagram_views_data", JSON.stringify(importData))
+    } else if (importData.type === "linkedin-analytics") {
+      localStorage.setItem("comms_linkedin_analytics_data", JSON.stringify(importData))
+    } else if (importData.type === "tiktok-overview") {
+      localStorage.setItem("comms_tiktok_overview_data", JSON.stringify(importData))
     }
 
     setData(importData)
+    if (importData.sheets) {
+      setActiveSheet(Object.keys(importData.sheets)[0])
+    } else {
+      setActiveSheet(null)
+    }
     setIsLoading(false)
     toast.success(`${importData.fileName} imported successfully`)
   }
@@ -183,8 +243,9 @@ export default function CommsImportExcelPage() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  const columns = data?.rows.length ? Object.keys(data.rows[0]) : []
-  const filteredData = data?.rows.filter(row => 
+  const currentRows = (data?.sheets && activeSheet) ? data.sheets[activeSheet] : (data?.rows || [])
+  const columns = currentRows.length ? Object.keys(currentRows[0]) : []
+  const filteredData = currentRows.filter((row: any) => 
     Object.values(row).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase()))
   ) || []
 
@@ -201,7 +262,24 @@ export default function CommsImportExcelPage() {
         <Card>
           <CardHeader>
             <CardTitle>Data Preview</CardTitle>
-            <CardDescription>{data.rows.length} rows found in file.</CardDescription>
+            <CardDescription>{currentRows.length} rows found in {activeSheet ? `sheet "${activeSheet}"` : "file"}.</CardDescription>
+            {data.sheets && Object.keys(data.sheets).length > 1 && (
+              <div className="flex items-center gap-2 mt-4">
+                <span className="text-sm font-medium">Select Sheet:</span>
+                <div className="flex flex-wrap gap-2">
+                  {Object.keys(data.sheets).map(sheetName => (
+                    <Button 
+                      key={sheetName} 
+                      variant={activeSheet === sheetName ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setActiveSheet(sheetName)}
+                    >
+                      {sheetName}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <ScrollArea className="h-[400px]">
