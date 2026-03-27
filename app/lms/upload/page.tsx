@@ -81,12 +81,30 @@ export default function ExcelUploadPage() {
         const workbook = read(data, { type: "binary" })
         const sheetName = workbook.SheetNames[0]
         const sheet = workbook.Sheets[sheetName]
-        const jsonData = utils.sheet_to_json(sheet)
-        if (!jsonData || jsonData.length === 0) {
-          toast.error("The uploaded file is empty")
+        
+        let jsonData: any[] = []
+        let foundHeaders = false
+
+        // AUTO-SCAN: Try Row 1 to 5 to find a row with a "Status" or "Location" column
+        for (let i = 0; i < 5; i++) {
+          const attemptData = utils.sheet_to_json(sheet, { range: i }) as any[]
+          if (attemptData.length > 0) {
+            const headers = Object.keys(attemptData[0])
+            const hasKeyColumns = headers.some(h => /status|location|site|department|du/i.test(h))
+            if (hasKeyColumns) {
+              jsonData = attemptData
+              foundHeaders = true
+              break
+            }
+          }
+        }
+
+        if (!foundHeaders || jsonData.length === 0) {
+          toast.error("Could not find valid headers in the first 5 rows. Please ensure 'Status' or 'Location' columns exist.")
           setIsLoading(false)
           return
         }
+
         setRawData(jsonData)
         setStep('filter')
         toast.success("File read successfully. Please select filters.")

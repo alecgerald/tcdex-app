@@ -4,14 +4,12 @@ import { useEffect, useState } from "react"
 import { 
   Users, 
   Search, 
-  Filter,
   Download,
   Mail,
   MoreHorizontal,
   UserPlus,
   MapPin,
-  Building2,
-  UserCheck
+  Building2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -37,7 +35,6 @@ interface Member {
   Location: string
   "Primary ERG": string
   "Join Date": string
-  Status: string
   [key: string]: any
 }
 
@@ -45,7 +42,6 @@ export default function ERGDirectoryPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedERG, setSelectedERG] = useState<string>("All")
-  const [selectedStatus, setSelectedStatus] = useState<string>("All")
 
   useEffect(() => {
     const data = localStorage.getItem("erg_membership_registry")
@@ -55,15 +51,13 @@ export default function ERGDirectoryPage() {
   }, [])
 
   const ergs = ["All", ...Array.from(new Set(members.map(m => m["Primary ERG"] || "Unassigned")))]
-  const statuses = ["All", ...Array.from(new Set(members.map(m => m.Status || "Unknown")))]
 
   const filteredMembers = members.filter(member => {
     const matchesSearch = Object.values(member).some(val => 
       String(val).toLowerCase().includes(searchTerm.toLowerCase())
     )
     const matchesERG = selectedERG === "All" || member["Primary ERG"] === selectedERG
-    const matchesStatus = selectedStatus === "All" || member.Status === selectedStatus
-    return matchesSearch && matchesERG && matchesStatus
+    return matchesSearch && matchesERG
   })
 
   const exportToExcel = () => {
@@ -121,21 +115,6 @@ export default function ERGDirectoryPage() {
                     ))}
                   </div>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400">Status Filter</span>
-                  <div className="flex items-center gap-2">
-                    {statuses.map(status => (
-                      <Badge 
-                        key={status}
-                        variant={selectedStatus === status ? "default" : "outline"}
-                        className={selectedStatus === status ? "bg-[#0046ab] hover:bg-[#0046ab]" : "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800"}
-                        onClick={() => setSelectedStatus(status)}
-                      >
-                        {status}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
               </div>
             </div>
             <div className="text-sm text-zinc-500 font-medium">
@@ -166,7 +145,6 @@ export default function ERGDirectoryPage() {
                     <TableHead>Name</TableHead>
                     <TableHead>Primary ERG</TableHead>
                     <TableHead>Location</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead>Join Date</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -197,14 +175,6 @@ export default function ERGDirectoryPage() {
                             {member["Delivery Unit / Business Unit"]}
                           </div>
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant="outline" 
-                          className={member.Status === "Active" ? "text-green-600 border-green-200 bg-green-50" : "text-zinc-400 bg-zinc-50"}
-                        >
-                          {member.Status}
-                        </Badge>
                       </TableCell>
                       <TableCell className="text-zinc-500 text-sm">{member["Join Date"]}</TableCell>
                       <TableCell className="text-right">

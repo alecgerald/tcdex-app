@@ -74,7 +74,11 @@ export default function ERGDashboard() {
   // Figure 2: Monthly Growth Trends (Simulated Multi-series Line Chart)
   const growthTrends = useMemo(() => {
     const relevantSnapshots = snapshots.filter(s => selectedERG === "All" || s.ERG === selectedERG)
-    const months = ["Jan Members", "Feb Members", "Mar Members", "Apr Members"]
+    const months = [
+      "Jan Members", "Feb Members", "Mar Members", "Apr Members", 
+      "May Members", "Jun Members", "Jul Members", "Aug Members", 
+      "Sep Members", "Oct Members", "Nov Members", "Dec Members"
+    ]
     return relevantSnapshots.map(s => ({
       name: s.ERG,
       data: months.map(m => s[m] || 0),
@@ -163,8 +167,21 @@ export default function ERGDashboard() {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold">ERG Dashboard</h1>
-          <p className="text-zinc-500">Holistic Performance & Impact Monitor</p>
+          <div className="flex items-center gap-3 mb-1">
+            <h1 className="text-3xl font-bold">ERG Dashboard</h1>
+            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 border-green-200 flex items-center gap-1.5 py-0.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              System Healthy
+            </Badge>
+          </div>
+          <div className="flex items-center gap-2 text-zinc-500">
+            <p>Holistic Performance & Impact Monitor</p>
+            <span>•</span>
+            <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase bg-zinc-100 px-2 py-0.5 rounded text-zinc-400 dark:bg-zinc-800">
+              <Activity className="h-3 w-3" />
+              Last Sync: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </div>
+          </div>
         </div>
         <div className="flex gap-4">
           <Select value={selectedERG} onValueChange={setSelectedERG}>
@@ -225,7 +242,9 @@ export default function ERGDashboard() {
               ))}
             </div>
             <div className="flex justify-between mt-2 text-[10px] text-zinc-400 font-bold uppercase">
-              <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span>
+              {["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"].map(m => (
+                <span key={m}>{m}</span>
+              ))}
             </div>
           </CardContent>
         </Card>
