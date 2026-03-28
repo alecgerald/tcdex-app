@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Users, Eye, Play, Instagram as InstagramIcon, Facebook, Linkedin, ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight } from "lucide-react"
+import { Users, Eye, Play, Instagram as InstagramIcon, Facebook, Linkedin, ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
@@ -255,9 +255,10 @@ export default function ExternalBrandPage() {
 
       const createdDateRaw = lcRow['created date'] || lcRow['date'] || '';
       const createdDateValue = getNormalizeDateString(createdDateRaw);
+      const postLink = lcRow['post link'] || '';
       
       return {
-        title, titleRaw, impressions, clicks, likes, comments, reposts, engagementRate, createdDateRaw, createdDateValue
+        title, titleRaw, postLink, impressions, clicks, likes, comments, reposts, engagementRate, createdDateRaw, createdDateValue
       }
     }).sort((a, b) => {
       const dateA = a.createdDateValue || "";
@@ -663,7 +664,14 @@ export default function ExternalBrandPage() {
                           <div className="truncate font-medium text-zinc-900 dark:text-zinc-100" title={post.titleRaw}>
                             {post.title}
                           </div>
-                          <div className="text-[10px] text-zinc-500 mt-1">{post.createdDateValue || "N/A"}</div>
+                          <div className="flex items-center mt-1">
+                            <span className="text-[10px] text-zinc-500">{post.createdDateValue || "N/A"}</span>
+                            {post.postLink && (
+                              <a href={post.postLink.startsWith('http') ? post.postLink : `https://${post.postLink}`} target="_blank" rel="noopener noreferrer" className="ml-1.5 text-zinc-400 hover:text-blue-500 transition-colors" title="View Post on LinkedIn">
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right text-zinc-600 dark:text-zinc-400 font-mono text-xs py-3">{post.impressions.toLocaleString()}</TableCell>
                         <TableCell className="text-right text-zinc-600 dark:text-zinc-400 font-mono text-xs py-3">{post.clicks.toLocaleString()}</TableCell>
