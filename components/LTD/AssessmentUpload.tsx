@@ -144,7 +144,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
 
             if (existing && cacheKey) {
               participantId = existing.id;
-              participantCache.set(cacheKey, participantId);
+              participantCache.set(cacheKey, existing.id);
             } else {
               const placeholderEmail = `${participantName.toLowerCase().replace(/[^a-z0-9]/g, '')}@placeholder.local`;
               const { data: newPart, error: insErr } = await supabase
@@ -164,7 +164,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
               }
               if (newPart && cacheKey) {
                 participantId = newPart.id;
-                participantCache.set(cacheKey, participantId);
+                participantCache.set(cacheKey, newPart.id);
               }
               createdParticipants++;
             }
@@ -191,7 +191,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
             if (!comp) continue;
 
             allRatings.push({
-              participant_id: participantId,
+              participant_id: participantId!,
               assessment_type: assessmentType,
               indicator_text: headers[ratingStartIdx + i]?.toString() || `Indicator ${i+1}`,
               competency: comp.name,
