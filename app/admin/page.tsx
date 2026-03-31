@@ -37,7 +37,7 @@ const formSchema = z.object({
   password: z.string().min(6, {
     message: "Password must be at least 6 characters.",
   }),
-  role: z.enum(roles),
+  role: z.enum(roles as const),
 })
 
 export default function AdminPage() {
