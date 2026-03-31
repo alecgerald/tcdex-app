@@ -43,6 +43,11 @@ export default function ERGDashboard() {
   const [selectedBU, setSelectedBU] = useState("All")
   const [showTrendlines, setShowTrendlines] = useState(true)
 
+  // Date Range Filter States
+  const ALL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+  const [startMonth, setStartMonth] = useState(0) // Jan
+  const [endMonth, setEndMonth] = useState(11)    // Dec
+
   useEffect(() => {
     setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
     setSnapshots(JSON.parse(localStorage.getItem("erg_membership_snapshots") || "[]"))
@@ -93,11 +98,15 @@ export default function ERGDashboard() {
   // Figure 2: Monthly Growth Trends (Dynamic Scale Line Chart)
   const growthTrendInfo = useMemo(() => {
     const relevantSnapshots = snapshots.filter(s => selectedERG === "All" || s.ERG === selectedERG)
-    const monthKeys = [
+    const allMonthKeys = [
       "Jan Members", "Feb Members", "Mar Members", "Apr Members", 
       "May Members", "Jun Members", "Jul Members", "Aug Members", 
       "Sep Members", "Oct Members", "Nov Members", "Dec Members"
     ]
+
+    // Slice based on startMonth and endMonth
+    const monthKeys = allMonthKeys.slice(startMonth, endMonth + 1)
+    const displayMonths = ALL_MONTHS.slice(startMonth, endMonth + 1)
     
     // Find global max for scaling
     let maxVal = 0
@@ -117,8 +126,9 @@ export default function ERGDashboard() {
       growth: s["Growth Rate %"] || 0
     }))
 
-    return { trends, maxVal, months: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] }
-  }, [snapshots, selectedERG])
+    return { trends, maxVal, months: displayMonths }
+  }, [snapshots, selectedERG, startMonth, endMonth])
+
 
   // Figure 3: Attendance by Activity Type (Stacked Column)
   const attendanceByType = useMemo(() => {
@@ -280,6 +290,29 @@ export default function ERGDashboard() {
                   </button>
                 </div>
                 <CardDescription>Monthly enrollment progress</CardDescription>
+                <div className="flex items-center gap-2 mt-2">
+                  <Select value={String(startMonth)} onValueChange={(v) => setStartMonth(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                      <SelectValue placeholder="Start" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_MONTHS.map((m, i) => (
+                        <SelectItem key={m} value={String(i)} disabled={i > endMonth}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">to</span>
+                  <Select value={String(endMonth)} onValueChange={(v) => setEndMonth(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                      <SelectValue placeholder="End" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_MONTHS.map((m, i) => (
+                        <SelectItem key={m} value={String(i)} disabled={i < startMonth}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end max-w-[200px]">
                 {growthTrendInfo.trends.map((t) => (
