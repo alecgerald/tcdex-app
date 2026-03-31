@@ -128,7 +128,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
             continue;
           }
 
-          const cacheKey = participantName.toLowerCase();
+          const cacheKey = participantName.toLowerCase().trim();
           let participantId: string | null = null;
 
           // 1. Participant Identification / Creation
@@ -141,7 +141,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
               .ilike('name', participantName)
               .maybeSingle();
 
-            if (existing) {
+            if (existing && cacheKey) {
               participantId = existing.id;
               participantCache.set(cacheKey, participantId);
             } else {
