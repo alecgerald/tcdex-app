@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { 
@@ -86,11 +86,20 @@ const sidebarCategories = [
   },
 ]
 
-export default function CommsLayout({ children }: { children: React.ReactNode }) {
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
   const username = "tcdex.user"
+
+  // Automatically open the category corresponding to the current pathname
+  useEffect(() => {
+    // pathname example: "/lms/upload"
+    const currentCategory = sidebarCategories.find(cat => pathname.startsWith(`/${cat.id}`))
+    if (currentCategory && !openCategories.includes(currentCategory.id)) {
+      setOpenCategories((prev) => [...prev, currentCategory.id])
+    }
+  }, [pathname, openCategories])
 
   const toggleCategory = (id: string) => {
     setOpenCategories((prev) => 
@@ -213,18 +222,19 @@ export default function CommsLayout({ children }: { children: React.ReactNode })
         </ScrollArea>
 
         <div className="p-4 border-t shrink-0">
-          <Link href="/login">
-            <Button 
-              variant="ghost" 
-              className={cn(
-                "w-full justify-start text-zinc-500",
-                !isSidebarOpen && "justify-center"
-              )}
-            >
+          <Button 
+            variant="ghost" 
+            asChild
+            className={cn(
+              "w-full justify-start text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-50",
+              !isSidebarOpen && "justify-center"
+            )}
+          >
+            <Link href="/login">
               <LogOut className="h-5 w-5 shrink-0" />
               <span className={cn("ml-3 transition-all duration-300", !isSidebarOpen && "hidden opacity-0")}>Logout</span>
-            </Button>
-          </Link>
+            </Link>
+          </Button>
         </div>
       </aside>
 
