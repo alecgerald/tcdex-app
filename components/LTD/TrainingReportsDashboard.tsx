@@ -266,10 +266,10 @@ const TrainingReportsDashboard: React.FC = () => {
                     <Tooltip 
                       cursor={{ fill: '#f8fafc' }} 
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)', fontSize: '11px' }}
-                      formatter={(value: number, name: string, props: any) => [
-                        `${value}%`, 
-                        `Distribution (Total: ${props.payload.count} participants)`
-                      ]}
+                      formatter={(value: any, name: any, props: any) => {
+                        const percent = value !== undefined && value !== null ? `${value}%` : 'N/A';
+                        return [percent, `Distribution (Total: ${props.payload.count} participants)`];
+                      }}
                     />
                     <Bar dataKey="percentage" fill="#0046ab" radius={[6, 6, 0, 0]} barSize={45}>
                       {departmentChartData.map((entry, index) => (
