@@ -128,7 +128,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
             continue;
           }
 
-          const cacheKey = participantName.toLowerCase().trim();
+          const cacheKey = participantName?.toLowerCase().trim() ?? '';
           let participantId: string | null = null;
 
           // 1. Participant Identification / Creation
