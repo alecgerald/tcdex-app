@@ -142,7 +142,7 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
               .ilike('name', participantName)
               .maybeSingle();
 
-            if (existing) {
+            if (existing && cacheKey) {
               participantId = existing.id;
               participantCache.set(cacheKey, participantId);
             } else {
@@ -162,8 +162,10 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
                 errors++;
                 continue;
               }
-              participantId = newPart.id;
-              participantCache.set(cacheKey, participantId);
+              if (newPart && cacheKey) {
+                participantId = newPart.id;
+                participantCache.set(cacheKey, participantId);
+              }
               createdParticipants++;
             }
           }
