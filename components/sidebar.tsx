@@ -43,6 +43,7 @@ const sidebarCategories = [
       { name: "Leadership Dashboard", href: "/lt/dashboard", icon: LayoutDashboard },
       { name: "Training Reports", href: "/lt/training-reports", icon: BarChart3 },
       { name: "Self-Paced", href: "/lt/self-paced", icon: GraduationCap },
+      { name: "VILT Tracker", href: "/lt/vilt-tracker", icon: Presentation },
       { name: "LeadX & BuildX Reports", href: "/lt/leadx-reports", icon: Presentation },
       { name: "Import Excel", href: "/lt/import", icon: FileUp },
     ],

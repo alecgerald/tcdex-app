@@ -36,8 +36,10 @@ import {
   User,
   Clock,
   LayoutGrid,
-  Trophy
+  Trophy,
+  Download
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import {
   Tooltip,
   TooltipContent,
@@ -310,6 +312,72 @@ const SelfPacedDashboard: React.FC = () => {
     );
   }, [processed.allCoursesStats, courseTableSearch]);
 
+  const handleExport = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+
+      // 1. Summary Sheet
+      const summaryData = [
+        { Metric: "Total Learners", Value: processed.metrics.totalLearners },
+        { Metric: "Avg per User", Value: processed.metrics.avgPerUser },
+        { Metric: "Total Rate (%)", Value: processed.metrics.overallCompletionRate },
+        { Metric: "Participation (%)", Value: processed.metrics.participationRate },
+        { Metric: "Program Completion Rate (%)", Value: processed.metrics.programCompRate },
+        { Metric: "Drop-off Rate (%)", Value: processed.metrics.dropOffRate },
+        { Metric: "Total Completions", Value: processed.metrics.totalCompletions },
+        { Metric: "Year Filter", Value: selectedYear === "all" ? "All Time" : selectedYear }
+      ];
+      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+      XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+      // 2. Participant Progress Sheet
+      const progressData = participants.map(p => {
+        const row: any = {
+          "Name": p.name || "Anonymous",
+          "Email": p.email
+        };
+
+        let totalCompleted = 0;
+        REQUIRED_COURSE_CODES.forEach(code => {
+          const record = records.find(r => 
+            r.email.toLowerCase() === p.email.toLowerCase() && 
+            extractCourseCode(r.course_name) === code.toUpperCase()
+          );
+          const status = record?.status || "Not started";
+          row[code] = status;
+          if (status === "Completed") totalCompleted++;
+        });
+
+        row["Total Completed"] = totalCompleted;
+        row["Progress (%)"] = ((totalCompleted / 27) * 100).toFixed(1);
+        return row;
+      });
+
+      // Reorder columns to have Name, Email, Total Completed, Progress (%) first
+      const headers = ["Name", "Email", "Total Completed", "Progress (%)", ...REQUIRED_COURSE_CODES];
+      const wsProgress = XLSX.utils.json_to_sheet(progressData, { header: headers });
+      XLSX.utils.book_append_sheet(wb, wsProgress, "Participant Progress");
+
+      // 3. Course Metrics Sheet
+      const courseMetricsData = processed.allCoursesStats.map(c => ({
+        "Module Code": c.code,
+        "Module Name": c.name,
+        "Completions": c.completions,
+        "Rate (%)": c.rate.toFixed(1)
+      }));
+      const wsCourseMetrics = XLSX.utils.json_to_sheet(courseMetricsData);
+      XLSX.utils.book_append_sheet(wb, wsCourseMetrics, "Course Metrics");
+
+      // Save file
+      const fileName = `SelfPaced_Dashboard_Export_${selectedYear === "all" ? "AllTime" : selectedYear}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success("Excel file exported successfully.");
+    } catch (error) {
+      console.error("Export failed:", error);
+      toast.error("Failed to export Excel file.");
+    }
+  };
+
   if (loading && refreshTrigger === 0) return <div className="flex h-[600px] items-center justify-center w-full"><Loader2 className="h-10 w-10 animate-spin text-[#0046ab]" /></div>;
 
   return (
@@ -324,16 +392,27 @@ const SelfPacedDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3 bg-zinc-50 p-2 rounded-xl border">
-          <CalendarIcon className="h-3.5 w-3.5 text-zinc-400 ml-2" />
-          <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-[120px] h-8 text-xs font-black border-none bg-transparent focus:ring-0"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Time</SelectItem>
-              <SelectItem value="2024">2024</SelectItem>
-              <SelectItem value="2025">2025</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="flex items-center gap-3">
+          <Button 
+            onClick={handleExport}
+            variant="outline" 
+            className="h-12 px-4 rounded-xl border-zinc-200 font-black text-xs uppercase tracking-wider hover:bg-zinc-50 transition-all flex items-center gap-2"
+          >
+            <Download className="h-4 w-4 text-[#0046ab]" />
+            Export to Excel
+          </Button>
+          
+          <div className="flex items-center gap-3 bg-zinc-50 p-2 rounded-xl border h-12">
+            <CalendarIcon className="h-3.5 w-3.5 text-zinc-400 ml-2" />
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="w-[120px] h-8 text-xs font-black border-none bg-transparent focus:ring-0"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="2024">2024</SelectItem>
+                <SelectItem value="2025">2025</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
