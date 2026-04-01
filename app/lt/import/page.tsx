@@ -5,6 +5,8 @@ import AssessmentUpload from '@/components/LTD/AssessmentUpload';
 import TrainingReportsUpload from '@/components/LTD/TrainingReportsUpload';
 import LMSUpload from '@/components/LTD/LMSUpload';
 import LeadXCombinedUpload from '@/components/LTD/LeadXCombinedUpload';
+import PostLearningSurveyUpload from '@/components/LTD/PostLearningSurveyUpload';
+import VILTTrackerUpload from '@/components/LTD/VILTTrackerUpload';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { 
@@ -19,7 +21,8 @@ import {
   GraduationCap, 
   Laptop, 
   Presentation,
-  Info
+  Info,
+  ClipboardCheck
 } from 'lucide-react';
 import {
   Tooltip,
@@ -32,7 +35,6 @@ import {
  * LTImportPage
  * 
  * Central hub for uploading different types of learning and development data.
- * Refactored into a horizontal 3-column flex layout.
  */
 export default function LTImportPage() {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -50,11 +52,11 @@ export default function LTImportPage() {
         <p className="text-sm text-muted-foreground">Centralized tools for synchronizing learning metrics and assessment data.</p>
       </div>
       
-      {/* Horizontal Flex Layout */}
-      <div className="flex flex-wrap lg:flex-nowrap gap-4 items-stretch justify-start">
+      {/* Responsive Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         
         {/* Module 1: Pre & Post Assessment */}
-        <Card className="flex-1 min-w-[320px] shadow-sm hover:shadow-md transition-shadow flex flex-col">
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-3 mb-1">
               <div className="p-1.5 bg-[#0046ab]/10 rounded-lg">
@@ -88,7 +90,7 @@ export default function LTImportPage() {
         </Card>
 
         {/* Module 2: Training Reports */}
-        <Card className="flex-1 min-w-[320px] shadow-sm hover:shadow-md transition-shadow flex flex-col">
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-3 mb-1">
               <div className="p-1.5 bg-emerald-50 rounded-lg">
@@ -126,7 +128,7 @@ export default function LTImportPage() {
         </Card>
 
         {/* Module 3: LeadX & BuildX Workshop Data */}
-        <Card className="flex-1 min-w-[320px] shadow-sm hover:shadow-md transition-shadow flex flex-col">
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-3 mb-1">
               <div className="p-1.5 bg-blue-50 rounded-lg">
@@ -143,12 +145,44 @@ export default function LTImportPage() {
           </CardContent>
         </Card>
 
-      </div>
+        {/* Module 4: VILT Enrollment Import */}
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
+          <CardHeader className="p-4 pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-1.5 bg-[#0046ab]/10 rounded-lg">
+                <Presentation className="h-4 w-4 text-[#0046ab]" />
+              </div>
+              <CardTitle className="text-base font-bold">VILT Enrollment Import</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Sync attendance from Microsoft Forms / Teams exports.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 pt-2 flex-1">
+            <VILTTrackerUpload onUploadSuccess={handleUploadSuccess} />
+          </CardContent>
+        </Card>
 
-      {/* Secondary Row for remaining imports */}
-      <div className="flex flex-wrap gap-4 items-stretch justify-start">
-        {/* Module 4: Self-Paced (LMS) Reports */}
-        <Card className="w-full lg:w-[calc(33.33%-1rem)] shadow-sm hover:shadow-md transition-shadow flex flex-col">
+        {/* Module 5: Post-Learning Survey Import */}
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
+          <CardHeader className="p-4 pb-2">
+            <div className="flex items-center gap-3 mb-1">
+              <div className="p-1.5 bg-emerald-50 rounded-lg">
+                <ClipboardCheck className="h-4 w-4 text-emerald-600" />
+              </div>
+              <CardTitle className="text-base font-bold">Post-Learning Survey Import</CardTitle>
+            </div>
+            <CardDescription className="text-xs">
+              Upload Microsoft Forms exports for the i-ELEVATE Q1 Cohort.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 pt-2 flex-1">
+            <PostLearningSurveyUpload onUploadSuccess={handleUploadSuccess} />
+          </CardContent>
+        </Card>
+
+        {/* Module 6: Self-Paced (LMS) Reports */}
+        <Card className="shadow-sm hover:shadow-md transition-shadow flex flex-col">
           <CardHeader className="p-4 pb-2">
             <div className="flex items-center gap-3 mb-1">
               <div className="p-1.5 bg-purple-50 rounded-lg">
@@ -160,10 +194,11 @@ export default function LTImportPage() {
               Sync digital learning activity via email address matching.
             </CardDescription>
           </CardHeader>
-          <CardContent className="p-4 pt-2">
+          <CardContent className="p-4 pt-2 flex-1">
             <LMSUpload onUploadSuccess={handleUploadSuccess} />
           </CardContent>
         </Card>
+
       </div>
     </div>
   );

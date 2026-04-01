@@ -18,7 +18,8 @@ import {
   Shield,
   FileClock,
   Heart,
-  Presentation
+  Presentation,
+  ClipboardCheck
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -44,6 +45,7 @@ const sidebarCategories = [
       { name: "Training Reports", href: "/lt/training-reports", icon: BarChart3 },
       { name: "Self-Paced", href: "/lt/self-paced", icon: GraduationCap },
       { name: "VILT Tracker", href: "/lt/vilt-tracker", icon: Presentation },
+      { name: "Post-Learning Survey", href: "/lt/post-learning", icon: ClipboardCheck },
       { name: "LeadX & BuildX Reports", href: "/lt/leadx-reports", icon: Presentation },
       { name: "Import Excel", href: "/lt/import", icon: FileUp },
     ],

@@ -1,5 +1,4 @@
 "use client";
-import { Badge } from "@/components/ui/badge";
 import React, { useState } from 'react';
 import * as XLSX from 'xlsx';
 import { createClient } from '@/utils/supabase/client';
@@ -16,6 +15,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
 
 interface UploadSummary {
   processed: number;
@@ -23,11 +23,11 @@ interface UploadSummary {
   skipped: number;
 }
 
-interface VILTTrackerUploadProps {
+interface PostLearningSurveyUploadProps {
   onUploadSuccess?: () => void;
 }
 
-const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }) => {
+const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onUploadSuccess }) => {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState<UploadSummary | null>(null);
@@ -51,97 +51,78 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       
-      // Get data as array of arrays to manually find headers
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
       
-      // 1. Find Header Row
       let headerRowIndex = -1;
       let colIndices = { 
-        email: -1, name: -1, dept: -1, remarks: -1,
-        m1: -1, m2a: -1, m2b: -1, m3e: -1, m3fb1: -1, m4: -1
+        moduleTitle: -1, 
+        sessionRating: -1, 
+        facilitatorRating: -1, 
+        feedbackLikes: -1, 
+        feedbackSuggestions: -1 
       };
 
-      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      for (let i = 0; i < Math.min(rows.length, 20); i++) {
         const row = rows[i];
         if (!row) continue;
         
-        const rowStr = row.map(c => String(c).toLowerCase().trim());
-        const emailIdx = rowStr.findIndex(c => c === 'email');
-        const nameIdx = rowStr.findIndex(c => c === 'name');
+        const rowStr = row.map(c => String(c || "").toLowerCase().trim());
+        
+        const moduleIdx = rowStr.findIndex(c => c.includes('module title'));
+        const sessionIdx = rowStr.findIndex(c => c.includes('rate the effectiveness of this session'));
+        const facilitatorIdx = rowStr.findIndex(c => c.includes('rate the overall effectiveness of the assigned learning experience facilitator'));
+        const likesIdx = rowStr.findIndex(c => c.includes('what did you like best about the assigned learning experience facilitator/s'));
+        const suggestionsIdx = rowStr.findIndex(c => c.includes('what suggestions do you have for improving the facilitation skills'));
 
-        if (emailIdx !== -1 && nameIdx !== -1) {
+        if (moduleIdx !== -1) {
           headerRowIndex = i;
-          colIndices.email = emailIdx;
-          colIndices.name = nameIdx;
-          colIndices.dept = rowStr.findIndex(c => c.includes('department') || c.includes('delivery unit'));
-          colIndices.remarks = rowStr.findIndex(c => c === 'remarks');
-          
-          // Module detection
-          colIndices.m1 = rowStr.findIndex(c => c === 'm1');
-          colIndices.m2a = rowStr.findIndex(c => c === 'm2a');
-          colIndices.m2b = rowStr.findIndex(c => c === 'm2b');
-          colIndices.m3e = rowStr.findIndex(c => c === 'm3e');
-          colIndices.m3fb1 = rowStr.findIndex(c => c === 'm3f-b1');
-          colIndices.m4 = rowStr.findIndex(c => c === 'm4');
+          colIndices.moduleTitle = moduleIdx;
+          colIndices.sessionRating = sessionIdx;
+          colIndices.facilitatorRating = facilitatorIdx;
+          colIndices.feedbackLikes = likesIdx;
+          colIndices.feedbackSuggestions = suggestionsIdx;
           break;
         }
       }
 
       if (headerRowIndex === -1) {
-        throw new Error("Could not find required headers (Email, Name).");
+        throw new Error("Could not find required headers (Module Title).");
       }
 
-      // 2. Extract Data Rows
       const dataRows = rows.slice(headerRowIndex + 1);
       const finalRecords: any[] = [];
       let skipped = 0;
 
       for (const row of dataRows) {
-        const email = String(row[colIndices.email] || "").trim().toLowerCase();
-        const name = String(row[colIndices.name] || "").trim();
+        const moduleTitle = String(row[colIndices.moduleTitle] || "").trim();
         
-        if (String(row[0]).toUpperCase().startsWith('SUMMARY') || (!email && !name)) {
-          if (finalRecords.length > 0) break; 
+        if (!moduleTitle || moduleTitle.toLowerCase() === 'module title' || moduleTitle.toLowerCase().includes('total')) {
           skipped++;
           continue;
         }
 
-        if (!email.includes('@')) {
-          skipped++;
-          continue;
-        }
-
-        // Helper to parse "1" as true
-        const isSet = (idx: number) => idx !== -1 && String(row[idx]) === "1";
+        const parseRating = (val: any) => {
+          const num = parseInt(val);
+          return isNaN(num) ? null : num;
+        };
 
         finalRecords.push({
-          email,
-          name,
-          department: colIndices.dept !== -1 ? String(row[colIndices.dept] || "Unknown").trim() : "Unknown",
-          overall_status: colIndices.remarks !== -1 ? String(row[colIndices.remarks] || "Incomplete").trim() : "Incomplete",
-          modules: {
-            "M1": isSet(colIndices.m1),
-            "M2A": isSet(colIndices.m2a),
-            "M2B": isSet(colIndices.m2b),
-            "M3E": isSet(colIndices.m3e),
-            "M3F-B1": isSet(colIndices.m3fb1),
-            "M4": isSet(colIndices.m4)
-          },
-          year: "2026",
-          cohort: "Q1 Cohort 1",
-          updated_at: new Date().toISOString()
+          module_title: moduleTitle,
+          session_rating: parseRating(row[colIndices.sessionRating]),
+          facilitator_rating: parseRating(row[colIndices.facilitatorRating]),
+          feedback_likes: colIndices.feedbackLikes !== -1 ? String(row[colIndices.feedbackLikes] || "").trim() : "",
+          feedback_suggestions: colIndices.feedbackSuggestions !== -1 ? String(row[colIndices.feedbackSuggestions] || "").trim() : "",
+          uploaded_at: new Date().toISOString()
         });
       }
 
-      // 3. Batch Upsert to Supabase
       if (finalRecords.length > 0) {
-        // Process in chunks of 100 to avoid request size limits
         const chunkSize = 100;
         for (let i = 0; i < finalRecords.length; i += chunkSize) {
           const chunk = finalRecords.slice(i, i + chunkSize);
           const { error } = await supabase
-            .from('vilt_tracker')
-            .upsert(chunk, { onConflict: 'email, year, cohort' });
+            .from('post_learning_survey')
+            .insert(chunk);
           
           if (error) throw error;
         }
@@ -152,12 +133,12 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
         inserted: finalRecords.length,
         skipped: skipped
       });
-      toast.success("VILT Data synchronized successfully.");
+      toast.success("Post-Learning Survey data imported successfully.");
       setFile(null);
       if (onUploadSuccess) onUploadSuccess();
     } catch (err: any) {
       console.error("Upload error:", err);
-      toast.error(err.message || "Failed to process VILT file.");
+      toast.error(err.message || "Failed to process Post-Learning Survey file.");
     } finally {
       setUploading(false);
     }
@@ -168,29 +149,28 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
       <CardHeader className="bg-zinc-50/50 border-b p-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-[#0046ab] rounded-lg"><FileSpreadsheet className="h-4 w-4 text-white" /></div>
+            <div className="p-2 bg-emerald-600 rounded-lg"><FileSpreadsheet className="h-4 w-4 text-white" /></div>
             <div>
-              <CardTitle className="text-xs font-black uppercase tracking-wider">VILT Enrollment Import</CardTitle>
-              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Sync attendance from Microsoft Forms / Teams exports</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-wider">Post-Learning Survey Import</CardTitle>
+              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Import Microsoft Forms responses (Excel/CSV)</CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md">
-            <Info className="h-3 w-3 text-[#0046ab]" />
-            <span className="text-[9px] font-black text-[#0046ab] uppercase">2026 Q1 C1</span>
+          <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-md">
+            <Info className="h-3 w-3 text-emerald-600" />
+            <span className="text-[9px] font-black text-emerald-600 uppercase">Survey Data</span>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
-        {/* Upload Area */}
         <div 
           className={cn(
             "border-2 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center transition-all cursor-pointer",
-            file ? "border-blue-200 bg-blue-50/30" : "border-zinc-100 hover:border-zinc-200 bg-zinc-50/50"
+            file ? "border-emerald-200 bg-emerald-50/30" : "border-zinc-100 hover:border-zinc-200 bg-zinc-50/50"
           )}
-          onClick={() => document.getElementById('vilt-upload-input')?.click()}
+          onClick={() => document.getElementById('post-learning-upload-input')?.click()}
         >
           <input 
-            id="vilt-upload-input" 
+            id="post-learning-upload-input" 
             type="file" 
             className="hidden" 
             accept=".csv,.xlsx" 
@@ -218,32 +198,30 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
               <div className="p-4 bg-white rounded-2xl shadow-sm border mb-4 inline-block">
                 <FileUp className="h-10 w-10 text-zinc-200" />
               </div>
-              <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">Select enrollment CSV</p>
-              <p className="text-[10px] font-medium text-zinc-400 mt-2">Will auto-detect headers and ignore summary rows</p>
+              <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">Select survey results CSV/Excel</p>
+              <p className="text-[10px] font-medium text-zinc-400 mt-2">Will auto-detect headers based on survey questions</p>
             </div>
           )}
         </div>
 
-        {/* Action Button */}
         <Button 
-          className="w-full h-12 rounded-xl bg-[#0046ab] hover:bg-[#003580] font-black text-xs uppercase tracking-widest transition-all"
+          className="w-full h-12 rounded-xl bg-emerald-600 hover:bg-emerald-700 font-black text-xs uppercase tracking-widest transition-all"
           disabled={!file || uploading}
           onClick={processFile}
         >
           {uploading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Analyzing & Syncing...
+              Processing...
             </>
           ) : (
             <>
               <FileUp className="h-4 w-4 mr-2" />
-              Sync VILT Tracker
+              Upload Survey Responses
             </>
           )}
         </Button>
 
-        {/* Summary Result */}
         {summary && (
           <div className={cn(
             "p-4 rounded-2xl border flex items-center justify-between",
@@ -258,7 +236,7 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
               <div>
                 <p className="text-xs font-black text-zinc-800 uppercase">Process Complete</p>
                 <p className="text-[10px] font-medium text-zinc-500 uppercase">
-                  {summary.inserted} Updated / {summary.skipped} Skipped
+                  {summary.inserted} Inserted / {summary.skipped} Skipped
                 </p>
               </div>
             </div>
@@ -272,4 +250,4 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
   );
 };
 
-export default VILTTrackerUpload;
+export default PostLearningSurveyUpload;
