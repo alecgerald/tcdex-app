@@ -195,7 +195,22 @@ export default function LMSDashboard() {
     if (!selectedLog || !selectedLog.cleanedData) return
     
     // Clean data for excel (remove the 'id' field we added during upload)
-    const dataToExport = selectedLog.cleanedData.map(({ id, ...rest }) => rest)
+    const dataToExport = selectedLog.cleanedData.map(({ id, ...rest }: any) => {
+      const exportRow = { ...rest }
+      
+      if (selectedLog.importType === 'courses') {
+        // Dynamically calculate Completion % for every raw row identically to dashboard logic
+        const assignedKey = Object.keys(exportRow).find(k => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(exportRow).find(k => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        
+        const assigned = Number(exportRow[assignedKey]) || 0
+        const completed = Number(exportRow[completedKey]) || 0
+        
+        exportRow['Completion %'] = assigned > 0 ? `${((completed / assigned) * 100).toFixed(1)}%` : "0.0%"
+      }
+      
+      return exportRow
+    })
     
     const ws = utils.json_to_sheet(dataToExport)
     const wb = utils.book_new()
@@ -214,20 +229,14 @@ export default function LMSDashboard() {
     doc.setTextColor(0, 70, 171) // #0046ab
     doc.text("LMS Dashboard Summary", 14, 22)
     
-    doc.setFontSize(10)
-    doc.setTextColor(100)
-    doc.text(`Source: ${selectedLog.fileName}`, 14, 30)
-    doc.text(`Import Type: ${selectedLog.importType === 'courses' ? 'Assigned/Completed Courses' : 'Status Completion'}`, 14, 35)
-    doc.text(`Generated on: ${timestamp}`, 14, 40)
-    
     if (selectedLog.importType === 'status') {
       // Status Distribution Table
       doc.setFontSize(14)
       doc.setTextColor(0)
-      doc.text("Status Distribution", 14, 50)
+      doc.text("Status Distribution", 14, 35)
       
       autoTable(doc, {
-        startY: 55,
+        startY: 40,
         head: [['Status', 'Count', 'Percentage (%)']],
         body: (selectedLog.statusSummary || []).map(s => [s.status, s.count, s.rate]),
         theme: 'striped',
@@ -269,18 +278,18 @@ export default function LMSDashboard() {
       const overallRate = ((totalCompleted / (totalAssigned || 1)) * 100).toFixed(1) + "%"
 
       doc.setFontSize(14)
-      doc.text("Overall Metrics", 14, 50)
+      doc.text("Overall Metrics", 14, 35)
       doc.setFontSize(11)
-      doc.text(`Total Courses Assigned: ${totalAssigned.toLocaleString()}`, 14, 60)
-      doc.text(`Total Courses Completed: ${totalCompleted.toLocaleString()}`, 14, 67)
-      doc.text(`Overall Completion Rate: ${overallRate}`, 14, 74)
+      doc.text(`Total Courses Assigned: ${totalAssigned.toLocaleString()}`, 14, 45)
+      doc.text(`Total Courses Completed: ${totalCompleted.toLocaleString()}`, 14, 52)
+      doc.text(`Overall Completion Rate: ${overallRate}`, 14, 59)
 
       // Department Analysis Table
       doc.setFontSize(14)
-      doc.text("Department Analysis", 14, 85)
+      doc.text("Department Analysis", 14, 75)
       
       autoTable(doc, {
-        startY: 90,
+        startY: 80,
         head: [['Department', 'Assigned Courses', 'Completed Courses', 'Rate']],
         body: (selectedLog.deptSummary as CourseItem[]).map(d => [
           d.name, d.assigned.toLocaleString(), d.completed.toLocaleString(), d.rate
@@ -304,6 +313,16 @@ export default function LMSDashboard() {
           headStyles: { fillColor: [0, 70, 171] }
         })
       }
+    }
+    
+    const pageCount = (doc.internal as any).getNumberOfPages()
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i)
+      const pageHeight = doc.internal.pageSize.getHeight()
+      doc.setFontSize(8)
+      doc.setTextColor(150)
+      const footerText = `Source: ${selectedLog.fileName}   |   Import Type: ${selectedLog.importType === 'courses' ? 'Assigned/Completed Courses' : 'Status Completion'}   |   Generated: ${timestamp}`
+      doc.text(footerText, 14, pageHeight - 10)
     }
     
     doc.save(`${selectedLog.fileName}_summary.pdf`)

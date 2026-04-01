@@ -1,10 +1,10 @@
 "use client"
 
 import { useState, useRef, useMemo } from "react"
-import { 
-  FileUp, 
-  Trash2, 
-  AlertTriangle, 
+import {
+  FileUp,
+  Trash2,
+  AlertTriangle,
   CheckCircle2,
   FileSpreadsheet,
   RefreshCw,
@@ -20,13 +20,13 @@ import { toast } from "sonner"
 import { read, utils } from "xlsx"
 
 import { Button } from "@/components/ui/button"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
@@ -53,29 +53,29 @@ export default function ExcelUploadPage() {
   const [columns, setColumns] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  
+
   // Filter states
   const [locationCol, setLocationCol] = useState("")
   const [duCol, setDuCol] = useState("")
   const [selectedLocations, setSelectedLocations] = useState<string[]>([])
   const [selectedDUs, setSelectedDUs] = useState<string[]>([])
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const uniqueFilterValues = useMemo(() => {
     if (rawData.length === 0) return { locations: [], dus: [] }
     const headers = Object.keys(rawData[0])
-    
+
     // Auto-detect columns
     const locHeader = headers.find(h => /location|site|region/i.test(h)) || headers[0]
     const duHeader = headers.find(h => /du|delivery unit|department|dept/i.test(h)) || headers[1]
-    
+
     setLocationCol(locHeader)
     setDuCol(duHeader)
-    
+
     const locations = Array.from(new Set(rawData.map(r => String(r[locHeader] || "Unknown")))).sort()
     const dus = Array.from(new Set(rawData.map(r => String(r[duHeader] || "Unknown")))).sort()
-    
+
     return { locations, dus }
   }, [rawData])
 
@@ -91,20 +91,47 @@ export default function ExcelUploadPage() {
         const workbook = read(data, { type: "binary" })
         const sheetName = workbook.SheetNames[0]
         const sheet = workbook.Sheets[sheetName]
-        const jsonData = utils.sheet_to_json(sheet)
-        
+        let jsonData = utils.sheet_to_json(sheet) as any[]
+
         if (!jsonData || jsonData.length === 0) {
           toast.error("The uploaded file is empty")
           setIsLoading(false)
           return
         }
 
+        // Intercept headers to explicitly merge "First name" and "Last name"
+        // into a solitary "Name" column if one doesn't already natively exist.
+        jsonData = jsonData.map((row: any) => {
+          const keys = Object.keys(row)
+          const exactNameCol = keys.find(k => k.trim().toLowerCase() === 'name')
+
+          if (!exactNameCol) {
+            const firstNameKey = keys.find(k => /first\s*name/i.test(k.trim()))
+            const lastNameKey = keys.find(k => /last\s*name/i.test(k.trim()))
+
+            if (firstNameKey && lastNameKey) {
+              // Construct new object enforcing 'Name' exactly at index 0 natively
+              const newRow: any = {}
+              newRow['Name'] = `${String(row[lastNameKey]).trim()}, ${String(row[firstNameKey]).trim()}`
+
+              keys.forEach(k => {
+                if (k !== firstNameKey && k !== lastNameKey) {
+                  newRow[k] = row[k]
+                }
+              })
+
+              return newRow
+            }
+          }
+          return row;
+        })
+
         // Validate headers for 'courses' type
         if (importType === 'courses') {
           const headers = Object.keys(jsonData[0] as any)
           const required = ['Name', 'Assigned Courses', 'Completed Courses', 'Delivery Unit', 'Project Name', 'Name of Immediate Supervisor']
           const missing = required.filter(r => !headers.some(h => h.toLowerCase() === r.toLowerCase()))
-          
+
           if (missing.length > 0) {
             toast.error(`Missing columns: ${missing.join(", ")}`)
             setIsLoading(false)
@@ -131,7 +158,7 @@ export default function ExcelUploadPage() {
       return
     }
     setIsLoading(true)
-    
+
     setTimeout(() => {
       const filtered = rawData.filter(row => {
         const loc = String(row[locationCol] || "Unknown")
@@ -163,7 +190,7 @@ export default function ExcelUploadPage() {
       if (importType === 'status') {
         // Status Completion Logic
         const statusKey = Object.keys(filtered[0]).find(k => /status/i.test(k)) || "Status"
-        
+
         // Fix status values if they are numeric
         const processedFiltered = filtered.map(row => {
           const statusVal = row[statusKey]
@@ -178,7 +205,7 @@ export default function ExcelUploadPage() {
           const status = row[statusKey] || "Not Started"
           statusCounts[status] = (statusCounts[status] || 0) + 1
         })
-        
+
         const total = processedFiltered.length
         const statusSummary = Object.entries(statusCounts).map(([status, count]) => {
           const rate = (count / total) * 100
@@ -234,7 +261,7 @@ export default function ExcelUploadPage() {
         const assignedKey = Object.keys(filtered[0]).find(k => /assigned/i.test(k)) || "Assigned Courses"
         const completedKey = Object.keys(filtered[0]).find(k => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
         const duKey = Object.keys(filtered[0]).find(k => /delivery unit|department|dept/i.test(k)) || duCol
-        
+
         // Dept Aggregation
         const depts: Record<string, any> = {}
         filtered.forEach(row => {
@@ -243,7 +270,7 @@ export default function ExcelUploadPage() {
           depts[key].assigned += Number(row[assignedKey] || 0)
           depts[key].completed += Number(row[completedKey] || 0)
         })
-        
+
         const deptSummary = Object.entries(depts).map(([_, stats]: [string, any]) => ({
           ...stats,
           rate: stats.assigned > 0 ? `${((stats.completed / stats.assigned) * 100).toFixed(1)}%` : "0.0%"
@@ -294,7 +321,7 @@ export default function ExcelUploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
-  const filteredData = processedData.filter(row => 
+  const filteredData = processedData.filter(row =>
     Object.values(row).some(val => String(val).toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
@@ -349,7 +376,7 @@ export default function ExcelUploadPage() {
               Upload {importType === 'status' ? 'Status Completion' : 'Assigned/Completed Courses'} data
             </h3>
             <p className="text-zinc-500 max-w-md px-4">
-              {importType === 'status' 
+              {importType === 'status'
                 ? "Upload the Excel file with employee status data. You can filter by Location and DU in the next step."
                 : "Required columns: Name, Assigned Courses, Completed Courses, Delivery Unit, Project Name, Manager Name."}
             </p>
@@ -426,7 +453,7 @@ export default function ExcelUploadPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <CardTitle className="text-lg">Cleaned Records Preview</CardTitle>
-                <CardDescription>Showing {filteredData.length} records. (Anonymized summary will be saved).</CardDescription>
+                <CardDescription>Showing {filteredData.length} records</CardDescription>
               </div>
               <div className="flex items-center gap-2">
                 <div className="relative w-full md:w-64">
