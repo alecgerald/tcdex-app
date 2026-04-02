@@ -95,8 +95,8 @@ export default function AuditLogsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Audit Logs</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">Track and manage your upload history.</p>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">History</h1>
+          <p className="text-zinc-500 dark:text-zinc-400">View and manage uploaded LMS files</p>
         </div>
       </div>
 

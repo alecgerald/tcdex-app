@@ -193,8 +193,8 @@ export default function CommsAuditLogsPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Comms Audit Logs</h1>
-          <p className="text-zinc-500 dark:text-zinc-400">History of data uploads and raw data preview</p>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">History</h1>
+          <p className="text-zinc-500 dark:text-zinc-400">View and manage uploaded communication platform data</p>
         </div>
         <div className="relative w-full md:w-64">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
@@ -222,8 +222,8 @@ export default function CommsAuditLogsPage() {
             <TableBody>
               {filteredLogs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="h-32 text-center text-zinc-500">
-                    No audit logs found. Upload a file to see it here.
+                  <TableCell colSpan={5} className="h-40 text-center text-zinc-500">
+                    No history found. Upload a file to see it here.
                   </TableCell>
                 </TableRow>
               ) : (

@@ -31,7 +31,7 @@ const sidebarCategories = [
     items: [
       { name: "Dashboard", href: "/lms", icon: LayoutDashboard },
       { name: "Upload Excel", href: "/lms/upload", icon: FileUp },
-      { name: "Audit Logs", href: "/lms/audit-logs", icon: FileClock },
+      { name: "History", href: "/lms/audit-logs", icon: FileClock },
     ],
   },
   {
@@ -71,7 +71,7 @@ const sidebarCategories = [
     items: [
       { name: "External Brand", href: "/comms/external-brand", icon: Heart },
       { name: "Upload Excel", href: "/comms/import-excel", icon: FileUp },
-      { name: "Audit Logs", href: "/comms/audit-logs", icon: FileClock },
+      { name: "History", href: "/comms/audit-logs", icon: FileClock },
     ],
   },
   {
