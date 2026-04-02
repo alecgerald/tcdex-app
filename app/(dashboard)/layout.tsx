@@ -3,10 +3,10 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { 
-  LayoutDashboard, 
-  FileUp, 
-  BarChart3, 
+import {
+  LayoutDashboard,
+  FileUp,
+  BarChart3,
   LogOut,
   Menu,
   X,
@@ -30,7 +30,7 @@ const sidebarCategories = [
     icon: GraduationCap,
     items: [
       { name: "Dashboard", href: "/lms", icon: LayoutDashboard },
-      { name: "Import Excel", href: "/lms/upload", icon: FileUp },
+      { name: "Upload Excel", href: "/lms/upload", icon: FileUp },
       { name: "Audit Logs", href: "/lms/audit-logs", icon: FileClock },
     ],
   },
@@ -70,7 +70,7 @@ const sidebarCategories = [
     icon: Megaphone,
     items: [
       { name: "External Brand", href: "/comms/external-brand", icon: Heart },
-      { name: "Import Excel", href: "/comms/import-excel", icon: FileUp },
+      { name: "Upload Excel", href: "/comms/import-excel", icon: FileUp },
       { name: "Audit Logs", href: "/comms/audit-logs", icon: FileClock },
     ],
   },
@@ -102,9 +102,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [pathname, openCategories])
 
   const toggleCategory = (id: string) => {
-    setOpenCategories((prev) => 
-      prev.includes(id) 
-        ? prev.filter((c) => c !== id) 
+    setOpenCategories((prev) =>
+      prev.includes(id)
+        ? prev.filter((c) => c !== id)
         : [...prev, id]
     )
   }
@@ -112,7 +112,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
       {/* Sidebar */}
-      <aside 
+      <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col bg-white border-r transition-all duration-300 dark:bg-zinc-900",
           isSidebarOpen ? "w-64" : "w-20"
@@ -125,9 +125,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             </div>
             <span className="font-semibold text-zinc-900 truncate dark:text-zinc-100">{username}</span>
           </div>
-          <Button 
-            variant="ghost" 
-            size="icon" 
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="shrink-0"
           >
@@ -154,8 +154,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                     }}
                     className={cn(
                       "flex w-full items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors cursor-pointer",
-                      hasActiveChild 
-                        ? "text-[#0046ab]" 
+                      hasActiveChild
+                        ? "text-[#0046ab]"
                         : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800",
                       !isSidebarOpen && "justify-center px-2"
                     )}
@@ -167,24 +167,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                       </span>
                     </div>
                     {isSidebarOpen && (
-                      <ChevronDown 
+                      <ChevronDown
                         className={cn(
                           "h-4 w-4 transition-transform duration-200",
                           isOpen ? "rotate-0" : "-rotate-90"
-                        )} 
+                        )}
                       />
                     )}
                   </button>
-                  
+
                   {isSidebarOpen && isOpen && (
                     <div className="ml-4 mt-1 space-y-1 border-l pl-4">
                       {category.items.map((item: any) => {
                         const isActive = pathname === item.href
-                        
+
                         if (item.disabled) {
                           return (
-                            <div 
-                              key={item.name} 
+                            <div
+                              key={item.name}
                               className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-zinc-300 dark:text-zinc-600 cursor-not-allowed"
                             >
                               <item.icon className="h-4 w-4 shrink-0" />
@@ -196,13 +196,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                         }
 
                         return (
-                          <Link 
-                            key={item.name} 
+                          <Link
+                            key={item.name}
                             href={item.href}
                             className={cn(
                               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-colors",
-                              isActive 
-                                ? "bg-[#0046ab]/10 text-[#0046ab]" 
+                              isActive
+                                ? "bg-[#0046ab]/10 text-[#0046ab]"
                                 : "text-zinc-500 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
                             )}
                           >
@@ -222,8 +222,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </ScrollArea>
 
         <div className="p-4 border-t shrink-0">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             asChild
             className={cn(
               "w-full justify-start text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-50",

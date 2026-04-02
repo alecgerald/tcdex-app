@@ -59,7 +59,7 @@ export default function ExcelUploadPage() {
   const [duCol, setDuCol] = useState("")
   const [roleCol, setRoleCol] = useState("")
   const [userTypeCol, setUserTypeCol] = useState("")
-  
+
   const [selectedLocations, setSelectedLocations] = useState<string[]>([])
   const [selectedDUs, setSelectedDUs] = useState<string[]>([])
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
@@ -164,7 +164,7 @@ export default function ExcelUploadPage() {
 
   const applyFiltersAndProcess = () => {
     const isStatus = importType === 'status'
-    
+
     if (isStatus && (selectedLocations.length === 0 || selectedRoles.length === 0)) {
       toast.error(`Please select at least one Location and one Role`)
       return
@@ -185,12 +185,12 @@ export default function ExcelUploadPage() {
         const du = String(row[duCol] || "Unknown")
         const role = String(row[roleCol] || "Unknown")
         const userType = String(row[userTypeCol] || "Unknown")
-        
+
         let match = selectedDUs.includes(du);
         if (isStatus) {
-           match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
+          match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
         } else {
-           match = match && selectedUserTypes.includes(userType);
+          match = match && selectedUserTypes.includes(userType);
         }
         return match;
       }).map((row, index) => ({
@@ -524,9 +524,9 @@ export default function ExcelUploadPage() {
                 <p className="text-sm text-zinc-500">
                   Ready to process records
                 </p>
-                <Button 
-                  onClick={applyFiltersAndProcess} 
-                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (!importType || importType === 'courses' ? selectedUserTypes.length === 0 : false) || selectedDUs.length === 0} 
+                <Button
+                  onClick={applyFiltersAndProcess}
+                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (!importType || importType === 'courses' ? selectedUserTypes.length === 0 : false) || selectedDUs.length === 0}
                   className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
                 >
                   {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
