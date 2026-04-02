@@ -19,7 +19,10 @@ import {
   Download,
   FileText,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronsUpDown,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -132,6 +135,48 @@ export default function LMSDashboard() {
   const [mgrPage, setMgrPage] = useState(1)
   const [courseDeptPage, setCourseDeptPage] = useState(1)
   const [employeePage, setEmployeePage] = useState(1)
+
+  // Sort states
+  type SortConfig = { key: string, direction: 'asc' | 'desc' } | null
+  const [deptSort, setDeptSort] = useState<SortConfig>(null)
+  const [mgrSort, setMgrSort] = useState<SortConfig>(null)
+  const [courseDeptSort, setCourseDeptSort] = useState<SortConfig>(null)
+  const [employeeSort, setEmployeeSort] = useState<SortConfig>(null)
+
+  const handleSort = (key: string, currentSort: SortConfig, setSort: (s: SortConfig) => void) => {
+    if (!currentSort || currentSort.key !== key) {
+      setSort({ key, direction: 'desc' })
+    } else if (currentSort.direction === 'desc') {
+      setSort({ key, direction: 'asc' })
+    } else {
+      setSort(null)
+    }
+  }
+
+  const SortIcon = ({ sort, sortKey }: { sort: SortConfig, sortKey: string }) => {
+    if (!sort || sort.key !== sortKey) return <ChevronsUpDown className="h-4 w-4 ml-1 text-zinc-400" />
+    return sort.direction === 'desc' ? <ChevronDown className="h-4 w-4 ml-1 text-[#0046ab]" /> : <ChevronUp className="h-4 w-4 ml-1 text-[#0046ab]" />
+  }
+
+  const parseSortValue = (val: any) => {
+    if (typeof val === 'string') {
+      const isPercent = val.endsWith('%')
+      if (isPercent) return parseFloat(val.replace('%', ''))
+      return val.toLowerCase()
+    }
+    return val || 0
+  }
+
+  const applySort = (data: any[], sort: SortConfig) => {
+    if (!sort) return [...data]
+    return [...data].sort((a, b) => {
+      const aVal = parseSortValue(a[sort.key])
+      const bVal = parseSortValue(b[sort.key])
+      if (aVal < bVal) return sort.direction === 'asc' ? -1 : 1
+      if (aVal > bVal) return sort.direction === 'asc' ? 1 : -1
+      return 0
+    })
+  }
 
   useEffect(() => {
     const existingLogs = localStorage.getItem("lms_audit_logs")
@@ -620,12 +665,36 @@ export default function LMSDashboard() {
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
-                      <TableHead>Delivery Unit / Department</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Not Started</TableHead>
-                      <TableHead className="text-right">Ongoing</TableHead>
-                      <TableHead className="text-right">Grand Total</TableHead>
-                      <TableHead className="text-right">Completion %</TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', deptSort, setDeptSort)}>
+                          Delivery Unit / Department <SortIcon sort={deptSort} sortKey="name" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', deptSort, setDeptSort)}>
+                          Completed <SortIcon sort={deptSort} sortKey="completed" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('notStarted', deptSort, setDeptSort)}>
+                          Not Started <SortIcon sort={deptSort} sortKey="notStarted" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('ongoing', deptSort, setDeptSort)}>
+                          Ongoing <SortIcon sort={deptSort} sortKey="ongoing" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('total', deptSort, setDeptSort)}>
+                          Grand Total <SortIcon sort={deptSort} sortKey="total" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', deptSort, setDeptSort)}>
+                          Completion % <SortIcon sort={deptSort} sortKey="rate" />
+                        </div>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -634,7 +703,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredDeptSummary.slice((deptPage - 1) * 10, deptPage * 10).map((row: any) => (
+                      applySort(filteredDeptSummary, deptSort).slice((deptPage - 1) * 10, deptPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -696,12 +765,36 @@ export default function LMSDashboard() {
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
-                      <TableHead>Name of Immediate Supervisor</TableHead>
-                      <TableHead className="text-right">Completed</TableHead>
-                      <TableHead className="text-right">Not Started</TableHead>
-                      <TableHead className="text-right">Ongoing</TableHead>
-                      <TableHead className="text-right">Grand Total</TableHead>
-                      <TableHead className="text-right">Completion %</TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', mgrSort, setMgrSort)}>
+                          Name of Immediate Supervisor <SortIcon sort={mgrSort} sortKey="name" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', mgrSort, setMgrSort)}>
+                          Completed <SortIcon sort={mgrSort} sortKey="completed" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('notStarted', mgrSort, setMgrSort)}>
+                          Not Started <SortIcon sort={mgrSort} sortKey="notStarted" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('ongoing', mgrSort, setMgrSort)}>
+                          Ongoing <SortIcon sort={mgrSort} sortKey="ongoing" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('total', mgrSort, setMgrSort)}>
+                          Grand Total <SortIcon sort={mgrSort} sortKey="total" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', mgrSort, setMgrSort)}>
+                          Completion % <SortIcon sort={mgrSort} sortKey="rate" />
+                        </div>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -710,7 +803,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No managers found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredMgrSummary.slice((mgrPage - 1) * 10, mgrPage * 10).map((row: any) => (
+                      applySort(filteredMgrSummary, mgrSort).slice((mgrPage - 1) * 10, mgrPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -825,10 +918,26 @@ export default function LMSDashboard() {
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
-                      <TableHead>Department</TableHead>
-                      <TableHead className="text-right">Sum of Assigned Courses</TableHead>
-                      <TableHead className="text-right">Sum of Completed Courses</TableHead>
-                      <TableHead className="text-right">Completion Rate %</TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', courseDeptSort, setCourseDeptSort)}>
+                          Department <SortIcon sort={courseDeptSort} sortKey="name" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', courseDeptSort, setCourseDeptSort)}>
+                          Sum of Assigned Courses <SortIcon sort={courseDeptSort} sortKey="assigned" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', courseDeptSort, setCourseDeptSort)}>
+                          Sum of Completed Courses <SortIcon sort={courseDeptSort} sortKey="completed" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', courseDeptSort, setCourseDeptSort)}>
+                          Completion Rate % <SortIcon sort={courseDeptSort} sortKey="rate" />
+                        </div>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -837,7 +946,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredDeptSummary.slice((courseDeptPage - 1) * 10, courseDeptPage * 10).map((row: any) => (
+                      applySort(filteredDeptSummary, courseDeptSort).slice((courseDeptPage - 1) * 10, courseDeptPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
@@ -892,10 +1001,26 @@ export default function LMSDashboard() {
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
-                      <TableHead>Employee Name</TableHead>
-                      <TableHead className="text-right">Sum of Assigned Courses</TableHead>
-                      <TableHead className="text-right">Sum of Completed Courses</TableHead>
-                      <TableHead className="text-right">Completion Rate %</TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', employeeSort, setEmployeeSort)}>
+                          Employee Name <SortIcon sort={employeeSort} sortKey="name" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', employeeSort, setEmployeeSort)}>
+                          Sum of Assigned Courses <SortIcon sort={employeeSort} sortKey="assigned" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', employeeSort, setEmployeeSort)}>
+                          Sum of Completed Courses <SortIcon sort={employeeSort} sortKey="completed" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', employeeSort, setEmployeeSort)}>
+                          Completion Rate % <SortIcon sort={employeeSort} sortKey="rate" />
+                        </div>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -904,7 +1029,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredEmployeeSummary.slice((employeePage - 1) * 10, employeePage * 10).map((row: any) => (
+                      applySort(filteredEmployeeSummary, employeeSort).slice((employeePage - 1) * 10, employeePage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
