@@ -230,13 +230,59 @@ export default function LMSDashboard() {
     doc.text("LMS Dashboard Summary", 14, 22)
     
     if (selectedLog.importType === 'status') {
+      let nextY = 35;
+      
+      try {
+        const total = (selectedLog.statusSummary || []).reduce((acc, curr) => acc + curr.count, 0)
+        if (total > 0 && typeof document !== 'undefined') {
+          const canvas = document.createElement('canvas')
+          canvas.width = 400
+          canvas.height = 400
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            let currentAngle = -0.5 * Math.PI
+            const cx = 200, cy = 200, radius = 200
+            
+            ;(selectedLog.statusSummary || []).forEach(slice => {
+              const sliceAngle = (slice.count / total) * 2 * Math.PI
+              ctx.beginPath()
+              ctx.moveTo(cx, cy)
+              ctx.arc(cx, cy, radius, currentAngle, currentAngle + sliceAngle)
+              ctx.closePath()
+              if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
+              else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
+              else ctx.fillStyle = '#ef4444'
+              ctx.fill()
+              currentAngle += sliceAngle
+            })
+            
+            ctx.beginPath()
+            ctx.arc(cx, cy, 110, 0, 2 * Math.PI)
+            ctx.fillStyle = '#ffffff'
+            ctx.fill()
+            
+            const imgData = canvas.toDataURL('image/png')
+            doc.addImage(imgData, 'PNG', 14, 30, 45, 45)
+            
+            doc.setFontSize(14)
+            doc.setTextColor(0)
+            const completionRate = (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
+            doc.text(`Total Completion Rate: ${completionRate}%`, 65, 55)
+            
+            nextY = 85
+          }
+        }
+      } catch (e) {
+        console.error("Canvas pie chart generation failed", e)
+      }
+
       // Status Distribution Table
       doc.setFontSize(14)
       doc.setTextColor(0)
-      doc.text("Status Distribution", 14, 35)
+      doc.text("Status Distribution", 14, nextY)
       
       autoTable(doc, {
-        startY: 40,
+        startY: nextY + 5,
         head: [['Status', 'Count', 'Percentage (%)']],
         body: (selectedLog.statusSummary || []).map(s => [s.status, s.count, s.rate]),
         theme: 'striped',

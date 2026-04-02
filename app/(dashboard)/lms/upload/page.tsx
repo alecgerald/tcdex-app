@@ -57,26 +57,37 @@ export default function ExcelUploadPage() {
   // Filter states
   const [locationCol, setLocationCol] = useState("")
   const [duCol, setDuCol] = useState("")
+  const [roleCol, setRoleCol] = useState("")
+  const [userTypeCol, setUserTypeCol] = useState("")
+  
   const [selectedLocations, setSelectedLocations] = useState<string[]>([])
   const [selectedDUs, setSelectedDUs] = useState<string[]>([])
+  const [selectedRoles, setSelectedRoles] = useState<string[]>([])
+  const [selectedUserTypes, setSelectedUserTypes] = useState<string[]>([])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const uniqueFilterValues = useMemo(() => {
-    if (rawData.length === 0) return { locations: [], dus: [] }
+    if (rawData.length === 0) return { locations: [], dus: [], roles: [], userTypes: [] }
     const headers = Object.keys(rawData[0])
 
     // Auto-detect columns
     const locHeader = headers.find(h => /location|site|region/i.test(h)) || headers[0]
     const duHeader = headers.find(h => /du|delivery unit|department|dept/i.test(h)) || headers[1]
+    const roleHeader = headers.find(h => /role|job title|position/i.test(h)) || "Role"
+    const userTypeHeader = headers.find(h => /user type|usertype|type/i.test(h)) || "User type"
 
     setLocationCol(locHeader)
     setDuCol(duHeader)
+    setRoleCol(roleHeader)
+    setUserTypeCol(userTypeHeader)
 
     const locations = Array.from(new Set(rawData.map(r => String(r[locHeader] || "Unknown")))).sort()
     const dus = Array.from(new Set(rawData.map(r => String(r[duHeader] || "Unknown")))).sort()
+    const roles = Array.from(new Set(rawData.map(r => String(r[roleHeader] || "Unknown")))).sort()
+    const userTypes = Array.from(new Set(rawData.map(r => String(r[userTypeHeader] || "Unknown")))).sort()
 
-    return { locations, dus }
+    return { locations, dus, roles, userTypes }
   }, [rawData])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -153,8 +164,17 @@ export default function ExcelUploadPage() {
 
   const applyFiltersAndProcess = () => {
     const isStatus = importType === 'status'
-    if ((isStatus && selectedLocations.length === 0) || selectedDUs.length === 0) {
-      toast.error(`Please select at least one ${isStatus ? 'Location and one ' : ''}Delivery Unit`)
+    
+    if (isStatus && (selectedLocations.length === 0 || selectedRoles.length === 0)) {
+      toast.error(`Please select at least one Location and one Role`)
+      return
+    }
+    if (!isStatus && selectedUserTypes.length === 0) {
+      toast.error(`Please select at least one User type`)
+      return
+    }
+    if (selectedDUs.length === 0) {
+      toast.error(`Please select at least one Delivery Unit`)
       return
     }
     setIsLoading(true)
@@ -163,8 +183,16 @@ export default function ExcelUploadPage() {
       const filtered = rawData.filter(row => {
         const loc = String(row[locationCol] || "Unknown")
         const du = String(row[duCol] || "Unknown")
-        const locMatch = isStatus ? selectedLocations.includes(loc) : true
-        return locMatch && selectedDUs.includes(du)
+        const role = String(row[roleCol] || "Unknown")
+        const userType = String(row[userTypeCol] || "Unknown")
+        
+        let match = selectedDUs.includes(du);
+        if (isStatus) {
+           match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
+        } else {
+           match = match && selectedUserTypes.includes(userType);
+        }
+        return match;
       }).map((row, index) => ({
         ...row,
         id: `row-${index}-${Date.now()}`
@@ -191,11 +219,16 @@ export default function ExcelUploadPage() {
         // Status Completion Logic
         const statusKey = Object.keys(filtered[0]).find(k => /status/i.test(k)) || "Status"
 
-        // Fix status values if they are numeric
+        // Fix status values if they are numeric or suffer case-sensitivity variants
         const processedFiltered = filtered.map(row => {
           const statusVal = row[statusKey]
           if (/^\d+%?$/.test(String(statusVal)) || (typeof statusVal === 'number')) {
             row[statusKey] = "Ongoing"
+          } else if (typeof statusVal === 'string') {
+            const lower = statusVal.trim().toLowerCase()
+            if (lower === 'not started') row[statusKey] = 'Not Started'
+            else if (lower === 'ongoing') row[statusKey] = 'Ongoing'
+            else if (lower === 'completed') row[statusKey] = 'Completed'
           }
           return row
         })
@@ -309,6 +342,8 @@ export default function ExcelUploadPage() {
     setProcessedData([])
     setSelectedLocations([])
     setSelectedDUs([])
+    setSelectedRoles([])
+    setSelectedUserTypes([])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -318,6 +353,8 @@ export default function ExcelUploadPage() {
     setProcessedData([])
     setSelectedLocations([])
     setSelectedDUs([])
+    setSelectedRoles([])
+    setSelectedUserTypes([])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -385,7 +422,7 @@ export default function ExcelUploadPage() {
       )}
 
       {step === 'filter' && (
-        <div className={`grid grid-cols-1 ${importType === 'status' ? 'md:grid-cols-2' : 'max-w-2xl mx-auto w-full'} gap-6`}>
+        <div className={`grid grid-cols-1 ${importType === 'status' ? 'lg:grid-cols-3 md:grid-cols-2' : 'md:grid-cols-2 max-w-4xl mx-auto w-full'} gap-6`}>
           {importType === 'status' && (
             <Card className="border-none shadow-sm">
               <CardHeader>
@@ -397,12 +434,62 @@ export default function ExcelUploadPage() {
                   <div className="space-y-3">
                     <div className="flex items-center space-x-2 pb-2 border-b">
                       <Checkbox id="all-locs" checked={selectedLocations.length === uniqueFilterValues.locations.length} onCheckedChange={(checked) => setSelectedLocations(checked ? uniqueFilterValues.locations : [])} />
-                      <Label htmlFor="all-locs" className="font-bold">Select All Locations</Label>
+                      <Label htmlFor="all-locs" className="font-bold">Select All</Label>
                     </div>
                     {uniqueFilterValues.locations.map(loc => (
                       <div key={loc} className="flex items-center space-x-2">
                         <Checkbox id={`loc-${loc}`} checked={selectedLocations.includes(loc)} onCheckedChange={() => setSelectedLocations(prev => prev.includes(loc) ? prev.filter(l => l !== loc) : [...prev, loc])} />
                         <Label htmlFor={`loc-${loc}`}>{loc}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
+          {importType === 'status' && (
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Roles</CardTitle>
+                <CardDescription>Detected in column: <span className="font-semibold">{roleCol}</span></CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox id="all-roles" checked={selectedRoles.length === uniqueFilterValues.roles.length} onCheckedChange={(checked) => setSelectedRoles(checked ? uniqueFilterValues.roles : [])} />
+                      <Label htmlFor="all-roles" className="font-bold">Select All</Label>
+                    </div>
+                    {uniqueFilterValues.roles.map(role => (
+                      <div key={role} className="flex items-center space-x-2">
+                        <Checkbox id={`role-${role}`} checked={selectedRoles.includes(role)} onCheckedChange={() => setSelectedRoles(prev => prev.includes(role) ? prev.filter(r => r !== role) : [...prev, role])} />
+                        <Label htmlFor={`role-${role}`}>{role}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
+          {importType === 'courses' && (
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select User Types</CardTitle>
+                <CardDescription>Detected in column: <span className="font-semibold">{userTypeCol}</span></CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox id="all-usertypes" checked={selectedUserTypes.length === uniqueFilterValues.userTypes.length} onCheckedChange={(checked) => setSelectedUserTypes(checked ? uniqueFilterValues.userTypes : [])} />
+                      <Label htmlFor="all-usertypes" className="font-bold">Select All</Label>
+                    </div>
+                    {uniqueFilterValues.userTypes.map(ut => (
+                      <div key={ut} className="flex items-center space-x-2">
+                        <Checkbox id={`ut-${ut}`} checked={selectedUserTypes.includes(ut)} onCheckedChange={() => setSelectedUserTypes(prev => prev.includes(ut) ? prev.filter(u => u !== ut) : [...prev, ut])} />
+                        <Label htmlFor={`ut-${ut}`}>{ut}</Label>
                       </div>
                     ))}
                   </div>
@@ -421,7 +508,7 @@ export default function ExcelUploadPage() {
                 <div className="space-y-3">
                   <div className="flex items-center space-x-2 pb-2 border-b">
                     <Checkbox id="all-dus" checked={selectedDUs.length === uniqueFilterValues.dus.length} onCheckedChange={(checked) => setSelectedDUs(checked ? uniqueFilterValues.dus : [])} />
-                    <Label htmlFor="all-dus" className="font-bold">Select All DUs</Label>
+                    <Label htmlFor="all-dus" className="font-bold">Select All</Label>
                   </div>
                   {uniqueFilterValues.dus.map(du => (
                     <div key={du} className="flex items-center space-x-2">
@@ -435,9 +522,13 @@ export default function ExcelUploadPage() {
             <div className="p-6 pt-0 border-t">
               <div className="flex items-center justify-between mt-4">
                 <p className="text-sm text-zinc-500">
-                  {importType === 'status' ? `${selectedLocations.length} locations & ` : ''}{selectedDUs.length} DUs selected
+                  Ready to process records
                 </p>
-                <Button onClick={applyFiltersAndProcess} disabled={isLoading || (importType === 'status' && selectedLocations.length === 0) || selectedDUs.length === 0} className="bg-[#0046ab] hover:bg-[#003a8f] text-white">
+                <Button 
+                  onClick={applyFiltersAndProcess} 
+                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (!importType || importType === 'courses' ? selectedUserTypes.length === 0 : false) || selectedDUs.length === 0} 
+                  className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
+                >
                   {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
                   Process Data
                 </Button>
