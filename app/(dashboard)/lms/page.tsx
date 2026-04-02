@@ -17,7 +17,9 @@ import {
   GraduationCap,
   Search,
   Download,
-  FileText
+  FileText,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -125,6 +127,12 @@ export default function LMSDashboard() {
   const [courseDeptSearch, setCourseDeptSearch] = useState("")
   const [employeeSearch, setEmployeeSearch] = useState("")
 
+  // Pagination states
+  const [deptPage, setDeptPage] = useState(1)
+  const [mgrPage, setMgrPage] = useState(1)
+  const [courseDeptPage, setCourseDeptPage] = useState(1)
+  const [employeePage, setEmployeePage] = useState(1)
+
   useEffect(() => {
     const existingLogs = localStorage.getItem("lms_audit_logs")
     const activeData = localStorage.getItem("lms_active_data")
@@ -225,9 +233,10 @@ export default function LMSDashboard() {
     const timestamp = new Date().toLocaleString()
     
     // Header
+    const pdfWidth = doc.internal.pageSize.getWidth()
     doc.setFontSize(20)
     doc.setTextColor(0, 70, 171) // #0046ab
-    doc.text("LMS Dashboard Summary", 14, 22)
+    doc.text("LMS Dashboard Summary", pdfWidth / 2, 22, { align: 'center' })
     
     if (selectedLog.importType === 'status') {
       let nextY = 35;
@@ -236,12 +245,15 @@ export default function LMSDashboard() {
         const total = (selectedLog.statusSummary || []).reduce((acc, curr) => acc + curr.count, 0)
         if (total > 0 && typeof document !== 'undefined') {
           const canvas = document.createElement('canvas')
-          canvas.width = 400
+          canvas.width = 1000
           canvas.height = 400
           const ctx = canvas.getContext('2d')
           if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.scale(2, 2); // High-DPI scaling (500x200 effective space)
+            
             let currentAngle = -0.5 * Math.PI
-            const cx = 200, cy = 200, radius = 200
+            const cx = 130, cy = 100, radius = 90
             
             ;(selectedLog.statusSummary || []).forEach(slice => {
               const sliceAngle = (slice.count / total) * 2 * Math.PI
@@ -253,23 +265,59 @@ export default function LMSDashboard() {
               else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
               else ctx.fillStyle = '#ef4444'
               ctx.fill()
+              
+              // No border
               currentAngle += sliceAngle
             })
             
+            // Cutout donut hole
             ctx.beginPath()
-            ctx.arc(cx, cy, 110, 0, 2 * Math.PI)
+            ctx.arc(cx, cy, 55, 0, 2 * Math.PI)
             ctx.fillStyle = '#ffffff'
             ctx.fill()
             
-            const imgData = canvas.toDataURL('image/png')
-            doc.addImage(imgData, 'PNG', 14, 30, 45, 45)
-            
-            doc.setFontSize(14)
-            doc.setTextColor(0)
+            // Draw center text natively
             const completionRate = (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
-            doc.text(`Total Completion Rate: ${completionRate}%`, 65, 55)
+            ctx.fillStyle = '#111827'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.font = 'bold 28px sans-serif'
+            ctx.fillText(`${completionRate}%`, cx, cy - 8)
             
-            nextY = 85
+            ctx.fillStyle = '#6b7280'
+            ctx.font = 'bold 10px sans-serif'
+            ctx.fillText('COMPLETED', cx, cy + 14)
+            
+            // Draw Legend natively onto the right side
+            let legendY = 60;
+            ;(selectedLog.statusSummary || []).forEach(slice => {
+              if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
+              else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
+              else ctx.fillStyle = '#ef4444'
+              
+              ctx.beginPath()
+              ctx.arc(280, legendY, 6, 0, 2 * Math.PI)
+              ctx.fill()
+              
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'middle'
+              
+              ctx.fillStyle = '#4b5563'
+              ctx.font = 'bold 16px sans-serif'
+              ctx.fillText(`${slice.status}`, 300, legendY)
+              
+              ctx.fillStyle = '#9ca3af'
+              ctx.font = '14px sans-serif'
+              ctx.fillText(`-   ${slice.rate}  (${slice.count})`, 390, legendY)
+              
+              legendY += 40;
+            })
+            
+            const imgData = canvas.toDataURL('image/png', 1.0)
+            const imgWidth = 160
+            doc.addImage(imgData, 'PNG', (pdfWidth - imgWidth) / 2, 28, imgWidth, 64)
+            
+            nextY = 96
           }
         }
       } catch (e) {
@@ -559,7 +607,10 @@ export default function LMSDashboard() {
                     placeholder="Search department..." 
                     className="pl-9 h-9"
                     value={deptSearch}
-                    onChange={(e) => setDeptSearch(e.target.value)}
+                    onChange={(e) => {
+                      setDeptSearch(e.target.value)
+                      setDeptPage(1)
+                    }}
                   />
                 </div>
               </div>
@@ -583,7 +634,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredDeptSummary.map((row: any) => (
+                      filteredDeptSummary.slice((deptPage - 1) * 10, deptPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -604,6 +655,17 @@ export default function LMSDashboard() {
                   </TableBody>
                 </Table>
               </ScrollArea>
+              {filteredDeptSummary.length > 10 && (
+                <div className="flex items-center justify-end space-x-2 pt-4">
+                  <Button variant="outline" size="sm" onClick={() => setDeptPage(prev => Math.max(prev - 1, 1))} disabled={deptPage === 1}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {deptPage} of {Math.ceil(filteredDeptSummary.length / 10)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setDeptPage(prev => Math.min(prev + 1, Math.ceil(filteredDeptSummary.length / 10)))} disabled={deptPage === Math.ceil(filteredDeptSummary.length / 10)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -621,7 +683,10 @@ export default function LMSDashboard() {
                     placeholder="Search manager..." 
                     className="pl-9 h-9"
                     value={mgrSearch}
-                    onChange={(e) => setMgrSearch(e.target.value)}
+                    onChange={(e) => {
+                      setMgrSearch(e.target.value)
+                      setMgrPage(1)
+                    }}
                   />
                 </div>
               </div>
@@ -645,7 +710,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No managers found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredMgrSummary.map((row: any) => (
+                      filteredMgrSummary.slice((mgrPage - 1) * 10, mgrPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right text-green-600 font-semibold">{row.completed}</TableCell>
@@ -666,6 +731,17 @@ export default function LMSDashboard() {
                   </TableBody>
                 </Table>
               </ScrollArea>
+              {filteredMgrSummary.length > 10 && (
+                <div className="flex items-center justify-end space-x-2 pt-4">
+                  <Button variant="outline" size="sm" onClick={() => setMgrPage(prev => Math.max(prev - 1, 1))} disabled={mgrPage === 1}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {mgrPage} of {Math.ceil(filteredMgrSummary.length / 10)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setMgrPage(prev => Math.min(prev + 1, Math.ceil(filteredMgrSummary.length / 10)))} disabled={mgrPage === Math.ceil(filteredMgrSummary.length / 10)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -735,7 +811,10 @@ export default function LMSDashboard() {
                     placeholder="Search department..." 
                     className="pl-9 h-9"
                     value={courseDeptSearch}
-                    onChange={(e) => setCourseDeptSearch(e.target.value)}
+                    onChange={(e) => {
+                      setCourseDeptSearch(e.target.value)
+                      setCourseDeptPage(1)
+                    }}
                   />
                 </div>
               </div>
@@ -758,7 +837,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredDeptSummary.map((row: any) => (
+                      filteredDeptSummary.slice((courseDeptPage - 1) * 10, courseDeptPage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
@@ -772,6 +851,17 @@ export default function LMSDashboard() {
                   </TableBody>
                 </Table>
               </ScrollArea>
+              {filteredDeptSummary.length > 10 && (
+                <div className="flex items-center justify-end space-x-2 pt-4">
+                  <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.max(prev - 1, 1))} disabled={courseDeptPage === 1}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {courseDeptPage} of {Math.ceil(filteredDeptSummary.length / 10)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.min(prev + 1, Math.ceil(filteredDeptSummary.length / 10)))} disabled={courseDeptPage === Math.ceil(filteredDeptSummary.length / 10)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -788,7 +878,10 @@ export default function LMSDashboard() {
                     placeholder="Search employee..." 
                     className="pl-9 h-9"
                     value={employeeSearch}
-                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    onChange={(e) => {
+                      setEmployeeSearch(e.target.value)
+                      setEmployeePage(1)
+                    }}
                   />
                 </div>
               </div>
@@ -811,7 +904,7 @@ export default function LMSDashboard() {
                         <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      filteredEmployeeSummary.map((row: any) => (
+                      filteredEmployeeSummary.slice((employeePage - 1) * 10, employeePage * 10).map((row: any) => (
                         <TableRow key={row.name}>
                           <TableCell className="font-medium">{row.name}</TableCell>
                           <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
@@ -823,6 +916,17 @@ export default function LMSDashboard() {
                   </TableBody>
                 </Table>
               </ScrollArea>
+              {filteredEmployeeSummary.length > 10 && (
+                <div className="flex items-center justify-end space-x-2 pt-4">
+                  <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.max(prev - 1, 1))} disabled={employeePage === 1}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {employeePage} of {Math.ceil(filteredEmployeeSummary.length / 10)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.min(prev + 1, Math.ceil(filteredEmployeeSummary.length / 10)))} disabled={employeePage === Math.ceil(filteredEmployeeSummary.length / 10)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
