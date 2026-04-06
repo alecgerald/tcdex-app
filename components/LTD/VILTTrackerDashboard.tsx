@@ -291,26 +291,26 @@ const VILTTrackerDashboard: React.FC = () => {
   }
 
   return (
-    <div className="w-full space-y-8 pb-12">
+    <div className="w-full space-y-10 pb-12">
       {/* Session Selector */}
-      <div className="space-y-4">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <LayoutGrid className="h-4 w-4 text-[#0046ab]" />
-            <h2 className="text-xs font-black uppercase tracking-widest text-zinc-500">Select Session</h2>
+          <div className="flex items-center gap-3">
+            <LayoutGrid className="h-5 w-5 text-[#0046ab]" />
+            <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500">Select Session</h2>
           </div>
           <Button 
             onClick={exportToExcel}
             variant="outline"
-            className="h-8 px-3 rounded-lg border-zinc-200 text-zinc-600 font-bold text-[10px] uppercase flex items-center gap-2 hover:bg-zinc-50"
+            className="h-10 px-6 rounded-lg border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all"
             disabled={filteredRecords.length === 0}
           >
-            <Download className="h-3.5 w-3.5 text-[#0046ab]" />
+            <Download className="h-5 w-5 text-[#0046ab]" />
             Export to Excel
           </Button>
         </div>
         
-        <div className="flex flex-nowrap overflow-x-auto gap-3 pb-2 -mx-1 px-1 scrollbar-hide">
+        <div className="flex flex-nowrap overflow-x-auto gap-4 pb-4 -mx-1 px-1 scrollbar-hide">
           {sessions.map((session, idx) => {
             const isActive = selectedSession?.year === session.year && selectedSession?.cohort === session.cohort;
             return (
@@ -321,20 +321,20 @@ const VILTTrackerDashboard: React.FC = () => {
                   setCurrentPage(1);
                 }}
                 className={cn(
-                  "flex-shrink-0 min-w-[140px] p-4 rounded-2xl border transition-all text-left group relative",
+                  "flex-shrink-0 min-w-[160px] p-6 rounded-2xl border transition-all text-left group relative",
                   isActive 
-                    ? "bg-[#0046ab] border-[#0046ab] shadow-md shadow-blue-100" 
+                    ? "bg-[#0046ab] border-[#0046ab] shadow-lg shadow-blue-100" 
                     : "bg-white border-zinc-100 hover:border-[#0046ab]/30 hover:bg-blue-50/30"
                 )}
               >
                 <div className={cn(
-                  "text-[10px] font-black uppercase tracking-wider mb-1",
+                  "text-[11px] font-black uppercase tracking-wider mb-2",
                   isActive ? "text-blue-100" : "text-zinc-400 group-hover:text-[#0046ab]"
                 )}>
                   {session.year}
                 </div>
                 <div className={cn(
-                  "text-xs font-black uppercase pr-6",
+                  "text-base font-black uppercase pr-8",
                   isActive ? "text-white" : "text-zinc-800"
                 )}>
                   {session.cohort}
@@ -350,13 +350,13 @@ const VILTTrackerDashboard: React.FC = () => {
                           handleDeleteSession(session.year, session.cohort);
                         }}
                         className={cn(
-                          "absolute top-3 right-3 p-1.5 rounded-lg transition-colors cursor-pointer",
+                          "absolute top-4 right-4 p-2 rounded-lg transition-colors cursor-pointer",
                           isActive 
                             ? "text-blue-200 hover:text-white hover:bg-white/10" 
                             : "text-zinc-300 hover:text-rose-500 hover:bg-rose-50"
                         )}
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <Trash2 className="h-4 w-4" />
                       </div>
                     </TooltipTrigger>
                     <TooltipContent className="text-[10px] font-black uppercase">
@@ -371,70 +371,70 @@ const VILTTrackerDashboard: React.FC = () => {
       </div>
 
       {sessions.length === 0 ? (
-        <Card className="shadow-sm border-zinc-100 rounded-3xl overflow-hidden p-12 text-center">
-          <div className="flex flex-col items-center justify-center gap-4">
-            <div className="bg-zinc-50 p-6 rounded-full">
-              <Users className="h-10 w-10 text-zinc-300" />
+        <Card className="shadow-sm border-zinc-100 rounded-3xl overflow-hidden p-16 text-center">
+          <div className="flex flex-col items-center justify-center gap-6">
+            <div className="bg-zinc-50 p-8 rounded-full">
+              <Users className="h-12 w-12 text-zinc-300" />
             </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-black uppercase tracking-widest text-zinc-800">No Sessions Found</h3>
-              <p className="text-xs text-zinc-400 font-medium">Please import data to start tracking attendance.</p>
+            <div className="space-y-2">
+              <h3 className="text-base font-black uppercase tracking-widest text-zinc-800">No Sessions Found</h3>
+              <p className="text-sm text-zinc-400 font-medium">Please import data to start tracking attendance.</p>
             </div>
           </div>
         </Card>
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="shadow-sm border-zinc-100 rounded-2xl overflow-hidden group">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 p-4">
-                <CardTitle className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Attendance Rate</CardTitle>
-                <TrendingUp className="h-4 w-4 text-emerald-600" />
+              <CardHeader className="flex flex-row items-center justify-between pb-3 p-6">
+                <CardTitle className="text-[11px] font-black uppercase text-zinc-500 tracking-wider">Attendance Rate</CardTitle>
+                <TrendingUp className="h-5 w-5 text-emerald-600" />
               </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="text-2xl font-black text-zinc-900">{summary.rate}%</div>
-                <p className="text-[9px] font-medium text-zinc-400 uppercase mt-1">Status: Completed</p>
+              <CardContent className="p-6 pt-0">
+                <div className="text-4xl font-black text-zinc-900">{summary.rate}%</div>
+                <p className="text-[11px] font-bold text-zinc-400 uppercase mt-2">Status: Completed</p>
               </CardContent>
             </Card>
 
             <Card className="shadow-sm border-zinc-100 rounded-2xl overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 p-4">
-                <CardTitle className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Completed</CardTitle>
-                <CheckCircle2 className="h-4 w-4 text-blue-600" />
+              <CardHeader className="flex flex-row items-center justify-between pb-3 p-6">
+                <CardTitle className="text-[11px] font-black uppercase text-zinc-500 tracking-wider">Completed</CardTitle>
+                <CheckCircle2 className="h-5 w-5 text-blue-600" />
               </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="text-2xl font-black text-zinc-900">{summary.completed}</div>
-                <p className="text-[9px] font-medium text-zinc-400 uppercase mt-1">Participants</p>
+              <CardContent className="p-6 pt-0">
+                <div className="text-4xl font-black text-zinc-900">{summary.completed}</div>
+                <p className="text-[11px] font-bold text-zinc-400 uppercase mt-2">Participants</p>
               </CardContent>
             </Card>
 
             <Card className="shadow-sm border-zinc-100 rounded-2xl overflow-hidden">
-              <CardHeader className="flex flex-row items-center justify-between pb-2 p-4">
-                <CardTitle className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">Total Enrolled</CardTitle>
-                <Users className="h-4 w-4 text-zinc-400" />
+              <CardHeader className="flex flex-row items-center justify-between pb-3 p-6">
+                <CardTitle className="text-[11px] font-black uppercase text-zinc-500 tracking-wider">Total Enrolled</CardTitle>
+                <Users className="h-5 w-5 text-zinc-400" />
               </CardHeader>
-              <CardContent className="p-4 pt-0">
-                <div className="text-2xl font-black text-zinc-900">{summary.total}</div>
-                <p className="text-[9px] font-medium text-zinc-400 uppercase mt-1">Cohort Size</p>
+              <CardContent className="p-6 pt-0">
+                <div className="text-4xl font-black text-zinc-900">{summary.total}</div>
+                <p className="text-[11px] font-bold text-zinc-400 uppercase mt-2">Cohort Size</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Search & Export Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-6 rounded-2xl border shadow-sm">
-            <div className="flex flex-col gap-1">
-              <h3 className="text-sm font-black text-zinc-900 uppercase tracking-tight">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white p-8 rounded-2xl border shadow-sm">
+            <div className="flex flex-col gap-2">
+              <h3 className="text-xl font-black text-zinc-900 uppercase tracking-tight">
                 {selectedSession?.cohort} <span className="text-[#0046ab]">{selectedSession?.year}</span>
               </h3>
-              <p className="text-[10px] font-medium text-zinc-400 uppercase">Managing attendance tracking and module completion</p>
+              <p className="text-sm font-bold text-zinc-400 uppercase">Managing attendance tracking and module completion</p>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 w-full lg:w-auto">
-              <div className="relative w-full sm:w-[300px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+            <div className="flex flex-col sm:flex-row items-center gap-4 w-full lg:w-auto">
+              <div className="relative w-full sm:w-[320px]">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
                 <Input 
                   placeholder="Search participant..." 
-                  className="pl-10 h-10 text-xs border-zinc-200 rounded-xl w-full"
+                  className="pl-12 h-12 text-base border-zinc-200 rounded-xl w-full focus-visible:ring-[#0046ab]"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -443,9 +443,9 @@ const VILTTrackerDashboard: React.FC = () => {
               <Button 
                 onClick={exportToExcel}
                 variant="outline"
-                className="h-10 px-4 rounded-xl border-zinc-200 text-zinc-600 font-bold text-xs uppercase flex items-center gap-2 hover:bg-zinc-50 w-full sm:w-auto"
+                className="h-12 px-6 rounded-xl border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 w-full sm:w-auto transition-all"
               >
-                <Download className="h-4 w-4 text-[#0046ab]" />
+                <Download className="h-5 w-5 text-[#0046ab]" />
                 Export to Excel
               </Button>
             </div>
@@ -459,37 +459,37 @@ const VILTTrackerDashboard: React.FC = () => {
                   <Table>
                     <TableHeader className="bg-zinc-50/50">
                       <TableRow>
-                        <TableHead className="pl-6 text-[10px] font-black uppercase tracking-wider h-12">Participant</TableHead>
-                        <TableHead className="text-[10px] font-black uppercase tracking-wider h-12">Department</TableHead>
+                        <TableHead className="pl-8 text-sm font-black uppercase tracking-wider h-16">Participant</TableHead>
+                        <TableHead className="text-sm font-black uppercase tracking-wider h-16">Department</TableHead>
                         {MODULE_KEYS.map(key => (
-                          <TableHead key={key} className="text-center text-[10px] font-black uppercase tracking-wider h-12">
+                          <TableHead key={key} className="text-center text-sm font-black uppercase tracking-wider h-16">
                             {key}
                           </TableHead>
                         ))}
-                        <TableHead className="text-right pr-6 text-[10px] font-black uppercase tracking-wider h-12">Overall Status</TableHead>
+                        <TableHead className="text-right pr-8 text-sm font-black uppercase tracking-wider h-16">Overall Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {paginatedRecords.length === 0 ? (
                         <TableRow>
-                          <TableCell colSpan={MODULE_KEYS.length + 3} className="h-60 text-center">
-                            <div className="flex flex-col items-center justify-center gap-2 opacity-30">
-                              <Users className="h-8 w-8" />
-                              <p className="text-sm font-black uppercase tracking-widest">No participants found</p>
+                          <TableCell colSpan={MODULE_KEYS.length + 3} className="h-80 text-center">
+                            <div className="flex flex-col items-center justify-center gap-4 opacity-30">
+                              <Users className="h-12 w-12" />
+                              <p className="text-base font-black uppercase tracking-widest">No participants found</p>
                             </div>
                           </TableCell>
                         </TableRow>
                       ) : (
                         paginatedRecords.map((r) => (
                           <TableRow key={r.id} className="hover:bg-zinc-50/50 transition-colors border-zinc-100 group">
-                            <TableCell className="pl-6 py-4">
+                            <TableCell className="pl-8 py-6">
                               <div className="flex flex-col">
-                                <span className="text-xs font-bold text-zinc-800">{r.name}</span>
-                                <span className="text-[9px] text-[#0046ab] font-black uppercase">{r.email}</span>
+                                <span className="text-base font-medium text-zinc-800">{r.name}</span>
+                                <span className="text-xs text-[#0046ab] font-black uppercase mt-1">{r.email}</span>
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="secondary" className="bg-white border text-[10px] font-black uppercase px-2 py-0.5 rounded-md text-zinc-500 whitespace-nowrap">
+                              <Badge variant="secondary" className="bg-white border text-xs font-black uppercase px-3 py-1.5 rounded-md text-zinc-500 whitespace-nowrap">
                                 {r.department}
                               </Badge>
                             </TableCell>
@@ -503,20 +503,20 @@ const VILTTrackerDashboard: React.FC = () => {
                                         <Switch 
                                           checked={attended} 
                                           onCheckedChange={() => handleModuleToggle(r.id, key, attended)}
-                                          className="data-[state=checked]:bg-emerald-500"
+                                          className="data-[state=checked]:bg-emerald-500 scale-125"
                                         />
                                       </div>
                                     </TooltipTrigger>
-                                    <TooltipContent className="text-[10px] font-black uppercase px-2 py-1">
+                                    <TooltipContent className="text-[11px] font-black uppercase px-2.5 py-1.5">
                                       {attended ? "Attended" : "Absent"}
                                     </TooltipContent>
                                   </Tooltip>
                                 </TableCell>
                               );
                             })}
-                            <TableCell className="text-right pr-6">
+                            <TableCell className="text-right pr-8">
                               <Badge className={cn(
-                                "text-[9px] font-black uppercase px-2 py-0.5 rounded-md border",
+                                "text-[11px] font-black uppercase px-3 py-1.5 rounded-md border",
                                 r.overall_status === 'Completed' 
                                   ? "bg-emerald-50 text-emerald-600 border-emerald-100 hover:bg-emerald-50" 
                                   : r.overall_status === 'Incomplete'
@@ -536,28 +536,28 @@ const VILTTrackerDashboard: React.FC = () => {
 
               {/* Pagination Controls */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between px-6 py-4 bg-zinc-50/50 border-t border-zinc-100">
-                  <div className="text-[10px] font-black uppercase text-zinc-400 tracking-wider">
+                <div className="flex items-center justify-between px-8 py-6 bg-zinc-50/50 border-t border-zinc-100">
+                  <div className="text-xs font-black uppercase text-zinc-400 tracking-wider">
                     Page {currentPage} of {totalPages}
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="h-8 w-8 p-0 rounded-lg border-zinc-200"
+                      className="h-10 w-10 p-0 rounded-lg border-zinc-200"
                     >
-                      <ChevronLeft className="h-4 w-4" />
+                      <ChevronLeft className="h-5 w-5" />
                     </Button>
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className="h-8 w-8 p-0 rounded-lg border-zinc-200"
+                      className="h-10 w-10 p-0 rounded-lg border-zinc-200"
                     >
-                      <ChevronRight className="h-4 w-4" />
+                      <ChevronRight className="h-5 w-5" />
                     </Button>
                   </div>
                 </div>

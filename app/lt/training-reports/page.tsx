@@ -11,7 +11,7 @@ import { FileText } from "lucide-react";
  */
 export default function TrainingReportsPage() {
   return (
-    <div className="flex-1 space-y-8 p-8 pt-6 max-w-7xl mx-auto pb-20">
+    <div className="flex-1 space-y-8 p-8 pt-6 w-full pb-20">
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-[#0046ab]/10 rounded-lg">

@@ -138,32 +138,32 @@ const TrainingReportsDashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-[400px] items-center justify-center">
+      <div className="flex h-[400px] items-center justify-center w-full">
         <Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-8 pb-12">
       {/* Header & Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white dark:bg-zinc-900 p-4 rounded-xl border shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#0046ab]/10 rounded-lg">
-            <FileText className="h-5 w-5 text-[#0046ab]" />
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="p-3 bg-[#0046ab]/10 rounded-xl">
+            <FileText className="h-6 w-6 text-[#0046ab]" />
           </div>
           <div>
-            <h2 className="text-lg font-bold tracking-tight text-[#0046ab]">VILT Training Performance</h2>
-            <p className="text-[10px] text-muted-foreground uppercase font-black tracking-widest">Independent Reporting Dashboard</p>
+            <h2 className="text-xl font-bold tracking-tight text-[#0046ab]">VILT Training Performance</h2>
+            <p className="text-xs text-muted-foreground uppercase font-black tracking-widest">Independent Reporting Dashboard</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-[10px] font-black text-muted-foreground uppercase tracking-wider">
-            <Calendar className="h-3.5 w-3.5" /> Course Year:
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 text-xs font-black text-muted-foreground uppercase tracking-wider">
+            <Calendar className="h-4 w-4" /> Course Year:
           </div>
           <Select value={selectedYear} onValueChange={setSelectedYear}>
-            <SelectTrigger className="w-[120px] h-9 text-xs font-bold border-zinc-200">
+            <SelectTrigger className="w-[140px] h-10 text-sm font-bold border-zinc-200">
               <SelectValue placeholder="Select" />
             </SelectTrigger>
             <SelectContent>
@@ -178,80 +178,80 @@ const TrainingReportsDashboard: React.FC = () => {
       </div>
 
       {reports.length === 0 ? (
-        <Card className="border-dashed bg-muted/30 py-20 text-center">
+        <Card className="border-dashed bg-muted/30 py-24 text-center rounded-3xl">
           <CardContent>
-            <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground/40 mb-4" />
-            <h3 className="text-xl font-semibold">No Training Data Found</h3>
-            <p className="text-muted-foreground">Upload VILT reports to view performance metrics for {selectedYear === 'all' ? 'any year' : selectedYear}.</p>
+            <AlertCircle className="mx-auto h-16 w-16 text-muted-foreground/40 mb-6" />
+            <h3 className="text-2xl font-semibold">No Training Data Found</h3>
+            <p className="text-muted-foreground mt-2">Upload VILT reports to view performance metrics for {selectedYear === 'all' ? 'any year' : selectedYear}.</p>
           </CardContent>
         </Card>
       ) : (
         <>
           {/* Metrics Row */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Card className="border-t-4 border-t-[#0046ab] shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-1 space-y-0">
-                <CardTitle className="text-[10px] font-black uppercase text-muted-foreground">Total Participants</CardTitle>
-                <Users className="h-3.5 w-3.5 text-[#0046ab]" />
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            <Card className="border-t-4 border-t-[#0046ab] shadow-sm rounded-2xl overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-6 space-y-0">
+                <CardTitle className="text-xs font-black uppercase text-muted-foreground">Total Participants</CardTitle>
+                <Users className="h-4 w-4 text-[#0046ab]" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-black">{metrics.totalParticipants}</div>
-                <p className="text-[9px] text-muted-foreground font-medium mt-1">Unique employees in report</p>
+              <CardContent className="px-6 pb-6 pt-0">
+                <div className="text-3xl font-black">{metrics.totalParticipants}</div>
+                <p className="text-[10px] text-muted-foreground font-medium mt-2">Unique employees in report</p>
               </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-emerald-500 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-1 space-y-0">
-                <CardTitle className="text-[10px] font-black uppercase text-muted-foreground">Completions</CardTitle>
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+            <Card className="border-t-4 border-t-emerald-500 shadow-sm rounded-2xl overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-6 space-y-0">
+                <CardTitle className="text-xs font-black uppercase text-muted-foreground">Completions</CardTitle>
+                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-black text-emerald-600">{metrics.totalCompletions}</div>
-                <p className="text-[9px] text-muted-foreground font-medium mt-1">Total course finishes</p>
+              <CardContent className="px-6 pb-6 pt-0">
+                <div className="text-3xl font-black text-emerald-600">{metrics.totalCompletions}</div>
+                <p className="text-[10px] text-muted-foreground font-medium mt-2">Total course finishes</p>
               </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-purple-500 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-1 space-y-0">
-                <CardTitle className="text-[10px] font-black uppercase text-muted-foreground">Avg per User</CardTitle>
-                <Award className="h-3.5 w-3.5 text-purple-500" />
+            <Card className="border-t-4 border-t-purple-500 shadow-sm rounded-2xl overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-6 space-y-0">
+                <CardTitle className="text-xs font-black uppercase text-muted-foreground">Avg per User</CardTitle>
+                <Award className="h-4 w-4 text-purple-500" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-black text-purple-600">{metrics.avgPerUser}</div>
-                <p className="text-[9px] text-muted-foreground font-medium mt-1">Courses per active finisher</p>
+              <CardContent className="px-6 pb-6 pt-0">
+                <div className="text-3xl font-black text-purple-600">{metrics.avgPerUser}</div>
+                <p className="text-[10px] text-muted-foreground font-medium mt-2">Courses per active finisher</p>
               </CardContent>
             </Card>
 
-            <Card className="border-t-4 border-t-orange-500 shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-1 space-y-0">
-                <CardTitle className="text-[10px] font-black uppercase text-muted-foreground">Participation Rate</CardTitle>
-                <TrendingUp className="h-3.5 w-3.5 text-orange-500" />
+            <Card className="border-t-4 border-t-orange-500 shadow-sm rounded-2xl overflow-hidden">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 p-6 space-y-0">
+                <CardTitle className="text-xs font-black uppercase text-muted-foreground">Participation Rate</CardTitle>
+                <TrendingUp className="h-4 w-4 text-orange-500" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-black text-orange-600">{metrics.participationRate}%</div>
-                <p className="text-[9px] text-muted-foreground font-medium mt-1">Users with &ge;1 completion</p>
+              <CardContent className="px-6 pb-6 pt-0">
+                <div className="text-3xl font-black text-orange-600">{metrics.participationRate}%</div>
+                <p className="text-[10px] text-muted-foreground font-medium mt-2">Users with &ge;1 completion</p>
               </CardContent>
             </Card>
           </div>
 
           {/* Chart Row */}
-          <Card className="shadow-sm">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-black uppercase flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-[#0046ab]" /> Department Distribution (%)
+          <Card className="shadow-sm rounded-3xl overflow-hidden">
+            <CardHeader className="p-8 pb-2">
+              <CardTitle className="text-xl font-black uppercase flex items-center gap-3">
+                <BarChart3 className="h-6 w-6 text-[#0046ab]" /> Department Distribution (%)
               </CardTitle>
-              <CardDescription className="text-[11px]">Percentage of total participants represented per delivery unit.</CardDescription>
+              <CardDescription className="text-xs font-medium mt-1">Percentage of total participants represented per delivery unit.</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="h-[400px] w-full mt-6">
+            <CardContent className="p-8 pt-0">
+              <div className="h-[450px] w-full mt-8">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={departmentChartData} margin={{ bottom: 70, top: 20 }}>
+                  <BarChart data={departmentChartData} margin={{ bottom: 100, top: 20 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis 
                       dataKey="name" 
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{ fontSize: 10, fill: '#64748b' }} 
+                      tick={{ fontSize: 11, fontWeight: 600, fill: '#64748b' }} 
                       angle={-45} 
                       textAnchor="end" 
                       interval={0}
@@ -259,19 +259,19 @@ const TrainingReportsDashboard: React.FC = () => {
                     <YAxis 
                       axisLine={false} 
                       tickLine={false} 
-                      tick={{ fontSize: 10, fill: '#64748b' }} 
+                      tick={{ fontSize: 11, fontWeight: 600, fill: '#64748b' }} 
                       unit="%" 
                       domain={[0, 100]}
                     />
                     <Tooltip 
                       cursor={{ fill: '#f8fafc' }} 
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 8px 16px rgba(0,0,0,0.1)', fontSize: '11px' }}
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 12px 24px rgba(0,0,0,0.1)', fontSize: '12px', fontWeight: 'bold' }}
                       formatter={(value: any, name: any, props: any) => {
                         const percent = value !== undefined && value !== null ? `${value}%` : 'N/A';
                         return [percent, `Distribution (Total: ${props.payload.count} participants)`];
                       }}
                     />
-                    <Bar dataKey="percentage" fill="#0046ab" radius={[6, 6, 0, 0]} barSize={45}>
+                    <Bar dataKey="percentage" fill="#0046ab" radius={[8, 8, 0, 0]} barSize={50}>
                       {departmentChartData.map((entry, index) => (
                         <Cell key={`cell-${index}`} fill={entry.percentage > 30 ? '#0046ab' : entry.percentage > 10 ? '#3b82f6' : '#94a3b8'} />
                       ))}
