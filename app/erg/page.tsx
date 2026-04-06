@@ -37,6 +37,7 @@ export default function ERGDashboard() {
   const [eventLogs, setEventLogs] = useState<any[]>([])
   const [feedback, setFeedback] = useState<any[]>([])
   const [participation, setParticipation] = useState<any[]>([])
+  const [auditLogs, setAuditLogs] = useState<any[]>([])
   
   // Filter States
   const [selectedERG, setSelectedERG] = useState("All")
@@ -48,13 +49,29 @@ export default function ERGDashboard() {
   const [startMonth, setStartMonth] = useState(0) // Jan
   const [endMonth, setEndMonth] = useState(11)    // Dec
 
+  // Figure 3 (Attendance) Date Range Filter States
+  const [attendanceStartMonth, setAttendanceStartMonth] = useState(0)
+  const [attendanceEndMonth, setAttendanceEndMonth] = useState(11)
+
+  // Figure 4 (Feedback) Date Range Filter States
+  const [feedbackStartMonth, setFeedbackStartMonth] = useState(0)
+  const [feedbackEndMonth, setFeedbackEndMonth] = useState(11)
+  const [selectedDEIB, setSelectedDEIB] = useState("All")
+  const [hoveredFeedbackIndex, setHoveredFeedbackIndex] = useState<number | null>(null)
+
   useEffect(() => {
     setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
     setSnapshots(JSON.parse(localStorage.getItem("erg_membership_snapshots") || "[]"))
     setEventLogs(JSON.parse(localStorage.getItem("erg_event_logs") || "[]"))
     setFeedback(JSON.parse(localStorage.getItem("erg_feedback_summaries") || "[]"))
     setParticipation(JSON.parse(localStorage.getItem("erg_participation_details") || "[]"))
+    setAuditLogs(JSON.parse(localStorage.getItem("erg_audit_logs") || "[]"))
   }, [])
+
+  const latestRegistryUpdate = useMemo(() => {
+    const regLog = auditLogs.find(log => log.templateType === 'membership_registry')
+    return regLog ? regLog.date : null
+  }, [auditLogs])
 
   // Centralized Color Mapping for ERGs
   const ergColors = useMemo(() => {
@@ -132,7 +149,16 @@ export default function ERGDashboard() {
 
   // Figure 3: Attendance by Activity Type (Stacked Column)
   const attendanceByType = useMemo(() => {
-    const relevantEvents = eventLogs.filter(e => selectedERG === "All" || e.ERG === selectedERG)
+    const relevantEvents = eventLogs.filter(e => {
+      const matchERG = selectedERG === "All" || e.ERG === selectedERG
+      
+      // Date Filtering
+      const date = new Date(e["Event Date"])
+      const monthIndex = date.getMonth()
+      const matchDate = !isNaN(monthIndex) && monthIndex >= attendanceStartMonth && monthIndex <= attendanceEndMonth
+      
+      return matchERG && matchDate
+    })
     const types = ["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"]
     const ergsList = selectedERG === "All" ? ergs.filter(e => e !== "All") : [selectedERG]
     
@@ -145,19 +171,40 @@ export default function ERGDashboard() {
       })
       return { erg, ...typeCounts }
     })
-  }, [eventLogs, selectedERG, ergs])
+  }, [eventLogs, selectedERG, ergs, attendanceStartMonth, attendanceEndMonth])
 
   // Figure 4: Feedback Effectiveness (Combo Chart)
   const feedbackEffectiveness = useMemo(() => {
-    const relevantFeedback = feedback.filter(f => selectedERG === "All" || f.ERG === selectedERG)
-    return relevantFeedback.slice(-6).map(f => ({
+    const relevantFeedback = feedback.filter(f => {
+      const matchERG = selectedERG === "All" || f.ERG === selectedERG
+      const matchDEIB = selectedDEIB === "All" || f["DEIB event"] === selectedDEIB
+      
+      // Date Filtering (based on uploadDate)
+      const dateStr = f.uploadDate
+      if (!dateStr) return matchERG && matchDEIB
+      
+      const date = new Date(dateStr)
+      const monthIndex = date.getMonth()
+      const matchDate = !isNaN(monthIndex) && monthIndex >= feedbackStartMonth && monthIndex <= feedbackEndMonth
+      
+      return matchERG && matchDEIB && matchDate
+    })
+
+    const data = relevantFeedback.map(f => ({
       title: f["Activity Title"],
       score: Number(f["Overall Evaluation Score"]) || 0,
       pos: Number(f["Positive Feedbacks"]) || 0,
       neg: Number(f["Negative Feedbacks"]) || 0,
-      count: Number(f["Response Count"]) || 0
+      total: (Number(f["Positive Feedbacks"]) || 0) + (Number(f["Negative Feedbacks"]) || 0)
     }))
-  }, [feedback, selectedERG])
+
+    const maxCount = Math.max(...data.map(d => Math.max(d.pos, d.neg)), 10)
+    const maxVal = Math.ceil(maxCount / 10) * 10
+
+    return { data, maxVal }
+  }, [feedback, selectedERG, selectedDEIB, feedbackStartMonth, feedbackEndMonth])
+
+  const deibEvents = useMemo(() => ["All", ...Array.from(new Set(feedback.map(f => f["DEIB event"])))].filter(Boolean), [feedback])
 
   // Figure 5: Cross-BU Participation Heatmap
   const heatmapData = useMemo(() => {
@@ -182,8 +229,10 @@ export default function ERGDashboard() {
     const events = eventLogs.filter(e => selectedERG === "All" || e.ERG === selectedERG)
     const attendance = events.reduce((acc, curr) => acc + (Number(curr["Attendance / Participation Count"]) || 0), 0)
     
-    const avgScore = feedback.filter(f => selectedERG === "All" || f.ERG === selectedERG)
-      .reduce((acc, curr) => acc + (Number(curr["Overall Evaluation Score"]) || 0), 0) / (feedback.length || 1)
+    const filteredFeedback = feedback.filter(f => selectedERG === "All" || f.ERG === selectedERG)
+    const avgScore = (filteredFeedback.length > 0)
+      ? filteredFeedback.reduce((acc, curr) => acc + (Number(curr["Overall Evaluation Score"]) || 0), 0) / filteredFeedback.length
+      : 0
 
     return [
       { title: "Active Members", value: active.toLocaleString(), icon: Users, description: "Total in directory" },
@@ -256,7 +305,17 @@ export default function ERGDashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Figure 1: Horizontal Bar */}
         <Card className="border-none shadow-sm">
-          <CardHeader><CardTitle className="text-lg">Active Members by ERG</CardTitle></CardHeader>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-lg">Active Members by ERG</CardTitle>
+              {latestRegistryUpdate && (
+                <Badge variant="outline" className="text-[10px] font-medium text-zinc-400 border-zinc-100 flex items-center gap-1.5">
+                  <Calendar className="h-3 w-3" />
+                  Latest Upload: {latestRegistryUpdate}
+                </Badge>
+              )}
+            </div>
+          </CardHeader>
           <CardContent className="space-y-4">
             {ergsDist.map(item => (
               <div key={item.label} className="space-y-1">
@@ -340,7 +399,7 @@ export default function ERGDashboard() {
                 <div className="h-[200px] w-full border-b border-l border-zinc-100 relative flex items-end justify-between px-2 overflow-visible">
                   {/* Grid Lines */}
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
-                    {[1, 2, 3, 4].map(line => (
+                    {[0, 1, 2, 3, 4].map(line => (
                       <div key={line} className="w-full border-t border-zinc-100/50" style={{ height: '0px' }} />
                     ))}
                   </div>
@@ -438,10 +497,37 @@ export default function ERGDashboard() {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Figure 3: Stacked Attendance */}
-        <Card className="border-none shadow-sm lg:col-span-2">
-          <CardHeader><CardTitle className="text-lg">Attendance by ERG & Activity Type</CardTitle></CardHeader>
+        <Card className="border-none shadow-sm">
+          <CardHeader>
+            <div className="flex justify-between items-start">
+              <CardTitle className="text-lg">Attendance by ERG & Activity Type</CardTitle>
+              <div className="flex items-center gap-2">
+                <Select value={String(attendanceStartMonth)} onValueChange={(v) => setAttendanceStartMonth(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                    <SelectValue placeholder="Start" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_MONTHS.map((m, i) => (
+                      <SelectItem key={m} value={String(i)} disabled={i > attendanceEndMonth}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-[10px] font-black text-zinc-300">TO</span>
+                <Select value={String(attendanceEndMonth)} onValueChange={(v) => setAttendanceEndMonth(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                    <SelectValue placeholder="End" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_MONTHS.map((m, i) => (
+                      <SelectItem key={m} value={String(i)} disabled={i < attendanceStartMonth}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardHeader>
           <CardContent>
             <div className="space-y-6">
               {attendanceByType.map(item => {
@@ -497,67 +583,196 @@ export default function ERGDashboard() {
         {/* Figure 4: Feedback Balance */}
         <Card className="border-none shadow-sm flex flex-col">
           <CardHeader>
-            <CardTitle className="text-lg">Event Feedback Balance</CardTitle>
-            <CardDescription>Sentiment & quality scores</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6 flex-1">
-            {feedbackEffectiveness.map(f => {
-              const totalFeedback = f.pos + f.neg
-              const posPercent = totalFeedback > 0 ? (f.pos / totalFeedback) * 100 : 50
-              
-              return (
-                <div key={f.title} className="space-y-2 group/fb">
-                  <div className="flex justify-between items-end">
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[11px] font-bold truncate text-zinc-700 dark:text-zinc-300 mb-0.5">{f.title}</div>
-                      <div className="flex items-center gap-1">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <div 
-                            key={star} 
-                            className={`h-1.5 w-3 rounded-full ${star <= Math.round(f.score) ? 'bg-yellow-400' : 'bg-zinc-200 dark:bg-zinc-800'}`} 
-                          />
+            <div className="flex justify-between items-start">
+              <div>
+                <CardTitle className="text-lg">Event Feedback Balance</CardTitle>
+                <CardDescription>Sentiment vs. Evaluation Score</CardDescription>
+                <div className="flex flex-col gap-2 mt-2">
+                  <div className="flex items-center gap-2">
+                    <Select value={String(feedbackStartMonth)} onValueChange={(v) => setFeedbackStartMonth(parseInt(v))}>
+                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                        <SelectValue placeholder="Start" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ALL_MONTHS.map((m, i) => (
+                          <SelectItem key={m} value={String(i)} disabled={i > feedbackEndMonth}>{m}</SelectItem>
                         ))}
-                        <span className="text-[10px] font-black ml-1 text-zinc-500">{f.score.toFixed(1)}</span>
-                      </div>
-                    </div>
-                    <div className="text-[10px] font-bold text-zinc-400 flex items-center gap-1 bg-zinc-50 px-2 py-1 rounded dark:bg-zinc-900">
-                      <MessageSquare className="h-3 w-3" /> {f.count}
-                    </div>
+                      </SelectContent>
+                    </Select>
+                    <span className="text-[10px] font-black text-zinc-300">TO</span>
+                    <Select value={String(feedbackEndMonth)} onValueChange={(v) => setFeedbackEndMonth(parseInt(v))}>
+                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                        <SelectValue placeholder="End" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ALL_MONTHS.map((m, i) => (
+                          <SelectItem key={m} value={String(i)} disabled={i < feedbackStartMonth}>{m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+                  <Select value={selectedDEIB} onValueChange={setSelectedDEIB}>
+                    <SelectTrigger className="h-8 w-full text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                      <SelectValue placeholder="Filter by DEIB Event" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {deibEvents.map(e => <SelectItem key={e} value={e}>{e === 'All' ? 'All DEIB Events' : e}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="flex-1 pb-12">
+            {/* Legend - Back at the Top */}
+            <div className="mb-6 flex flex-wrap gap-4 justify-center">
+              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase text-zinc-500">
+                <div className="h-2 w-2 rounded-full bg-green-500" /> Positive
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase text-zinc-500">
+                <div className="h-2 w-2 rounded-full bg-red-500" /> Negative
+              </div>
+              <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase text-yellow-500">
+                <div className="h-0.5 w-4 bg-yellow-500" /> Avg Score
+              </div>
+            </div>
 
-                  <div className="relative h-2.5 w-full bg-zinc-100 rounded-full flex dark:bg-zinc-800 group/bar cursor-help">
-                    <div 
-                      className="h-full bg-green-500 transition-all duration-500 rounded-l-full" 
-                      style={{ width: `${posPercent}%` }}
-                    />
-                    <div 
-                      className="h-full bg-red-500 transition-all duration-500 rounded-r-full" 
-                      style={{ width: `${100 - posPercent}%` }}
-                    />
-                    
-                    {/* COMBINED TOOLTIP */}
-                    <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] font-bold px-3 py-2 rounded-md opacity-0 group-hover/bar:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all duration-200 shadow-xl border border-white/10 flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2">
-                        <ThumbsUp className="h-3 w-3 text-green-500" />
-                        <span>Positive Feedback: {f.pos}</span>
-                      </div>
-                      <div className="flex items-center gap-2 border-t border-zinc-700 pt-1 mt-0.5">
-                        <ThumbsDown className="h-3 w-3 text-red-500" />
-                        <span>Negative Feedback: {f.neg}</span>
-                      </div>
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+            <div className="flex gap-2">
+              {/* Left Y-Axis (Feedback Count) */}
+              <div className="flex flex-col justify-between text-[9px] text-zinc-400 h-[260px] pb-0 font-bold w-6 border-r border-zinc-50 pr-1 mt-20">
+                <span>{feedbackEffectiveness.maxVal}</span>
+                <span>{Math.round(feedbackEffectiveness.maxVal * 0.75)}</span>
+                <span>{Math.round(feedbackEffectiveness.maxVal * 0.5)}</span>
+                <span>{Math.round(feedbackEffectiveness.maxVal * 0.25)}</span>
+                <span>0</span>
+              </div>
+
+              {/* Scrollable Chart Area */}
+              <div className="flex-1 overflow-x-auto overflow-y-hidden pb-32 pt-20">
+                <div 
+                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-4"
+                  style={{ minWidth: `${Math.max(feedbackEffectiveness.data.length * 80, 400)}px` }}
+                >
+                    {/* Grid Lines */}
+                    <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20">
+                      {[0, 1, 2, 3, 4].map(line => (
+                        <div key={line} className="w-full border-t border-zinc-300" />
+                      ))}
+                    </div>
+
+                    {/* SVG Line Chart (Score Axis) */}
+                    <svg 
+                      viewBox="0 0 100 100" 
+                      className="absolute inset-y-0 left-4 right-4 w-[calc(100%-2rem)] h-[260px] pointer-events-none overflow-visible z-20" 
+                      preserveAspectRatio="none"
+                    >
+                      {(() => {
+                        const points = feedbackEffectiveness.data.map((d, i) => {
+                          const n = feedbackEffectiveness.data.length || 1
+                          const x = (i / n) * 100 + (100 / n / 2)
+                          const y = 100 - (Math.min(Math.max(d.score, 0), 5) / 5) * 100
+                          return `${x},${y}`
+                        })
+                        
+                        return (
+                          <>
+                            {points.length >= 2 && (
+                              <path 
+                                d={`M ${points.join(' L ')}`}
+                                fill="none"
+                                stroke="#eab308"
+                                strokeWidth="0.6"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="transition-all duration-500 opacity-80"
+                              />
+                            )}
+                            {points.map((p, i) => {
+                              const [x, y] = p.split(',')
+                              return (
+                                <circle 
+                                  key={i} 
+                                  cx={x} 
+                                  cy={y} 
+                                  r="1.5" 
+                                  fill="#eab308" 
+                                  stroke="white" 
+                                  strokeWidth="0.3" 
+                                  className="pointer-events-auto cursor-pointer"
+                                  onMouseEnter={() => setHoveredFeedbackIndex(i)}
+                                  onMouseLeave={() => setHoveredFeedbackIndex(null)}
+                                />
+                              )
+                            })}
+                          </>
+                        )
+                      })()}
+                    </svg>
+
+                    {/* Clustered Bars */}
+                    <div className="flex-1 flex justify-around items-end h-full">
+                      {feedbackEffectiveness.data.map((item, i) => (
+                        <div key={`${item.title}-${i}`} className="flex flex-col items-center justify-end h-full relative flex-1 min-w-[60px]">
+                          <div className="flex items-end gap-1.5 mb-0 h-full pointer-events-none">
+                            {/* Positive Bar */}
+                            <div 
+                              className="w-4 bg-green-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
+                              style={{ height: `${(item.pos / feedbackEffectiveness.maxVal) * 100}%` }}
+                              onMouseEnter={() => setHoveredFeedbackIndex(i)}
+                              onMouseLeave={() => setHoveredFeedbackIndex(null)}
+                            />
+                            {/* Negative Bar */}
+                            <div 
+                              className="w-4 bg-red-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
+                              style={{ height: `${(item.neg / feedbackEffectiveness.maxVal) * 100}%` }}
+                              onMouseEnter={() => setHoveredFeedbackIndex(i)}
+                            />
+                          </div>
+                          
+                          {/* X-Axis Tick */}
+                          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-px h-2 bg-zinc-300" />
+
+                          {/* X-Axis Label (Rotated) */}
+                          <div className="absolute top-[272px] left-1/2 w-0 overflow-visible">
+                            <div className="w-48 origin-top-left rotate-45 text-[9px] font-bold text-zinc-500 hover:text-zinc-900 transition-colors cursor-default leading-tight">
+                              {item.title}
+                            </div>
+                          </div>
+
+                          {/* Tooltip */}
+                          <div 
+                            className={`absolute top-0 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] p-2.5 rounded shadow-2xl z-[100] pointer-events-none transition-all whitespace-nowrap flex flex-col gap-1.5 border border-white/10 ${hoveredFeedbackIndex === i ? 'opacity-100 scale-100 translate-y-2' : 'opacity-0 scale-95 translate-y-0'}`}
+                          >
+                            <div className="font-bold border-b border-zinc-700 pb-1 mb-1">{item.title}</div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-2 rounded-full bg-green-500" />
+                              Positive: {item.pos}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-2 w-2 rounded-full bg-red-500" />
+                              Negative: {item.neg}
+                            </div>
+                            <div className="flex items-center gap-2 border-t border-zinc-700 pt-1 mt-1 font-bold text-yellow-400">
+                              <Award className="h-3.5 w-3.5" />
+                              Score: {item.score.toFixed(1)}/5
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
-              )
-            })}
-            
-            <div className="pt-4 mt-auto border-t flex justify-between text-[10px] font-bold uppercase text-zinc-400">
-              <div className="flex items-center gap-1.5"><ThumbsUp className="h-3 w-3 text-green-500" /> Positive Bias</div>
-              <div className="flex items-center gap-1.5">Negative Bias <ThumbsDown className="h-3 w-3 text-red-500" /></div>
-            </div>
-          </CardContent>
-        </Card>
+
+                {/* Right Y-Axis (Evaluation Score) */}
+                <div className="flex flex-col justify-between text-[9px] text-yellow-600 h-[260px] pb-0 font-bold w-6 text-right border-l border-zinc-50 pl-1 mt-20">
+                  <span>5.0</span>
+                  <span>3.75</span>
+                  <span>2.5</span>
+                  <span>1.25</span>
+                  <span>0</span>
+                  </div>
+                  </div>
+                  </CardContent>        </Card>
       </div>
 
       {/* Figure 5: Heatmap */}
@@ -567,16 +782,20 @@ export default function ERGDashboard() {
           <CardDescription>Member distribution across delivery units</CardDescription>
         </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto border-t pt-16 pb-16 min-h-[350px]">
-            <table className="w-full text-[11px] border-collapse">
+          <div className="overflow-x-auto border-t pt-8 pb-16 min-h-[450px] custom-scrollbar">
+            <table className="text-[11px] border-collapse mx-auto">
               <thead>
                 <tr>
-                  <th className="p-3 text-left bg-zinc-50 dark:bg-zinc-900 sticky left-0 z-20 border-r border-b font-bold text-zinc-500 min-w-[140px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                  <th className="p-3 text-left bg-zinc-50 dark:bg-zinc-900 sticky left-0 z-30 border-r border-b font-bold text-zinc-500 min-w-[160px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-[180px] align-bottom">
                     ERG / Business Unit
                   </th>
                   {bus.filter(b => b !== "All").map(bu => (
-                    <th key={bu} className="p-3 text-center bg-zinc-50 dark:bg-zinc-900 border-r border-b font-bold text-zinc-500 whitespace-nowrap min-w-[100px]">
-                      {bu}
+                    <th key={bu} className="p-0 bg-zinc-50 dark:bg-zinc-900 border-r border-b font-bold text-zinc-500 w-12 h-[180px] min-w-[48px] align-bottom pb-6">
+                      <div className="flex justify-center h-0 overflow-visible">
+                        <span className="inline-block -rotate-90 whitespace-nowrap origin-left -translate-x-1/2 ml-1 text-[10px] uppercase tracking-wider">
+                          {bu}
+                        </span>
+                      </div>
                     </th>
                   ))}
                 </tr>
@@ -584,7 +803,7 @@ export default function ERGDashboard() {
               <tbody>
                 {heatmapData.map((row, rowIndex) => (
                   <tr key={row.erg} className="group/row">
-                    <td className="p-3 font-bold bg-white dark:bg-zinc-950 sticky left-0 z-10 border-r border-b text-zinc-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] group-hover/row:bg-zinc-50 transition-colors">
+                    <td className="p-3 font-bold bg-white dark:bg-zinc-950 sticky left-0 z-20 border-r border-b text-zinc-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] group-hover/row:bg-zinc-50 transition-colors whitespace-nowrap">
                       {row.erg}
                     </td>
                     {bus.filter(b => b !== "All").map(bu => {
@@ -595,10 +814,10 @@ export default function ERGDashboard() {
                       return (
                         <td 
                           key={bu} 
-                          className="p-0 border-r border-b relative group/cell"
+                          className="p-0 border-r border-b relative group/cell w-12 h-12"
                         >
                           <div 
-                            className="w-full h-full p-4 text-center transition-all duration-200 font-bold"
+                            className="w-12 h-12 flex items-center justify-center transition-all duration-200 font-bold"
                             style={{ 
                               backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
                               color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc')

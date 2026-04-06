@@ -128,6 +128,14 @@ export default function ERGUploadPage() {
         if (newRow[buKey]) newRow[buKey] = String(newRow[buKey]).trim().toUpperCase()
         if (newRow[locKey]) newRow[locKey] = String(newRow[locKey]).trim().split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
       }
+      if (type === 'event_feedback') {
+        const numericCols = ["Overall Evaluation Score", "Positive Feedbacks", "Negative Feedbacks", "Response Count"]
+        numericCols.forEach(col => {
+          if (newRow[col] === undefined || newRow[col] === null || isNaN(Number(newRow[col]))) {
+            newRow[col] = 0
+          }
+        })
+      }
       return newRow
     })
   }
@@ -203,7 +211,7 @@ export default function ERGUploadPage() {
     setIsLoading(true)
     
     const logId = `log-${Date.now()}`
-    const uploadTime = new Date().toLocaleString()
+    const uploadTime = new Date().toISOString()
     const existingLogs = JSON.parse(localStorage.getItem("erg_audit_logs") || "[]")
     
     const newLog = { 
@@ -221,7 +229,10 @@ export default function ERGUploadPage() {
     // 1. Authoritative (Registry) -> Overwrite
     // 2. Trend/Historical (Snapshots, Events, etc.) -> Merge & Update
     const storageKey = templateConfigs[templateType].localStorageKey
-    let finalData = processedData
+    
+    // Attach upload time to each row to enable upload-date-based filtering later
+    const dataWithUploadTime = processedData.map(row => ({ ...row, uploadDate: uploadTime }))
+    let finalData = dataWithUploadTime
 
     if (templateType !== 'membership_registry') {
       const existingData = JSON.parse(localStorage.getItem(storageKey) || "[]")
@@ -236,8 +247,8 @@ export default function ERGUploadPage() {
             // Merge by Date + Title + ERG
             return `${row["ERG"]}-${row["Event Date"]}-${row["Activity Title"]}`.toLowerCase()
           case 'event_feedback':
-            // Merge by Title + ERG
-            return `${row["ERG"]}-${row["Activity Title"]}`.toLowerCase()
+            // Merge by DEIB Event Code + Title + ERG
+            return `${row["ERG"]}-${row["DEIB event"]}-${row["Activity Title"]}`.toLowerCase()
           case 'participation_detail':
             // Merge by Employee + Event
             return `${row["Employee ID"]}-${row["Activity Title"]}`.toLowerCase()
@@ -250,7 +261,7 @@ export default function ERGUploadPage() {
       const dataMap = new Map(existingData.map((row: any) => [getUniqueKey(row), row]))
       
       // Merge new data into the map (new records added, existing records updated)
-      processedData.forEach(row => {
+      dataWithUploadTime.forEach(row => {
         const key = getUniqueKey(row)
         if (templateType === 'membership_snapshot' && dataMap.has(key)) {
           // DEEP MERGE for snapshots: keep Jan-Apr while adding May-Jun
@@ -414,7 +425,7 @@ export default function ERGUploadPage() {
                   {processedData.filter(row => Object.values(row).some(v => String(v).toLowerCase().includes(searchTerm.toLowerCase()))).map((row) => (
                     <TableRow key={row.id}>
                       {columns.map((col) => (
-                        <TableCell key={`${row.id}-${col}`} className="text-xs">{String(row[col] || "")}</TableCell>
+                        <TableCell key={`${row.id}-${col}`} className="text-xs">{String(row[col] ?? "")}</TableCell>
                       ))}
                     </TableRow>
                   ))}
