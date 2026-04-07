@@ -58,6 +58,11 @@ export default function ERGDashboard() {
   const [feedbackEndMonth, setFeedbackEndMonth] = useState(11)
   const [selectedDEIB, setSelectedDEIB] = useState("All")
   const [hoveredFeedbackIndex, setHoveredFeedbackIndex] = useState<number | null>(null)
+  const [hoveredAttendance, setHoveredAttendance] = useState<{erg: string, type: string | null} | null>(null)
+
+  // Figure 5 (Heatmap) Date Range Filter States
+  const [heatmapStartMonth, setHeatmapStartMonth] = useState(0)
+  const [heatmapEndMonth, setHeatmapEndMonth] = useState(11)
 
   useEffect(() => {
     setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
@@ -159,19 +164,32 @@ export default function ERGDashboard() {
       
       return matchERG && matchDate
     })
-    const types = ["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"]
-    const ergsList = selectedERG === "All" ? ergs.filter(e => e !== "All") : [selectedERG]
     
-    return ergsList.map(erg => {
+    // Dynamically derive ERG list from relevant events
+    const ergsWithData = selectedERG === "All" 
+      ? Array.from(new Set(relevantEvents.map(e => e.ERG))).filter(Boolean).sort()
+      : [selectedERG]
+
+    const types = ["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"]
+    
+    const data = ergsWithData.map(erg => {
       const ergEvents = relevantEvents.filter(e => e.ERG === erg)
       const typeCounts: Record<string, number> = {}
+      let total = 0
       types.forEach(t => {
-        typeCounts[t] = ergEvents.filter(e => e["Activity Type"] === t)
+        const count = ergEvents.filter(e => e["Activity Type"] === t)
           .reduce((acc, curr) => acc + (Number(curr["Attendance / Participation Count"]) || 0), 0)
+        typeCounts[t] = count
+        total += count
       })
-      return { erg, ...typeCounts }
+      return { erg, ...typeCounts, total }
     })
-  }, [eventLogs, selectedERG, ergs, attendanceStartMonth, attendanceEndMonth])
+
+    const maxVal = Math.max(...data.map(d => d.total), 10)
+    const roundedMax = Math.ceil(maxVal / 10) * 10
+
+    return { data, maxVal: roundedMax }
+  }, [eventLogs, selectedERG, attendanceStartMonth, attendanceEndMonth])
 
   // Figure 4: Feedback Effectiveness (Combo Chart)
   const feedbackEffectiveness = useMemo(() => {
@@ -208,18 +226,34 @@ export default function ERGDashboard() {
 
   // Figure 5: Cross-BU Participation Heatmap
   const heatmapData = useMemo(() => {
-    const relevantParticipation = participation.filter(p => selectedERG === "All" || p.ERG === selectedERG)
-    const ergsList = ergs.filter(e => e !== "All")
-    const busList = bus.filter(b => b !== "All")
+    const relevantParticipation = participation.filter(p => {
+      const matchERG = selectedERG === "All" || p.ERG === selectedERG
+      
+      // Date Filtering (based on uploadDate)
+      const dateStr = p.uploadDate
+      if (!dateStr) return matchERG
+      
+      const date = new Date(dateStr)
+      const monthIndex = date.getMonth()
+      const matchDate = !isNaN(monthIndex) && monthIndex >= heatmapStartMonth && monthIndex <= heatmapEndMonth
+      
+      return matchERG && matchDate
+    })
+
+    // Dynamically derive labels from filtered data
+    const ergsInData = Array.from(new Set(relevantParticipation.map(p => p.ERG))).filter(Boolean).sort()
+    const busInData = Array.from(new Set(relevantParticipation.map(p => p["Delivery Unit / Business Unit"]))).filter(Boolean).sort()
     
-    return ergsList.map(erg => {
+    const rows = ergsInData.map(erg => {
       const buCounts: Record<string, number> = {}
-      busList.forEach(bu => {
+      busInData.forEach(bu => {
         buCounts[bu] = relevantParticipation.filter(p => p.ERG === erg && p["Delivery Unit / Business Unit"] === bu).length
       })
       return { erg, ...buCounts }
     })
-  }, [participation, selectedERG, ergs, bus])
+
+    return { rows, columns: busInData }
+  }, [participation, selectedERG, heatmapStartMonth, heatmapEndMonth])
 
   const kpis = useMemo(() => {
     const active = filteredMembership.filter(m => m.Status === "Active").length
@@ -386,7 +420,7 @@ export default function ERGDashboard() {
           <CardContent>
             <div className="flex gap-4">
               {/* Y-AXIS */}
-              <div className="flex flex-col justify-between text-[10px] text-zinc-400 h-[200px] pb-6 font-bold">
+              <div className="flex flex-col justify-between text-[10px] text-zinc-400 h-[200px] pb-0 font-bold">
                 <span>{growthTrendInfo.maxVal}</span>
                 <span>{Math.round(growthTrendInfo.maxVal * 0.75)}</span>
                 <span>{Math.round(growthTrendInfo.maxVal * 0.5)}</span>
@@ -502,7 +536,10 @@ export default function ERGDashboard() {
         <Card className="border-none shadow-sm">
           <CardHeader>
             <div className="flex justify-between items-start">
-              <CardTitle className="text-lg">Attendance by ERG & Activity Type</CardTitle>
+              <div>
+                <CardTitle className="text-lg">Attendance by ERG & Activity Type</CardTitle>
+                <CardDescription>Participation count by category</CardDescription>
+              </div>
               <div className="flex items-center gap-2">
                 <Select value={String(attendanceStartMonth)} onValueChange={(v) => setAttendanceStartMonth(parseInt(v))}>
                   <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
@@ -528,52 +565,110 @@ export default function ERGDashboard() {
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-6">
-              {attendanceByType.map(item => {
-                const types = ["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"]
-                const totalAttendance = types.reduce((acc, t) => acc + (item[t] || 0), 0)
-                const visibleTypes = types.filter(t => (item[t] || 0) > 0)
-                
-                return (
-                  <div key={item.erg} className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <div className="text-xs font-bold">{item.erg}</div>
-                      <div className="text-[10px] text-zinc-400 font-medium">Total: {totalAttendance.toLocaleString()}</div>
+          <CardContent className="pb-16">
+            <div className="flex gap-2">
+              {/* Y-AXIS */}
+              <div className="flex flex-col justify-between text-[10px] text-zinc-400 h-[260px] pb-0 font-bold w-10 border-r border-zinc-50 pr-2 mt-16">
+                <span>{attendanceByType.maxVal}</span>
+                <span>{Math.round(attendanceByType.maxVal * 0.75)}</span>
+                <span>{Math.round(attendanceByType.maxVal * 0.5)}</span>
+                <span>{Math.round(attendanceByType.maxVal * 0.25)}</span>
+                <span>0</span>
+              </div>
+
+              {/* Scrollable Chart Area */}
+              <div className="flex-1 overflow-x-auto overflow-y-hidden pb-20 pt-16 custom-scrollbar">
+                <div 
+                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-4"
+                  style={{ minWidth: `${Math.max(attendanceByType.data.length * 80, 400)}px` }}
+                >
+                  {/* Grid Lines */}
+                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20">
+                    {[0, 1, 2, 3, 4].map(line => (
+                      <div key={line} className="w-full border-t border-zinc-300" />
+                    ))}
+                  </div>
+
+                  {attendanceByType.data.length === 0 ? (
+                    <div className="absolute inset-0 flex items-center justify-center text-zinc-400 text-sm font-medium">
+                      No attendance data for this period
                     </div>
-                    <div className="flex h-4 w-full rounded-full bg-zinc-100 dark:bg-zinc-800 relative">
-                      {types.map((t, i) => {
-                        const val = item[t] || 0
-                        const percentage = totalAttendance > 0 ? (val / totalAttendance) * 100 : 0
+                  ) : (
+                    <div className="flex-1 flex justify-around items-end h-full">
+                      {attendanceByType.data.map((item, i) => {
+                        const types = ["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"]
                         const colors = ['bg-blue-600', 'bg-indigo-600', 'bg-violet-600', 'bg-sky-600']
-                        const isFirst = t === visibleTypes[0]
-                        const isLast = t === visibleTypes[visibleTypes.length - 1]
                         
                         return (
-                          <div 
-                            key={t}
-                            className={`${colors[i]} h-full transition-all hover:brightness-110 relative group ${isFirst ? 'rounded-l-full' : ''} ${isLast ? 'rounded-r-full' : ''}`}
-                            style={{ width: `${percentage}%` }}
-                          >
-                            {val > 0 && (
-                              <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all duration-200 shadow-xl border border-white/10 flex items-center gap-2">
-                                <div className={`h-2 w-2 rounded-full ${colors[i]}`} />
-                                <span>{t.replace('Internal ', '')}: {val.toLocaleString()}</span>
-                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                          <div key={item.erg} className="flex flex-col items-center justify-end h-full relative flex-1 min-w-[60px] hover:z-50">
+                            <div 
+                              className="w-8 flex flex-col-reverse items-center mb-0 h-full relative group"
+                              onMouseEnter={() => setHoveredAttendance({ erg: item.erg, type: null })}
+                              onMouseLeave={() => setHoveredAttendance(null)}
+                            >
+                              {types.map((t, typeIdx) => {
+                                const val = item[t] || 0
+                                if (val === 0) return null
+                                const height = (val / attendanceByType.maxVal) * 100
+                                
+                                return (
+                                  <div 
+                                    key={t}
+                                    className={`${colors[typeIdx]} w-full transition-all hover:brightness-110 relative`}
+                                    style={{ height: `${height}%` }}
+                                    onMouseEnter={(e) => {
+                                      e.stopPropagation();
+                                      setHoveredAttendance({ erg: item.erg, type: t });
+                                    }}
+                                  >
+                                  </div>
+                                )
+                              })}
+
+                              {/* Combined Tooltip */}
+                              {hoveredAttendance?.erg === item.erg && (
+                                <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] px-3 py-2 rounded-md z-[100] whitespace-nowrap pointer-events-none border border-white/10 shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in duration-200">
+                                  {hoveredAttendance.type && (
+                                    <>
+                                      <div className="flex items-center gap-1.5">
+                                        <div className={`h-2 w-2 rounded-full ${colors[types.indexOf(hoveredAttendance.type)]}`} />
+                                        <span className="font-bold">{hoveredAttendance.type.replace('Internal ', '')}: {item[hoveredAttendance.type].toLocaleString()}</span>
+                                      </div>
+                                      <div className="w-px h-3 bg-white/20" />
+                                    </>
+                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-white/50 text-[10px] uppercase font-bold tracking-tighter">Total</span>
+                                    <span className="font-bold">{item.total.toLocaleString()}</span>
+                                  </div>
+                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                                </div>
+                              )}
+                            </div>
+
+                            {/* X-Axis Tick */}
+                            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-px h-2 bg-zinc-300" />
+
+                            {/* X-Axis Label (Rotated) */}
+                            <div className="absolute top-[272px] left-1/2 w-0 overflow-visible">
+                              <div className="w-32 origin-top-left rotate-45 text-[10px] font-bold text-zinc-500 hover:text-zinc-900 transition-colors cursor-default leading-tight">
+                                {item.erg}
                               </div>
-                            )}
+                            </div>
                           </div>
                         )
                       })}
                     </div>
-                  </div>
-                )
-              })}
+                  )}
+                </div>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-4 mt-6">
+
+            <div className="flex flex-wrap gap-4 mt-8 justify-center">
               {["Internal Webinar", "Learning Session", "Internal Forum", "External Partnership"].map((t, i) => (
                 <div key={t} className="flex items-center gap-1.5 text-[10px] font-bold uppercase text-zinc-500">
-                  <div className={`h-2 w-2 rounded-full ${['bg-blue-600', 'bg-indigo-600', 'bg-violet-600', 'bg-sky-600'][i]}`} /> {t.replace('Internal ', '').replace(' Session', '')}
+                  <div className={`h-2.5 w-2.5 rounded-sm ${['bg-blue-600', 'bg-indigo-600', 'bg-violet-600', 'bg-sky-600'][i]}`} /> 
+                  {t.replace('Internal ', '').replace(' Session', '')}
                 </div>
               ))}
             </div>
@@ -778,53 +873,100 @@ export default function ERGDashboard() {
       {/* Figure 5: Heatmap */}
       <Card className="border-none shadow-sm">
         <CardHeader>
-          <CardTitle className="text-lg">Cross-BU Participation Heatmap</CardTitle>
-          <CardDescription>Member distribution across delivery units</CardDescription>
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-lg">Cross-BU Participation Heatmap</CardTitle>
+              <CardDescription>Member distribution across delivery units</CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={String(heatmapStartMonth)} onValueChange={(v) => setHeatmapStartMonth(parseInt(v))}>
+                <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                  <SelectValue placeholder="Start" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_MONTHS.map((m, i) => (
+                    <SelectItem key={m} value={String(i)} disabled={i > heatmapEndMonth}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-[10px] font-black text-zinc-300">TO</span>
+              <Select value={String(heatmapEndMonth)} onValueChange={(v) => setHeatmapEndMonth(parseInt(v))}>
+                <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                  <SelectValue placeholder="End" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_MONTHS.map((m, i) => (
+                    <SelectItem key={m} value={String(i)} disabled={i < heatmapStartMonth}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto border-t pt-8 pb-16 min-h-[450px] custom-scrollbar">
-            <table className="text-[11px] border-collapse mx-auto">
-              <thead>
-                <tr>
-                  <th className="p-3 text-left bg-zinc-50 dark:bg-zinc-900 sticky left-0 z-30 border-r border-b font-bold text-zinc-500 min-w-[160px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] h-[180px] align-bottom">
+            {heatmapData.rows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
+                <BarChart3 className="h-10 w-10 mb-2 opacity-20" />
+                <p className="text-sm font-medium">No participation data for this period</p>
+              </div>
+            ) : (
+              <div className="text-[11px] mx-auto flex flex-col gap-[4px] w-fit">
+                {/* Header Row */}
+                <div className="flex" style={{ gap: '4px', height: '140px' }}>
+                  <div 
+                    style={{ width: '160px', flexShrink: 0 }} 
+                    className="flex items-end p-3 font-bold text-zinc-500"
+                  >
                     ERG / Business Unit
-                  </th>
-                  {bus.filter(b => b !== "All").map(bu => (
-                    <th key={bu} className="p-0 bg-zinc-50 dark:bg-zinc-900 border-r border-b font-bold text-zinc-500 w-12 h-[180px] min-w-[48px] align-bottom pb-6">
-                      <div className="flex justify-center h-0 overflow-visible">
-                        <span className="inline-block -rotate-90 whitespace-nowrap origin-left -translate-x-1/2 ml-1 text-[10px] uppercase tracking-wider">
-                          {bu}
-                        </span>
+                  </div>
+                  {heatmapData.columns.map(bu => (
+                    <div 
+                      key={bu} 
+                      style={{ width: '80px', flexShrink: 0 }} 
+                      className="flex items-center justify-center font-bold text-zinc-500 pb-2"
+                    >
+                      <div 
+                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }} 
+                        className="uppercase tracking-wider"
+                      >
+                        {bu}
                       </div>
-                    </th>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {heatmapData.map((row, rowIndex) => (
-                  <tr key={row.erg} className="group/row">
-                    <td className="p-3 font-bold bg-white dark:bg-zinc-950 sticky left-0 z-20 border-r border-b text-zinc-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] group-hover/row:bg-zinc-50 transition-colors whitespace-nowrap">
+                </div>
+
+                {/* Data Rows */}
+                {heatmapData.rows.map((row, rowIndex) => (
+                  <div key={row.erg} className="flex" style={{ gap: '4px' }}>
+                    <div 
+                      style={{ width: '160px', height: '80px', flexShrink: 0 }} 
+                      className="flex items-center p-3 font-bold bg-white dark:bg-zinc-950 text-zinc-700 whitespace-nowrap"
+                    >
                       {row.erg}
-                    </td>
-                    {bus.filter(b => b !== "All").map(bu => {
+                    </div>
+                    {heatmapData.columns.map(bu => {
                       const val = row[bu] || 0
-                      const maxPossible = Math.max(...heatmapData.flatMap(r => bus.filter(b => b !== "All").map(b => r[b] || 0)))
+                      const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => r[b] || 0)))
                       const intensity = maxPossible > 0 ? (val / maxPossible) : 0
                       
                       return (
-                        <td 
+                        <div 
                           key={bu} 
-                          className="p-0 border-r border-b relative group/cell w-12 h-12"
+                          className="relative group/cell font-bold transition-all duration-200"
+                          style={{ 
+                            width: '80px', 
+                            height: '80px', 
+                            flexShrink: 0,
+                            backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
+                            border: val > 0 ? 'none' : '1px solid #e4e4e7',
+                            color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc'),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                          }}
                         >
-                          <div 
-                            className="w-12 h-12 flex items-center justify-center transition-all duration-200 font-bold"
-                            style={{ 
-                              backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
-                              color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc')
-                            }}
-                          >
-                            {val}
-                          </div>
+                          {val}
                           
                           {/* TOOLTIP */}
                           <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-zinc-900 text-white rounded text-[10px] opacity-0 group-hover/cell:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all shadow-xl flex flex-col items-center gap-1 border border-white/10">
@@ -836,13 +978,13 @@ export default function ERGDashboard() {
                             <span className="text-[#3b82f6] text-xs mt-1">Total: {val}</span>
                             <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
                           </div>
-                        </td>
+                        </div>
                       )
                     })}
-                  </tr>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
