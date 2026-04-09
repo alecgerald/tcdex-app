@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useMemo } from "react"
 import {
   FileSpreadsheet,
   Users,
@@ -22,7 +22,9 @@ import {
   ChevronRight,
   ChevronsUpDown,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  BarChart3,
+  Filter
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -45,6 +47,9 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Label } from "@/components/ui/label"
 import { utils, writeFile } from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
@@ -112,7 +117,7 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
           `L 0 0`,
         ].join(' ')
 
-        const color = slice.status === 'Completed' ? '#22c55e' : slice.status === 'Ongoing' ? '#3b82f6' : '#ef4444'
+        const color = slice.status === 'Completed' ? '#22c55e' : (slice.status === 'Ongoing' || slice.status === 'In Progress') ? '#3b82f6' : '#ef4444'
         return <path key={slice.status} d={pathData} fill={color} className="stroke-white stroke-[0.02]" />
       })}
     </svg>
@@ -148,6 +153,10 @@ export default function LMSDashboard() {
   const [detailedSearch, setDetailedSearch] = useState("")
   const [detailedPage, setDetailedPage] = useState(1)
   const [detailedSort, setDetailedSort] = useState<SortConfig>(null)
+  const [selectedCourseNames, setSelectedCourseNames] = useState<string[]>([])
+  const [selectedCourseStatuses, setSelectedCourseStatuses] = useState<string[]>([])
+  const [selectedDeliveryUnits, setSelectedDeliveryUnits] = useState<string[]>([])
+  const [selectedUserStatuses, setSelectedUserStatuses] = useState<string[]>([])
 
   const handleSort = (key: string, currentSort: SortConfig, setSort: (s: SortConfig) => void) => {
     if (!currentSort || currentSort.key !== key) {
@@ -241,15 +250,99 @@ export default function LMSDashboard() {
     item.name.toLowerCase().includes(employeeSearch.toLowerCase())
   )
 
-  const filteredDetailedSummary = (selectedLog?.detailedSummary || []).filter((item: any) =>
-    item.userName.toLowerCase().includes(detailedSearch.toLowerCase()) ||
-    item.courseName.toLowerCase().includes(detailedSearch.toLowerCase())
-  )
+  const uniqueCourseNames = useMemo(() => {
+    if (!selectedLog?.detailedSummary) return []
+    const names = new Set<string>()
+    selectedLog.detailedSummary.forEach((r: any) => names.add(r.courseName))
+    return Array.from(names).sort()
+  }, [selectedLog])
+
+  const uniqueCourseStatuses = useMemo(() => {
+    if (!selectedLog?.detailedSummary) return []
+    const statuses = new Set<string>()
+    selectedLog.detailedSummary.forEach((r: any) => {
+      statuses.add(String(r.courseStatus).toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : r.courseStatus)
+    })
+    return Array.from(statuses).sort()
+  }, [selectedLog])
+
+  const uniqueDeliveryUnits = useMemo(() => {
+    if (!selectedLog?.detailedSummary) return []
+    const units = new Set<string>()
+    selectedLog.detailedSummary.forEach((r: any) => units.add(r.deliveryUnit || "Unknown"))
+    return Array.from(units).sort()
+  }, [selectedLog])
+
+  const uniqueUserStatuses = useMemo(() => {
+    if (!selectedLog?.detailedSummary) return []
+    const statuses = new Set<string>()
+    selectedLog.detailedSummary.forEach((r: any) => statuses.add(r.userStatus || "Unknown"))
+    return Array.from(statuses).sort()
+  }, [selectedLog])
+
+  const filteredDetailedSummary = (selectedLog?.detailedSummary || []).filter((item: any) => {
+    const matchesSearch = item.userName.toLowerCase().includes(detailedSearch.toLowerCase()) ||
+                          item.courseName.toLowerCase().includes(detailedSearch.toLowerCase())
+    const matchesCourseName = selectedCourseNames.length === 0 || selectedCourseNames.includes(item.courseName)
+    const matchesCourseStatus = selectedCourseStatuses.length === 0 || selectedCourseStatuses.includes(
+      String(item.courseStatus).toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : item.courseStatus
+    )
+    const matchesDeliveryUnit = selectedDeliveryUnits.length === 0 || selectedDeliveryUnits.includes(item.deliveryUnit || "Unknown")
+    const matchesUserStatus = selectedUserStatuses.length === 0 || selectedUserStatuses.includes(item.userStatus || "Unknown")
+    return matchesSearch && matchesCourseName && matchesCourseStatus && matchesDeliveryUnit && matchesUserStatus
+  })
+
+  const detailedStatusSummary = useMemo(() => {
+    if (dashboardType !== 'detailed_report' || filteredDetailedSummary.length === 0) return []
+    
+    const counts: Record<string, number> = {}
+    filteredDetailedSummary.forEach((row: any) => {
+      // Check using correct casing
+      const rawStatus = row.courseStatus ? String(row.courseStatus).trim() : "Not Started"
+      const lower = rawStatus.toLowerCase().replace(/\s/g, '')
+      let mapped = "Not Started"
+      if (lower === 'completed') mapped = "Completed"
+      else if (lower === 'ongoing' || lower === 'inprogress') mapped = "In Progress"
+      
+      counts[mapped] = (counts[mapped] || 0) + 1
+    })
+
+    const total = filteredDetailedSummary.length
+    if (total === 0) return []
+
+    return Object.entries(counts).map(([status, count]) => {
+      const rate = (count / total) * 100
+      return { status, count, rate: rate < 1 && rate > 0 ? "<1%" : `${rate.toFixed(1)}%` }
+    }).sort((a, b) => b.status.localeCompare(a.status))
+  }, [dashboardType, filteredDetailedSummary])
+
+  const detailedCompletionRate = useMemo(() => {
+    if (dashboardType !== 'detailed_report' || filteredDetailedSummary.length === 0) return "0.0"
+    let completed = 0;
+    filteredDetailedSummary.forEach((row: any) => {
+      if (String(row.courseStatus).trim().toLowerCase() === 'completed' || String(row.completionPercentage).trim() === '100%') {
+        completed += 1
+      }
+    })
+    return ((completed / filteredDetailedSummary.length) * 100).toFixed(1)
+  }, [dashboardType, filteredDetailedSummary])
+
+  const dominantStatusRate = useMemo(() => {
+    if (detailedStatusSummary.length === 0) return { rate: "0%", label: "Records" }
+    const sorted = [...detailedStatusSummary].sort((a, b) => b.count - a.count)
+    const top = sorted[0]
+    return {
+      rate: top.rate,
+      label: top.status
+    }
+  }, [detailedStatusSummary])
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Completed": return "bg-green-500"
-      case "Ongoing": return "bg-blue-500"
+      case "Ongoing":
+      case "In Progress": return "bg-blue-500"
       case "Not Started": return "bg-red-500"
       default: return "bg-zinc-400"
     }
@@ -258,8 +351,29 @@ export default function LMSDashboard() {
   const handleDownloadExcel = () => {
     if (!selectedLog || !selectedLog.cleanedData) return
 
+    let exportRecords = selectedLog.cleanedData;
+    if (selectedLog.importType === 'detailed_report' && dashboardType === 'detailed_report') {
+      exportRecords = exportRecords.filter((row: any) => {
+        const uName = String(row['User Name'] || row['Name'] || "Unknown").trim();
+        const cName = String(row['Course Name'] || "Unknown").trim();
+        const cStatus = String(row['Course Status'] || "Unknown").trim();
+        const dUnit = String(row['Delivery Unit or Department'] || row['Delivery Unit'] || "Unknown").trim();
+        const uStatus = String(row['User Status'] || "Unknown").trim();
+
+        const matchesSearch = uName.toLowerCase().includes(detailedSearch.toLowerCase()) ||
+                              cName.toLowerCase().includes(detailedSearch.toLowerCase());
+        const matchesCourseName = selectedCourseNames.length === 0 || selectedCourseNames.includes(cName);
+        const mappedStatus = cStatus.toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : cStatus;
+        const matchesCourseStatus = selectedCourseStatuses.length === 0 || selectedCourseStatuses.includes(mappedStatus);
+        const matchesDeliveryUnit = selectedDeliveryUnits.length === 0 || selectedDeliveryUnits.includes(dUnit);
+        const matchesUserStatus = selectedUserStatuses.length === 0 || selectedUserStatuses.includes(uStatus);
+        
+        return matchesSearch && matchesCourseName && matchesCourseStatus && matchesDeliveryUnit && matchesUserStatus;
+      });
+    }
+
     // Clean data for excel (remove the 'id' field we added during upload)
-    const dataToExport = selectedLog.cleanedData.map(({ id, ...rest }: any) => {
+    const dataToExport = exportRecords.map(({ id, ...rest }: any) => {
       const exportRow = { ...rest }
 
       if (selectedLog.importType === 'courses') {
@@ -464,26 +578,129 @@ export default function LMSDashboard() {
         })
       }
     } else if (selectedLog.importType === 'detailed_report') {
-      doc.setFontSize(14)
-      doc.text("Detailed Report Snapshot", 14, 35)
+      let nextY = 35;
 
-      const recordsToPrint = (selectedLog.detailedSummary || []).slice(0, 100)
+      try {
+        const total = detailedStatusSummary.reduce((acc, curr) => acc + curr.count, 0)
+        if (total > 0 && typeof document !== 'undefined') {
+          const canvas = document.createElement('canvas')
+          canvas.width = 1000
+          canvas.height = 400
+          const ctx = canvas.getContext('2d')
+          if (ctx) {
+            ctx.imageSmoothingEnabled = true;
+            ctx.scale(2, 2); 
+
+            let currentAngle = -0.5 * Math.PI
+            const cx = 130, cy = 100, radius = 90
+
+              ; detailedStatusSummary.forEach(slice => {
+                const sliceAngle = (slice.count / total) * 2 * Math.PI
+                ctx.beginPath()
+                ctx.moveTo(cx, cy)
+                ctx.arc(cx, cy, radius, currentAngle, currentAngle + sliceAngle)
+                ctx.closePath()
+                if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
+                else if (slice.status === 'Ongoing' || slice.status === 'In Progress') ctx.fillStyle = '#3b82f6'
+                else ctx.fillStyle = '#ef4444'
+                ctx.fill()
+
+                currentAngle += sliceAngle
+              })
+
+            // Cutout donut hole
+            ctx.beginPath()
+            ctx.arc(cx, cy, 55, 0, 2 * Math.PI)
+            ctx.fillStyle = '#ffffff'
+            ctx.fill()
+
+            // Draw center text natively
+            ctx.fillStyle = '#111827'
+            ctx.textAlign = 'center'
+            ctx.textBaseline = 'middle'
+            ctx.font = 'bold 28px sans-serif'
+            ctx.fillText(`${dominantStatusRate.rate}`, cx, cy - 8)
+
+            ctx.fillStyle = '#6b7280'
+            ctx.font = 'bold 10px sans-serif'
+            ctx.fillText(dominantStatusRate.label.toUpperCase(), cx, cy + 14)
+
+            // Draw Legend natively onto the right side
+            let legendY = 60;
+            ; detailedStatusSummary.forEach(slice => {
+              if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
+              else if (slice.status === 'Ongoing' || slice.status === 'In Progress') ctx.fillStyle = '#3b82f6'
+              else ctx.fillStyle = '#ef4444'
+
+              ctx.beginPath()
+              ctx.arc(280, legendY, 6, 0, 2 * Math.PI)
+              ctx.fill()
+
+              ctx.textAlign = 'left'
+              ctx.textBaseline = 'middle'
+
+              ctx.fillStyle = '#4b5563'
+              ctx.font = 'bold 16px sans-serif'
+              ctx.fillText(`${slice.status}`, 300, legendY)
+
+              ctx.fillStyle = '#9ca3af'
+              ctx.font = '14px sans-serif'
+              ctx.fillText(`-   ${slice.rate}  (${slice.count})`, 390, legendY)
+
+              legendY += 40;
+            })
+
+            const imgData = canvas.toDataURL('image/png', 1.0)
+            const imgWidth = 160
+            doc.addImage(imgData, 'PNG', (pdfWidth - imgWidth) / 2, 28, imgWidth, 64)
+
+            nextY = 96
+          }
+        }
+      } catch (e) {
+        console.error("Canvas pie chart generation failed", e)
+      }
+
+      // Status Distribution Table
+      doc.setFontSize(14)
+      doc.setTextColor(0)
+      doc.text("Status Distribution", 14, nextY)
+
       autoTable(doc, {
-        startY: 45,
-        head: [['User Name', 'Course Name', 'User Status', 'Course Status', 'Completion %']],
-        body: recordsToPrint.map(r => [
-          r.userName,
-          r.courseName.substring(0, 30) + (r.courseName.length > 30 ? '...' : ''),
-          r.userStatus,
-          r.courseStatus,
-          r.completionPercentage
-        ]),
+        startY: nextY + 5,
+        head: [['Status', 'Count', 'Percentage (%)']],
+        body: detailedStatusSummary.map(s => [s.status, s.count, s.rate]),
+        theme: 'striped',
+        headStyles: { fillColor: [0, 70, 171] }
+      })
+
+      doc.setFontSize(14)
+      const tableTitleY = (doc as any).lastAutoTable.finalY + 15;
+      if (tableTitleY > 280) doc.addPage()
+      doc.text("Detailed Report Snapshot", 14, tableTitleY)
+
+      const recordsToPrint = filteredDetailedSummary.slice(0, 100)
+      autoTable(doc, {
+        startY: tableTitleY + 5,
+        head: [['User Name', 'Delivery Unit', 'User Status', 'Course Name', 'Course Status', 'Completion %']],
+        body: recordsToPrint.map(r => {
+          const cStatus = String(r.courseStatus).toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : r.courseStatus;
+          const cPercent = String(r.completionPercentage || "0").trim().endsWith('%') ? r.completionPercentage : `${String(r.completionPercentage || "0").trim()}%`;
+          return [
+            r.userName,
+            String(r.deliveryUnit || "Unknown").substring(0, 20) + (String(r.deliveryUnit || "Unknown").length > 20 ? '...' : ''),
+            r.userStatus,
+            r.courseName.substring(0, 30) + (r.courseName.length > 30 ? '...' : ''),
+            cStatus,
+            cPercent
+          ]
+        }),
         theme: 'striped',
         headStyles: { fillColor: [0, 70, 171] },
         styles: { fontSize: 8 }
       })
-      if ((selectedLog.detailedSummary || []).length > 100) {
-        doc.text("Note: Only showing the first 100 records in PDF. Please download Excel for full report.", 14, (doc as any).lastAutoTable.finalY + 10)
+      if (filteredDetailedSummary.length > 100) {
+        doc.text(`Note: Showing 100 out of ${filteredDetailedSummary.length} filtered records. Download Excel for full report.`, 14, (doc as any).lastAutoTable.finalY + 10)
       }
     }
 
@@ -1096,6 +1313,75 @@ export default function LMSDashboard() {
 
       {selectedLog && selectedLog.importType === 'detailed_report' && dashboardType === 'detailed_report' && (
         <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Status Distribution</CardTitle>
+                </div>
+                <CardDescription>Overview of all course completions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader className="bg-zinc-50 dark:bg-zinc-800/50">
+                    <TableRow>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Count</TableHead>
+                      <TableHead className="text-right">Percentage (%)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detailedStatusSummary.map((row) => (
+                      <TableRow key={row.status}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <div className={`h-2 w-2 rounded-full ${getStatusColor(row.status)}`} />
+                            {row.status}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{row.count}</TableCell>
+                        <TableCell className="text-right">
+                          <Badge variant="secondary" className="font-mono text-[#0046ab]">{row.rate}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <PieChartIcon className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Status Visual Representation</CardTitle>
+                </div>
+                <CardDescription>Visual breakdown of status percentages</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center justify-center h-full pt-4">
+                  <div className="relative h-56 w-56 flex items-center justify-center mb-6">
+                    <PieChart data={detailedStatusSummary} />
+                    <div className="absolute inset-12 bg-white rounded-full dark:bg-zinc-900 flex flex-col items-center justify-center shadow-sm border text-center">
+                      <span className="text-2xl font-bold">{dominantStatusRate.rate}</span>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold leading-tight px-2">{dominantStatusRate.label}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4 w-full pt-4 border-t">
+                    {detailedStatusSummary.map((s) => (
+                      <div key={s.status} className="flex flex-col items-center">
+                        <div className={`h-2.5 w-2.5 rounded-full mb-1 ${getStatusColor(s.status)}`} />
+                        <span className="text-[10px] font-medium text-zinc-500 uppercase">{s.status}</span>
+                        <span className="text-sm font-bold">{s.rate}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1118,7 +1404,7 @@ export default function LMSDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[600px]">
+              <ScrollArea className="w-full">
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
@@ -1128,18 +1414,159 @@ export default function LMSDashboard() {
                         </div>
                       </TableHead>
                       <TableHead>
-                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('userStatus', detailedSort, setDetailedSort)}>
-                          User Status <SortIcon sort={detailedSort} sortKey="userStatus" />
-                        </div>
-                      </TableHead>
-                      <TableHead className="w-[300px]">
-                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseName', detailedSort, setDetailedSort)}>
-                          Course Name <SortIcon sort={detailedSort} sortKey="courseName" />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('deliveryUnit', detailedSort, setDetailedSort)}>
+                            Delivery Unit <SortIcon sort={detailedSort} sortKey="deliveryUnit" />
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Filter className={`h-4 w-4 ${selectedDeliveryUnits.length > 0 ? "text-[#0046ab]" : "text-zinc-400"}`} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 p-0" align="start">
+                              <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                <h4 className="font-semibold text-sm">Filter Delivery Units</h4>
+                              </div>
+                              <ScrollArea className="h-64">
+                                <div className="p-3 space-y-3">
+                                  {uniqueDeliveryUnits.map((du) => (
+                                    <div key={du} className="flex flex-row items-start space-x-3">
+                                      <Checkbox 
+                                        id={`du-${du}`} 
+                                        checked={selectedDeliveryUnits.includes(du)}
+                                        onCheckedChange={(checked) => {
+                                          setSelectedDeliveryUnits(prev => checked ? [...prev, du] : prev.filter(v => v !== du))
+                                        }}
+                                      />
+                                      <Label htmlFor={`du-${du}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{du}</Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </ScrollArea>
+                              {selectedDeliveryUnits.length > 0 && (
+                                <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                                  <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedDeliveryUnits([])}>Clear Filters</Button>
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       </TableHead>
                       <TableHead>
-                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseStatus', detailedSort, setDetailedSort)}>
-                          Course Status <SortIcon sort={detailedSort} sortKey="courseStatus" />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('userStatus', detailedSort, setDetailedSort)}>
+                            User Status <SortIcon sort={detailedSort} sortKey="userStatus" />
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Filter className={`h-4 w-4 ${selectedUserStatuses.length > 0 ? "text-[#0046ab]" : "text-zinc-400"}`} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56 p-0" align="start">
+                              <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                <h4 className="font-semibold text-sm">Filter User Status</h4>
+                              </div>
+                              <div className="p-3 space-y-3">
+                                {uniqueUserStatuses.map((us) => (
+                                  <div key={us} className="flex flex-row items-center space-x-3">
+                                    <Checkbox 
+                                      id={`us-${us}`} 
+                                      checked={selectedUserStatuses.includes(us)}
+                                      onCheckedChange={(checked) => {
+                                        setSelectedUserStatuses(prev => checked ? [...prev, us] : prev.filter(v => v !== us))
+                                      }}
+                                    />
+                                    <Label htmlFor={`us-${us}`} className="text-sm font-medium leading-none">{us}</Label>
+                                  </div>
+                                ))}
+                              </div>
+                              {selectedUserStatuses.length > 0 && (
+                                <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                                  <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedUserStatuses([])}>Clear Filters</Button>
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </TableHead>
+                      <TableHead className="w-[350px]">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseName', detailedSort, setDetailedSort)}>
+                            Course Name <SortIcon sort={detailedSort} sortKey="courseName" />
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Filter className={`h-4 w-4 ${selectedCourseNames.length > 0 ? "text-[#0046ab]" : "text-zinc-400"}`} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 p-0" align="start">
+                              <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                <h4 className="font-semibold text-sm">Filter Course Names</h4>
+                              </div>
+                              <ScrollArea className="h-64">
+                                <div className="p-3 space-y-3">
+                                  {uniqueCourseNames.map((cn) => (
+                                    <div key={cn} className="flex flex-row items-start space-x-3">
+                                      <Checkbox 
+                                        id={`cn-${cn}`} 
+                                        checked={selectedCourseNames.includes(cn)}
+                                        onCheckedChange={(checked) => {
+                                          setSelectedCourseNames(prev => checked ? [...prev, cn] : prev.filter(v => v !== cn))
+                                        }}
+                                      />
+                                      <Label htmlFor={`cn-${cn}`} className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">{cn}</Label>
+                                    </div>
+                                  ))}
+                                </div>
+                              </ScrollArea>
+                              {selectedCourseNames.length > 0 && (
+                                <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                                  <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedCourseNames([])}>Clear Filters</Button>
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseStatus', detailedSort, setDetailedSort)}>
+                            Course Status <SortIcon sort={detailedSort} sortKey="courseStatus" />
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                <Filter className={`h-4 w-4 ${selectedCourseStatuses.length > 0 ? "text-[#0046ab]" : "text-zinc-400"}`} />
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-56 p-0" align="start">
+                              <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                                <h4 className="font-semibold text-sm">Filter Status</h4>
+                              </div>
+                              <div className="p-3 space-y-3">
+                                {uniqueCourseStatuses.map((cs) => (
+                                  <div key={cs} className="flex flex-row items-center space-x-3">
+                                    <Checkbox 
+                                      id={`cs-${cs}`} 
+                                      checked={selectedCourseStatuses.includes(cs)}
+                                      onCheckedChange={(checked) => {
+                                        setSelectedCourseStatuses(prev => checked ? [...prev, cs] : prev.filter(v => v !== cs))
+                                      }}
+                                    />
+                                    <Label htmlFor={`cs-${cs}`} className="text-sm font-medium leading-none">{cs}</Label>
+                                  </div>
+                                ))}
+                              </div>
+                              {selectedCourseStatuses.length > 0 && (
+                                <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                                  <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedCourseStatuses([])}>Clear Filters</Button>
+                                </div>
+                              )}
+                            </PopoverContent>
+                          </Popover>
                         </div>
                       </TableHead>
                       <TableHead className="text-right">
@@ -1152,14 +1579,15 @@ export default function LMSDashboard() {
                   <TableBody>
                     {filteredDetailedSummary.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={5} className="h-24 text-center text-zinc-500">No records found matching your search.</TableCell>
+                        <TableCell colSpan={6} className="h-24 text-center text-zinc-500">No records found matching your search.</TableCell>
                       </TableRow>
                     ) : (
-                      applySort(filteredDetailedSummary, detailedSort).slice((detailedPage - 1) * 20, detailedPage * 20).map((row: any, i: number) => (
+                      applySort(filteredDetailedSummary, detailedSort).slice((detailedPage - 1) * 10, detailedPage * 10).map((row: any, i: number) => (
                         <TableRow key={i}>
                           <TableCell className="font-medium">{row.userName}</TableCell>
+                          <TableCell className="text-zinc-500">{row.deliveryUnit}</TableCell>
                           <TableCell>
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.userStatus?.toString().trim().toLowerCase() === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${String(row.userStatus).trim().toLowerCase() === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
                               {row.userStatus}
                             </span>
                           </TableCell>
@@ -1168,21 +1596,25 @@ export default function LMSDashboard() {
                               {row.courseName}
                             </div>
                           </TableCell>
-                          <TableCell>{row.courseStatus}</TableCell>
-                          <TableCell className="text-right font-medium">{row.completionPercentage}</TableCell>
+                          <TableCell>
+                            {String(row.courseStatus).toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : row.courseStatus}
+                          </TableCell>
+                          <TableCell className="text-right font-medium">
+                            {String(row.completionPercentage || "0").trim().endsWith('%') ? row.completionPercentage : `${String(row.completionPercentage || "0").trim()}%`}
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
                   </TableBody>
                 </Table>
               </ScrollArea>
-              {filteredDetailedSummary.length > 20 && (
+              {filteredDetailedSummary.length > 10 && (
                 <div className="flex items-center justify-end space-x-2 pt-4">
                   <Button variant="outline" size="sm" onClick={() => setDetailedPage(prev => Math.max(prev - 1, 1))} disabled={detailedPage === 1}>
                     <ChevronLeft className="h-4 w-4 mr-1" /> Prev
                   </Button>
-                  <div className="text-sm text-zinc-500 font-medium px-2">Page {detailedPage} of {Math.ceil(filteredDetailedSummary.length / 20)}</div>
-                  <Button variant="outline" size="sm" onClick={() => setDetailedPage(prev => Math.min(prev + 1, Math.ceil(filteredDetailedSummary.length / 20)))} disabled={detailedPage === Math.ceil(filteredDetailedSummary.length / 20)}>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {detailedPage} of {Math.ceil(filteredDetailedSummary.length / 10)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setDetailedPage(prev => Math.min(prev + 1, Math.ceil(filteredDetailedSummary.length / 10)))} disabled={detailedPage === Math.ceil(filteredDetailedSummary.length / 10)}>
                     Next <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>

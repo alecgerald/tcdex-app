@@ -217,8 +217,12 @@ export default function ExcelUploadPage() {
         }
 
         setRawData(jsonData)
-        setStep('filter')
-        toast.success("File read successfully. Please select filters.")
+        if (importType === 'detailed_report') {
+          setTimeout(() => applyFiltersAndProcess(jsonData), 50)
+        } else {
+          setStep('filter')
+          toast.success("File read successfully. Please select filters.")
+        }
       } catch (error) {
         toast.error("Failed to parse Excel file")
       } finally {
@@ -228,7 +232,7 @@ export default function ExcelUploadPage() {
     reader.readAsBinaryString(file)
   }
 
-  const applyFiltersAndProcess = () => {
+  const applyFiltersAndProcess = (explicitData?: any[]) => {
     const isStatus = importType === 'status'
 
     if (isStatus && (selectedLocations.length === 0 || selectedRoles.length === 0)) {
@@ -239,10 +243,6 @@ export default function ExcelUploadPage() {
       toast.error(`Please select at least one User type and Location`)
       return
     }
-    if (importType === 'detailed_report' && (selectedUserStatuses.length === 0 || selectedDUs.length === 0)) {
-      toast.error(`Please select at least one User Status and one Delivery Unit`)
-      return
-    }
     if (importType !== 'detailed_report' && selectedDUs.length === 0) {
       toast.error(`Please select at least one Delivery Unit`)
       return
@@ -250,20 +250,19 @@ export default function ExcelUploadPage() {
     setIsLoading(true)
 
     setTimeout(() => {
-      const filtered = rawData.filter(row => {
+      const dataSrc = explicitData && explicitData.length > 0 ? explicitData : rawData;
+      const filtered = dataSrc.filter(row => {
         const loc = String(row[locationCol] || "Unknown")
         const du = String(row[duCol] || "Unknown")
         const role = String(row[roleCol] || "Unknown")
         const userType = String(row[userTypeCol] || "Unknown")
         const uStatus = String(row[userStatusCol] || "Unknown")
 
-        let match = selectedDUs.includes(du);
+        let match = importType === 'detailed_report' ? true : selectedDUs.includes(du);
         if (isStatus) {
           match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
         } else if (importType === 'courses') {
           match = match && selectedUserTypes.includes(userType) && selectedLocations.includes(loc);
-        } else if (importType === 'detailed_report') {
-          match = match && selectedUserStatuses.includes(uStatus);
         }
         return match;
       }).map((row, index) => ({
@@ -599,68 +598,45 @@ export default function ExcelUploadPage() {
             </Card>
           )}
 
-          {importType === 'detailed_report' && (
-            <Card className="border-none shadow-sm">
+          {importType !== 'detailed_report' && (
+            <Card className="border-none shadow-sm flex flex-col">
               <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select User Status</CardTitle>
-                <CardDescription>Detected in column: <span className="font-semibold">{userStatusCol}</span></CardDescription>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Delivery Units</CardTitle>
+                <CardDescription>Detected in column: <span className="font-semibold">{duCol}</span></CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex-1">
                 <ScrollArea className="h-[300px] pr-4">
                   <div className="space-y-3">
                     <div className="flex items-center space-x-2 pb-2 border-b">
-                      <Checkbox id="all-userstatuses" checked={selectedUserStatuses.length === uniqueFilterValues.userStatuses.length} onCheckedChange={(checked) => setSelectedUserStatuses(checked ? uniqueFilterValues.userStatuses : [])} />
-                      <Label htmlFor="all-userstatuses" className="font-bold">Select All</Label>
+                      <Checkbox id="all-dus" checked={selectedDUs.length === uniqueFilterValues.dus.length} onCheckedChange={(checked) => setSelectedDUs(checked ? uniqueFilterValues.dus : [])} />
+                      <Label htmlFor="all-dus" className="font-bold">Select All</Label>
                     </div>
-                    {uniqueFilterValues.userStatuses.map(us => (
-                      <div key={us} className="flex items-center space-x-2">
-                         <Checkbox id={`us-${us}`} checked={selectedUserStatuses.includes(us)} onCheckedChange={() => setSelectedUserStatuses(prev => prev.includes(us) ? prev.filter(u => u !== us) : [...prev, us])} />
-                         <Label htmlFor={`us-${us}`}>{us}</Label>
+                    {uniqueFilterValues.dus.map(du => (
+                      <div key={du} className="flex items-center space-x-2">
+                        <Checkbox id={`du-${du}`} checked={selectedDUs.includes(du)} onCheckedChange={() => setSelectedDUs(prev => prev.includes(du) ? prev.filter(d => d !== du) : [...prev, du])} />
+                        <Label htmlFor={`du-${du}`}>{du}</Label>
                       </div>
                     ))}
                   </div>
                 </ScrollArea>
               </CardContent>
+              <div className="p-6 pt-0 border-t">
+                <div className="flex items-center justify-between mt-4">
+                  <p className="text-sm text-zinc-500">
+                    Ready to process records
+                  </p>
+                  <Button
+                    onClick={applyFiltersAndProcess}
+                    disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) || (importType === 'detailed_report' && selectedUserStatuses.length === 0) || selectedDUs.length === 0}
+                    className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
+                    Process Data
+                  </Button>
+                </div>
+              </div>
             </Card>
           )}
-
-          <Card className="border-none shadow-sm flex flex-col">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Delivery Units</CardTitle>
-              <CardDescription>Detected in column: <span className="font-semibold">{duCol}</span></CardDescription>
-            </CardHeader>
-            <CardContent className="flex-1">
-              <ScrollArea className="h-[300px] pr-4">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2 pb-2 border-b">
-                    <Checkbox id="all-dus" checked={selectedDUs.length === uniqueFilterValues.dus.length} onCheckedChange={(checked) => setSelectedDUs(checked ? uniqueFilterValues.dus : [])} />
-                    <Label htmlFor="all-dus" className="font-bold">Select All</Label>
-                  </div>
-                  {uniqueFilterValues.dus.map(du => (
-                    <div key={du} className="flex items-center space-x-2">
-                      <Checkbox id={`du-${du}`} checked={selectedDUs.includes(du)} onCheckedChange={() => setSelectedDUs(prev => prev.includes(du) ? prev.filter(d => d !== du) : [...prev, du])} />
-                      <Label htmlFor={`du-${du}`}>{du}</Label>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </CardContent>
-            <div className="p-6 pt-0 border-t">
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-zinc-500">
-                  Ready to process records
-                </p>
-                <Button
-                  onClick={applyFiltersAndProcess}
-                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) || (importType === 'detailed_report' && selectedUserStatuses.length === 0) || selectedDUs.length === 0}
-                  className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
-                >
-                  {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
-                  Process Data
-                </Button>
-              </div>
-            </div>
-          </Card>
         </div>
       )}
 
