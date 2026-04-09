@@ -40,7 +40,7 @@ interface AuditLog {
   fileName: string
   date: string
   count: number
-  importType?: 'status' | 'courses'
+  importType?: 'status' | 'courses' | 'detailed_report'
   cleanedData?: any[]
   statusSummary?: any[]
   deptSummary?: any[]
@@ -156,8 +156,8 @@ export default function AuditLogsPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className={log.importType === 'courses' ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-blue-50 text-blue-700 border-blue-200"}>
-                        {log.importType === 'courses' ? 'Courses' : 'Status'}
+                      <Badge variant="outline" className={log.importType === 'detailed_report' ? "bg-emerald-50 text-emerald-700 border-emerald-200" : log.importType === 'courses' ? "bg-purple-50 text-purple-700 border-purple-200" : "bg-blue-50 text-blue-700 border-blue-200"}>
+                        {log.importType === 'detailed_report' ? 'Status&Courses' : log.importType === 'courses' ? 'Courses' : 'Status'}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-zinc-500 text-sm">{log.date}</TableCell>
@@ -313,7 +313,7 @@ function SheetDataTable({ data }: { data: any[] }) {
               {columns.map(col => (
                 <TableCell key={`${idx}-${col}`} className="whitespace-nowrap px-4 py-3 border-r last:border-r-0">
                   {/status/i.test(col) ? (
-                    <Badge variant="outline" className={row[col] === "Completed" ? "text-green-600 border-green-200 bg-green-50" : row[col] === "Ongoing" ? "text-blue-600 border-blue-200 bg-blue-50" : "text-red-600 border-red-200 bg-red-50"}>
+                    <Badge variant="outline" className={row[col] === "Completed" || row[col]?.toString().trim().toLowerCase() === "active" ? "text-green-600 border-green-200 bg-green-50" : row[col] === "Ongoing" ? "text-blue-600 border-blue-200 bg-blue-50" : "text-red-600 border-red-200 bg-red-50"}>
                       {row[col]}
                     </Badge>
                   ) : (

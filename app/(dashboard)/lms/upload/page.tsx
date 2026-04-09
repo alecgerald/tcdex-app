@@ -42,7 +42,7 @@ interface RowData {
 }
 
 type Step = 'upload' | 'filter' | 'preview'
-type ImportType = 'status' | 'courses'
+type ImportType = 'status' | 'courses' | 'detailed_report'
 
 export default function ExcelUploadPage() {
   const [step, setStep] = useState<Step>('upload')
@@ -64,6 +64,9 @@ export default function ExcelUploadPage() {
   const [selectedDUs, setSelectedDUs] = useState<string[]>([])
   const [selectedRoles, setSelectedRoles] = useState<string[]>([])
   const [selectedUserTypes, setSelectedUserTypes] = useState<string[]>([])
+  const [selectedUserStatuses, setSelectedUserStatuses] = useState<string[]>([])
+
+  const [userStatusCol, setUserStatusCol] = useState("")
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -76,18 +79,21 @@ export default function ExcelUploadPage() {
     const duHeader = headers.find(h => /du|delivery unit|department|dept/i.test(h)) || headers[1]
     const roleHeader = headers.find(h => /role|job title|position/i.test(h)) || "Role"
     const userTypeHeader = headers.find(h => /user type|usertype|type/i.test(h)) || "User type"
+    const userStatusHeader = headers.find(h => /user status/i.test(h)) || "User Status"
 
     setLocationCol(locHeader)
     setDuCol(duHeader)
     setRoleCol(roleHeader)
     setUserTypeCol(userTypeHeader)
+    setUserStatusCol(userStatusHeader)
 
     const locations = Array.from(new Set(rawData.map(r => String(r[locHeader] || "Unknown")))).sort()
     const dus = Array.from(new Set(rawData.map(r => String(r[duHeader] || "Unknown")))).sort()
     const roles = Array.from(new Set(rawData.map(r => String(r[roleHeader] || "Unknown")))).sort()
     const userTypes = Array.from(new Set(rawData.map(r => String(r[userTypeHeader] || "Unknown")))).sort()
+    const userStatuses = Array.from(new Set(rawData.map(r => String(r[userStatusHeader] || "Unknown")))).sort()
 
-    return { locations, dus, roles, userTypes }
+    return { locations, dus, roles, userTypes, userStatuses }
   }, [rawData])
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,17 +143,77 @@ export default function ExcelUploadPage() {
           return row;
         })
 
-        // Validate headers for 'courses' type
-        if (importType === 'courses') {
-          const headers = Object.keys(jsonData[0] as any)
-          const required = ['Name', 'Assigned Courses', 'Completed Courses', 'Delivery Unit', 'Project Name', 'Name of Immediate Supervisor']
-          const missing = required.filter(r => !headers.some(h => h.toLowerCase() === r.toLowerCase()))
+        // Validate headers for 'status' type
+        if (importType === 'status') {
+          const headers = Object.keys(jsonData[0] || {})
+          const required = ['Name', 'Role', 'Status', 'Delivery Unit', 'Location', 'Name of Immediate Supervisor']
+          const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
 
           if (missing.length > 0) {
-            toast.error(`Missing columns: ${missing.join(", ")}`)
+            toast.error(`Missing columns for Status Completion: ${missing.join(", ")}`)
             setIsLoading(false)
             return
           }
+
+          // Strip all other columns
+          jsonData = jsonData.map((row: any) => {
+            const keys = Object.keys(row)
+            const cleanRow: any = {}
+            required.forEach(req => {
+              const matchedKey = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+              if (matchedKey && row[matchedKey] !== undefined) {
+                cleanRow[req] = row[matchedKey]
+              }
+            })
+            return cleanRow
+          })
+        } else if (importType === 'courses') {
+          const headers = Object.keys(jsonData[0] || {})
+          const required = ['Name', 'User type', 'Assigned Courses', 'Completed Courses', 'Delivery Unit', 'Location', 'Name of Immediate Supervisor']
+          const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
+
+          if (missing.length > 0) {
+            toast.error(`Missing columns for Assigned/Completed Courses: ${missing.join(", ")}`)
+            setIsLoading(false)
+            return
+          }
+
+          // Strip all other columns
+          jsonData = jsonData.map((row: any) => {
+            const keys = Object.keys(row)
+            const cleanRow: any = {}
+            required.forEach(req => {
+              const matchedKey = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+              if (matchedKey && row[matchedKey] !== undefined) {
+                cleanRow[req] = row[matchedKey]
+              }
+            })
+            return cleanRow
+          })
+        } else if (importType === 'detailed_report') {
+          const headers = Object.keys(jsonData[0] || {})
+          const required = ['User Name', 'User Status', 'Course Name', 'Course Status', 'Completion Percentage', 'Delivery Unit or Department', 'Project Name', 'Project Manager', 'Reporting Manager']
+          const requiredRegexesStr = required.map(req => req.toLowerCase())
+          const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
+
+          if (missing.length > 0) {
+            toast.error(`Missing some required columns for detailed report mapping (e.g. User Name, User Status, Delivery Unit or Department, Project Name, Course Name, Course Status, Completion Percentage).`)
+            setIsLoading(false)
+            return
+          }
+
+          // Strip all other columns and enforce consistent naming
+          jsonData = jsonData.map((row: any) => {
+            const keys = Object.keys(row)
+            const cleanRow: any = {}
+            required.forEach(req => {
+              const matchedKey = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+              if (matchedKey && row[matchedKey] !== undefined) {
+                cleanRow[req] = row[matchedKey]
+              }
+            })
+            return cleanRow
+          })
         }
 
         setRawData(jsonData)
@@ -169,11 +235,15 @@ export default function ExcelUploadPage() {
       toast.error(`Please select at least one Location and one Role`)
       return
     }
-    if (!isStatus && selectedUserTypes.length === 0) {
-      toast.error(`Please select at least one User type`)
+    if (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) {
+      toast.error(`Please select at least one User type and Location`)
       return
     }
-    if (selectedDUs.length === 0) {
+    if (importType === 'detailed_report' && (selectedUserStatuses.length === 0 || selectedDUs.length === 0)) {
+      toast.error(`Please select at least one User Status and one Delivery Unit`)
+      return
+    }
+    if (importType !== 'detailed_report' && selectedDUs.length === 0) {
       toast.error(`Please select at least one Delivery Unit`)
       return
     }
@@ -185,12 +255,15 @@ export default function ExcelUploadPage() {
         const du = String(row[duCol] || "Unknown")
         const role = String(row[roleCol] || "Unknown")
         const userType = String(row[userTypeCol] || "Unknown")
+        const uStatus = String(row[userStatusCol] || "Unknown")
 
         let match = selectedDUs.includes(du);
         if (isStatus) {
           match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
-        } else {
-          match = match && selectedUserTypes.includes(userType);
+        } else if (importType === 'courses') {
+          match = match && selectedUserTypes.includes(userType) && selectedLocations.includes(loc);
+        } else if (importType === 'detailed_report') {
+          match = match && selectedUserStatuses.includes(uStatus);
         }
         return match;
       }).map((row, index) => ({
@@ -288,7 +361,7 @@ export default function ExcelUploadPage() {
         })).sort((a, b) => b.name.localeCompare(a.name))
 
         newLog = { ...newLog, statusSummary, deptSummary, mgrSummary }
-      } else {
+      } else if (importType === 'courses') {
         // Assigned/Completed Courses Logic
         const nameKey = Object.keys(filtered[0]).find(k => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
         const assignedKey = Object.keys(filtered[0]).find(k => /assigned/i.test(k)) || "Assigned Courses"
@@ -324,6 +397,26 @@ export default function ExcelUploadPage() {
         })).sort((a, b) => b.assigned - a.assigned)
 
         newLog = { ...newLog, deptSummary, employeeSummary }
+      } else if (importType === 'detailed_report') {
+        const nameKey = Object.keys(filtered[0]).find(k => /user name/i.test(k)) || "User Name"
+        const userStatusKey = Object.keys(filtered[0]).find(k => /user status/i.test(k)) || "User Status"
+        const courseNameKey = Object.keys(filtered[0]).find(k => /course name/i.test(k)) || "Course Name"
+        const courseStatusKey = Object.keys(filtered[0]).find(k => /course status/i.test(k)) || "Course Status"
+        const percentKey = Object.keys(filtered[0]).find(k => /completion (percentage|%)/i.test(k)) || "Completion Percentage"
+
+        const detailedSummary = filtered.map(row => ({
+          userName: String(row['User Name'] || row['Name'] || "Unknown").trim(),
+          userStatus: String(row['User Status'] || "Unknown").trim(),
+          courseName: String(row['Course Name'] || "Unknown").trim(),
+          courseStatus: String(row['Course Status'] || "Unknown").trim(),
+          completionPercentage: String(row['Completion Percentage'] || "0%").trim(),
+          deliveryUnit: String(row['Delivery Unit or Department'] || "Unknown").trim(),
+          projectName: String(row['Project Name'] || "Unknown").trim(),
+          projectManager: String(row['Project Manager'] || "Unknown").trim(),
+          reportingManager: String(row['Reporting Manager'] || "Unknown").trim()
+        }))
+        
+        newLog = { ...newLog, detailedSummary }
       }
 
       localStorage.setItem("lms_audit_logs", JSON.stringify([newLog, ...existingLogs]))
@@ -344,6 +437,7 @@ export default function ExcelUploadPage() {
     setSelectedDUs([])
     setSelectedRoles([])
     setSelectedUserTypes([])
+    setSelectedUserStatuses([])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -355,6 +449,7 @@ export default function ExcelUploadPage() {
     setSelectedDUs([])
     setSelectedRoles([])
     setSelectedUserTypes([])
+    setSelectedUserStatuses([])
     if (fileInputRef.current) fileInputRef.current.value = ""
   }
 
@@ -393,7 +488,7 @@ export default function ExcelUploadPage() {
       {step === 'upload' && (
         <div className="space-y-6">
           <Tabs defaultValue="status" className="w-full" onValueChange={(v) => setImportType(v as ImportType)}>
-            <TabsList className="grid w-full grid-cols-2 max-w-md">
+            <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 md:max-w-3xl">
               <TabsTrigger value="status" className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4" />
                 Status Completion
@@ -401,6 +496,10 @@ export default function ExcelUploadPage() {
               <TabsTrigger value="courses" className="flex items-center gap-2">
                 <ClipboardList className="h-4 w-4" />
                 Assigned/Completed Courses
+              </TabsTrigger>
+              <TabsTrigger value="detailed_report" className="flex items-center gap-2">
+                <FileSpreadsheet className="h-4 w-4" />
+                CompletionDetailedReport
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -410,11 +509,13 @@ export default function ExcelUploadPage() {
               <FileSpreadsheet className="h-10 w-10 text-zinc-400" />
             </div>
             <h3 className="text-xl font-semibold mb-2">
-              Upload {importType === 'status' ? 'Status Completion' : 'Assigned/Completed Courses'} data
+              Upload {importType === 'status' ? 'Status Completion' : importType === 'detailed_report' ? 'Completion Detailed Report' : 'Assigned/Completed Courses'} data
             </h3>
             <p className="text-zinc-500 max-w-md px-4">
               {importType === 'status'
                 ? "Upload the Excel file with employee status data. You can filter by Location and DU in the next step."
+                : importType === 'detailed_report'
+                ? "Required columns matching: User Name, User Status, Course Name, Course Status, Completion Percentage."
                 : "Required columns: Name, Assigned Courses, Completed Courses, Delivery Unit, Project Name, Manager Name."}
             </p>
           </Card>
@@ -422,8 +523,8 @@ export default function ExcelUploadPage() {
       )}
 
       {step === 'filter' && (
-        <div className={`grid grid-cols-1 ${importType === 'status' ? 'lg:grid-cols-3 md:grid-cols-2' : 'md:grid-cols-2 max-w-4xl mx-auto w-full'} gap-6`}>
-          {importType === 'status' && (
+        <div className={`grid grid-cols-1 ${importType === 'status' || importType === 'courses' ? 'lg:grid-cols-3 md:grid-cols-2' : 'md:grid-cols-2 max-w-4xl mx-auto w-full'} gap-6`}>
+          {(importType === 'status' || importType === 'courses') && (
             <Card className="border-none shadow-sm">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Locations</CardTitle>
@@ -498,6 +599,31 @@ export default function ExcelUploadPage() {
             </Card>
           )}
 
+          {importType === 'detailed_report' && (
+            <Card className="border-none shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select User Status</CardTitle>
+                <CardDescription>Detected in column: <span className="font-semibold">{userStatusCol}</span></CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-[300px] pr-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox id="all-userstatuses" checked={selectedUserStatuses.length === uniqueFilterValues.userStatuses.length} onCheckedChange={(checked) => setSelectedUserStatuses(checked ? uniqueFilterValues.userStatuses : [])} />
+                      <Label htmlFor="all-userstatuses" className="font-bold">Select All</Label>
+                    </div>
+                    {uniqueFilterValues.userStatuses.map(us => (
+                      <div key={us} className="flex items-center space-x-2">
+                         <Checkbox id={`us-${us}`} checked={selectedUserStatuses.includes(us)} onCheckedChange={() => setSelectedUserStatuses(prev => prev.includes(us) ? prev.filter(u => u !== us) : [...prev, us])} />
+                         <Label htmlFor={`us-${us}`}>{us}</Label>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-none shadow-sm flex flex-col">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2"><Filter className="h-5 w-5 text-[#0046ab]" />Select Delivery Units</CardTitle>
@@ -526,7 +652,7 @@ export default function ExcelUploadPage() {
                 </p>
                 <Button
                   onClick={applyFiltersAndProcess}
-                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (!importType || importType === 'courses' ? selectedUserTypes.length === 0 : false) || selectedDUs.length === 0}
+                  disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) || (importType === 'detailed_report' && selectedUserStatuses.length === 0) || selectedDUs.length === 0}
                   className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
                 >
                   {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}
@@ -570,7 +696,7 @@ export default function ExcelUploadPage() {
                       {columns.map((col) => (
                         <TableCell key={`${row.id}-${col}`}>
                           {/status/i.test(col) ? (
-                            <Badge variant="outline" className={row[col] === "Completed" ? "text-green-600 border-green-200 bg-green-50" : row[col] === "Ongoing" ? "text-blue-600 border-blue-200 bg-blue-50" : "text-red-600 border-red-200 bg-red-50"}>
+                            <Badge variant="outline" className={String(row[col] || "").trim().toLowerCase() === "completed" || String(row[col] || "").trim().toLowerCase() === "active" ? "text-green-600 border-green-200 bg-green-50" : String(row[col] || "").trim().toLowerCase() === "ongoing" ? "text-blue-600 border-blue-200 bg-blue-50" : "text-red-600 border-red-200 bg-red-50"}>
                               {row[col]}
                             </Badge>
                           ) : (

@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { 
-  FileSpreadsheet, 
-  Users, 
-  CheckCircle2, 
+import {
+  FileSpreadsheet,
+  Users,
+  CheckCircle2,
   AlertCircle,
   TrendingUp,
   Table as TableIcon,
@@ -25,13 +25,13 @@ import {
   ChevronDown
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -76,11 +76,12 @@ interface AuditLog {
   fileName: string
   date: string
   count: number
-  importType?: 'status' | 'courses'
+  importType?: 'status' | 'courses' | 'detailed_report'
   statusSummary?: SummaryItem[]
   deptSummary: any[]
   mgrSummary?: BreakoutItem[]
   employeeSummary?: CourseItem[]
+  detailedSummary?: any[]
   cleanedData?: any[]
 }
 
@@ -99,11 +100,11 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
       {data.map((slice) => {
         const slicePercent = slice.count / total
         if (slicePercent === 0) return null
-        
+
         const [startX, startY] = getCoordinatesForPercent(cumulativePercent)
         cumulativePercent += slicePercent
         const [endX, endY] = getCoordinatesForPercent(cumulativePercent)
-        
+
         const largeArcFlag = slicePercent > 0.5 ? 1 : 0
         const pathData = [
           `M ${startX} ${startY}`,
@@ -121,9 +122,9 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
 export default function LMSDashboard() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [selectedLogId, setSelectedLogId] = useState<string>("")
-  const [dashboardType, setDashboardType] = useState<'status' | 'courses'>('status')
+  const [dashboardType, setDashboardType] = useState<'status' | 'courses' | 'detailed_report'>('status')
   const [isLoading, setIsLoading] = useState(true)
-  
+
   // Search states
   const [deptSearch, setDeptSearch] = useState("")
   const [mgrSearch, setMgrSearch] = useState("")
@@ -142,6 +143,11 @@ export default function LMSDashboard() {
   const [mgrSort, setMgrSort] = useState<SortConfig>(null)
   const [courseDeptSort, setCourseDeptSort] = useState<SortConfig>(null)
   const [employeeSort, setEmployeeSort] = useState<SortConfig>(null)
+
+  // Detailed Report states
+  const [detailedSearch, setDetailedSearch] = useState("")
+  const [detailedPage, setDetailedPage] = useState(1)
+  const [detailedSort, setDetailedSort] = useState<SortConfig>(null)
 
   const handleSort = (key: string, currentSort: SortConfig, setSort: (s: SortConfig) => void) => {
     if (!currentSort || currentSort.key !== key) {
@@ -181,11 +187,11 @@ export default function LMSDashboard() {
   useEffect(() => {
     const existingLogs = localStorage.getItem("lms_audit_logs")
     const activeData = localStorage.getItem("lms_active_data")
-    
+
     if (existingLogs) {
       const parsedLogs = JSON.parse(existingLogs) as AuditLog[]
       setLogs(parsedLogs)
-      
+
       if (activeData) {
         try {
           const active = JSON.parse(activeData)
@@ -222,17 +228,22 @@ export default function LMSDashboard() {
   const filteredLogsForType = logs.filter(l => (l.importType || 'status') === dashboardType)
 
   const statusSummary = selectedLog?.statusSummary || []
-  
-  const filteredDeptSummary = (selectedLog?.deptSummary || []).filter((item: any) => 
+
+  const filteredDeptSummary = (selectedLog?.deptSummary || []).filter((item: any) =>
     item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
   )
-  
-  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter((item: any) => 
+
+  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter((item: any) =>
     item.name.toLowerCase().includes(mgrSearch.toLowerCase())
   )
 
-  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter((item: any) => 
+  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter((item: any) =>
     item.name.toLowerCase().includes(employeeSearch.toLowerCase())
+  )
+
+  const filteredDetailedSummary = (selectedLog?.detailedSummary || []).filter((item: any) =>
+    item.userName.toLowerCase().includes(detailedSearch.toLowerCase()) ||
+    item.courseName.toLowerCase().includes(detailedSearch.toLowerCase())
   )
 
   const getStatusColor = (status: string) => {
@@ -246,25 +257,25 @@ export default function LMSDashboard() {
 
   const handleDownloadExcel = () => {
     if (!selectedLog || !selectedLog.cleanedData) return
-    
+
     // Clean data for excel (remove the 'id' field we added during upload)
     const dataToExport = selectedLog.cleanedData.map(({ id, ...rest }: any) => {
       const exportRow = { ...rest }
-      
+
       if (selectedLog.importType === 'courses') {
         // Dynamically calculate Completion % for every raw row identically to dashboard logic
         const assignedKey = Object.keys(exportRow).find(k => /assigned/i.test(k)) || "Assigned Courses"
         const completedKey = Object.keys(exportRow).find(k => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
-        
+
         const assigned = Number(exportRow[assignedKey]) || 0
         const completed = Number(exportRow[completedKey]) || 0
-        
+
         exportRow['Completion %'] = assigned > 0 ? `${((completed / assigned) * 100).toFixed(1)}%` : "0.0%"
       }
-      
+
       return exportRow
     })
-    
+
     const ws = utils.json_to_sheet(dataToExport)
     const wb = utils.book_new()
     utils.book_append_sheet(wb, ws, "Cleaned Data")
@@ -273,19 +284,19 @@ export default function LMSDashboard() {
 
   const handleDownloadPDF = () => {
     if (!selectedLog) return
-    
+
     const doc = new jsPDF()
     const timestamp = new Date().toLocaleString()
-    
+
     // Header
     const pdfWidth = doc.internal.pageSize.getWidth()
     doc.setFontSize(20)
     doc.setTextColor(0, 70, 171) // #0046ab
     doc.text("LMS Dashboard Summary", pdfWidth / 2, 22, { align: 'center' })
-    
+
     if (selectedLog.importType === 'status') {
       let nextY = 35;
-      
+
       try {
         const total = (selectedLog.statusSummary || []).reduce((acc, curr) => acc + curr.count, 0)
         if (total > 0 && typeof document !== 'undefined') {
@@ -296,31 +307,31 @@ export default function LMSDashboard() {
           if (ctx) {
             ctx.imageSmoothingEnabled = true;
             ctx.scale(2, 2); // High-DPI scaling (500x200 effective space)
-            
+
             let currentAngle = -0.5 * Math.PI
             const cx = 130, cy = 100, radius = 90
-            
-            ;(selectedLog.statusSummary || []).forEach(slice => {
-              const sliceAngle = (slice.count / total) * 2 * Math.PI
-              ctx.beginPath()
-              ctx.moveTo(cx, cy)
-              ctx.arc(cx, cy, radius, currentAngle, currentAngle + sliceAngle)
-              ctx.closePath()
-              if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
-              else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
-              else ctx.fillStyle = '#ef4444'
-              ctx.fill()
-              
-              // No border
-              currentAngle += sliceAngle
-            })
-            
+
+              ; (selectedLog.statusSummary || []).forEach(slice => {
+                const sliceAngle = (slice.count / total) * 2 * Math.PI
+                ctx.beginPath()
+                ctx.moveTo(cx, cy)
+                ctx.arc(cx, cy, radius, currentAngle, currentAngle + sliceAngle)
+                ctx.closePath()
+                if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
+                else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
+                else ctx.fillStyle = '#ef4444'
+                ctx.fill()
+
+                // No border
+                currentAngle += sliceAngle
+              })
+
             // Cutout donut hole
             ctx.beginPath()
             ctx.arc(cx, cy, 55, 0, 2 * Math.PI)
             ctx.fillStyle = '#ffffff'
             ctx.fill()
-            
+
             // Draw center text natively
             const completionRate = (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
             ctx.fillStyle = '#111827'
@@ -328,40 +339,40 @@ export default function LMSDashboard() {
             ctx.textBaseline = 'middle'
             ctx.font = 'bold 28px sans-serif'
             ctx.fillText(`${completionRate}%`, cx, cy - 8)
-            
+
             ctx.fillStyle = '#6b7280'
             ctx.font = 'bold 10px sans-serif'
             ctx.fillText('COMPLETED', cx, cy + 14)
-            
+
             // Draw Legend natively onto the right side
             let legendY = 60;
-            ;(selectedLog.statusSummary || []).forEach(slice => {
+            ; (selectedLog.statusSummary || []).forEach(slice => {
               if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
               else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
               else ctx.fillStyle = '#ef4444'
-              
+
               ctx.beginPath()
               ctx.arc(280, legendY, 6, 0, 2 * Math.PI)
               ctx.fill()
-              
+
               ctx.textAlign = 'left'
               ctx.textBaseline = 'middle'
-              
+
               ctx.fillStyle = '#4b5563'
               ctx.font = 'bold 16px sans-serif'
               ctx.fillText(`${slice.status}`, 300, legendY)
-              
+
               ctx.fillStyle = '#9ca3af'
               ctx.font = '14px sans-serif'
               ctx.fillText(`-   ${slice.rate}  (${slice.count})`, 390, legendY)
-              
+
               legendY += 40;
             })
-            
+
             const imgData = canvas.toDataURL('image/png', 1.0)
             const imgWidth = 160
             doc.addImage(imgData, 'PNG', (pdfWidth - imgWidth) / 2, 28, imgWidth, 64)
-            
+
             nextY = 96
           }
         }
@@ -373,7 +384,7 @@ export default function LMSDashboard() {
       doc.setFontSize(14)
       doc.setTextColor(0)
       doc.text("Status Distribution", 14, nextY)
-      
+
       autoTable(doc, {
         startY: nextY + 5,
         head: [['Status', 'Count', 'Percentage (%)']],
@@ -384,7 +395,7 @@ export default function LMSDashboard() {
 
       // Department Summary Table
       doc.text("Department Completion", 14, (doc as any).lastAutoTable.finalY + 15)
-      
+
       autoTable(doc, {
         startY: (doc as any).lastAutoTable.finalY + 20,
         head: [['Department', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
@@ -399,7 +410,7 @@ export default function LMSDashboard() {
       if (selectedLog.mgrSummary && selectedLog.mgrSummary.length > 0) {
         if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
         doc.text("Manager Completion", 14, (doc as any).lastAutoTable.finalY + 15)
-        
+
         autoTable(doc, {
           startY: (doc as any).lastAutoTable.finalY + 20,
           head: [['Manager', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
@@ -410,7 +421,7 @@ export default function LMSDashboard() {
           headStyles: { fillColor: [0, 70, 171] }
         })
       }
-    } else {
+    } else if (selectedLog.importType === 'courses') {
       // Courses Analysis
       const totalAssigned = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.assigned || 0), 0)
       const totalCompleted = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.completed || 0), 0)
@@ -426,7 +437,7 @@ export default function LMSDashboard() {
       // Department Analysis Table
       doc.setFontSize(14)
       doc.text("Department Analysis", 14, 75)
-      
+
       autoTable(doc, {
         startY: 80,
         head: [['Department', 'Assigned Courses', 'Completed Courses', 'Rate']],
@@ -441,7 +452,7 @@ export default function LMSDashboard() {
       if (selectedLog.employeeSummary && selectedLog.employeeSummary.length > 0) {
         if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
         doc.text("Employee Analysis", 14, (doc as any).lastAutoTable.finalY + 15)
-        
+
         autoTable(doc, {
           startY: (doc as any).lastAutoTable.finalY + 20,
           head: [['Employee Name', 'Assigned', 'Completed', 'Rate']],
@@ -452,18 +463,40 @@ export default function LMSDashboard() {
           headStyles: { fillColor: [0, 70, 171] }
         })
       }
+    } else if (selectedLog.importType === 'detailed_report') {
+      doc.setFontSize(14)
+      doc.text("Detailed Report Snapshot", 14, 35)
+
+      const recordsToPrint = (selectedLog.detailedSummary || []).slice(0, 100)
+      autoTable(doc, {
+        startY: 45,
+        head: [['User Name', 'Course Name', 'User Status', 'Course Status', 'Completion %']],
+        body: recordsToPrint.map(r => [
+          r.userName,
+          r.courseName.substring(0, 30) + (r.courseName.length > 30 ? '...' : ''),
+          r.userStatus,
+          r.courseStatus,
+          r.completionPercentage
+        ]),
+        theme: 'striped',
+        headStyles: { fillColor: [0, 70, 171] },
+        styles: { fontSize: 8 }
+      })
+      if ((selectedLog.detailedSummary || []).length > 100) {
+        doc.text("Note: Only showing the first 100 records in PDF. Please download Excel for full report.", 14, (doc as any).lastAutoTable.finalY + 10)
+      }
     }
-    
+
     const pageCount = (doc.internal as any).getNumberOfPages()
     for (let i = 1; i <= pageCount; i++) {
       doc.setPage(i)
       const pageHeight = doc.internal.pageSize.getHeight()
       doc.setFontSize(8)
       doc.setTextColor(150)
-      const footerText = `Source: ${selectedLog.fileName}   |   Import Type: ${selectedLog.importType === 'courses' ? 'Assigned/Completed Courses' : 'Status Completion'}   |   Generated: ${timestamp}`
+      const footerText = `Source: ${selectedLog.fileName}   |   Import Type: ${selectedLog.importType === 'courses' ? 'Assigned/Completed Courses' : selectedLog.importType === 'detailed_report' ? 'Completion Detailed Report' : 'Status Completion'}   |   Generated: ${timestamp}`
       doc.text(footerText, 14, pageHeight - 10)
     }
-    
+
     doc.save(`${selectedLog.fileName}_summary.pdf`)
   }
 
@@ -496,12 +529,12 @@ export default function LMSDashboard() {
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">LMS Dashboard</h1>
           <p className="text-zinc-500 dark:text-zinc-400">Academy Analytics - Source Isolated Reporting</p>
         </div>
-        
+
         <div className="flex flex-col items-end gap-3">
           <div className="flex items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="h-9 gap-2 text-[#0046ab] border-[#0046ab]/20 hover:bg-[#0046ab]/5"
               onClick={handleDownloadExcel}
               disabled={!selectedLog}
@@ -509,9 +542,9 @@ export default function LMSDashboard() {
               <Download className="h-4 w-4" />
               Download Excel
             </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="h-9 gap-2 text-red-600 border-red-200 hover:bg-red-50"
               onClick={handleDownloadPDF}
               disabled={!selectedLog}
@@ -542,8 +575,8 @@ export default function LMSDashboard() {
         </div>
       </div>
 
-      <Tabs value={dashboardType} onValueChange={(v) => setDashboardType(v as 'status' | 'courses')} className="w-full">
-        <TabsList className="grid w-full grid-cols-2 max-w-md">
+      <Tabs value={dashboardType} onValueChange={(v) => setDashboardType(v as 'status' | 'courses' | 'detailed_report')} className="w-full">
+        <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 max-w-3xl">
           <TabsTrigger value="status" className="flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4" />
             Status Completion
@@ -552,13 +585,17 @@ export default function LMSDashboard() {
             <ClipboardList className="h-4 w-4" />
             Assigned/Completed Courses
           </TabsTrigger>
+          <TabsTrigger value="detailed_report" className="flex items-center gap-2">
+            <FileText className="h-4 w-4" />
+            CompletionDetailedReport
+          </TabsTrigger>
         </TabsList>
       </Tabs>
 
       {!selectedLog && (
         <Card className="border-none shadow-sm flex flex-col items-center justify-center py-20 text-center">
           <AlertCircle className="h-10 w-10 text-zinc-300 mb-4" />
-          <h3 className="text-lg font-semibold">No {dashboardType === 'status' ? 'Status' : 'Courses'} logs found</h3>
+          <h3 className="text-lg font-semibold">No {dashboardType === 'status' ? 'Status' : dashboardType === 'detailed_report' ? 'Detailed Report' : 'Courses'} logs found</h3>
           <p className="text-zinc-500 max-w-sm">Please switch to the other view or upload a file for this category.</p>
         </Card>
       )}
@@ -617,11 +654,11 @@ export default function LMSDashboard() {
                     <PieChart data={statusSummary} />
                     <div className="absolute inset-12 bg-white rounded-full dark:bg-zinc-900 flex flex-col items-center justify-center shadow-sm border text-center">
                       <span className="text-2xl font-bold">
-                        {(selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0 
+                        {(selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0
                           ? (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
                           : "0.0"}%
                       </span>
-                      <span className="text-[10px] text-zinc-400 uppercase font-bold leading-tight">Total<br/>Completion</span>
+                      <span className="text-[10px] text-zinc-400 uppercase font-bold leading-tight">Total<br />Completion</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4 w-full pt-4 border-t">
@@ -648,8 +685,8 @@ export default function LMSDashboard() {
                 </div>
                 <div className="relative w-full md:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input 
-                    placeholder="Search department..." 
+                  <Input
+                    placeholder="Search department..."
                     className="pl-9 h-9"
                     value={deptSearch}
                     onChange={(e) => {
@@ -667,7 +704,7 @@ export default function LMSDashboard() {
                     <TableRow>
                       <TableHead>
                         <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', deptSort, setDeptSort)}>
-                          Delivery Unit / Department <SortIcon sort={deptSort} sortKey="name" />
+                          Delivery Unit or Department <SortIcon sort={deptSort} sortKey="name" />
                         </div>
                       </TableHead>
                       <TableHead className="text-right">
@@ -748,8 +785,8 @@ export default function LMSDashboard() {
                 </div>
                 <div className="relative w-full md:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input 
-                    placeholder="Search manager..." 
+                  <Input
+                    placeholder="Search manager..."
                     className="pl-9 h-9"
                     value={mgrSearch}
                     onChange={(e) => {
@@ -882,7 +919,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Overall Completion Rate</p>
                     <h3 className="text-2xl font-bold">
-                      {((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0) / 
+                      {((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0) /
                         ((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.assigned || 1), 0)) * 100).toFixed(1)}%
                     </h3>
                   </div>
@@ -900,8 +937,8 @@ export default function LMSDashboard() {
                 </div>
                 <div className="relative w-full md:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input 
-                    placeholder="Search department..." 
+                  <Input
+                    placeholder="Search department..."
                     className="pl-9 h-9"
                     value={courseDeptSearch}
                     onChange={(e) => {
@@ -983,8 +1020,8 @@ export default function LMSDashboard() {
                 </div>
                 <div className="relative w-full md:w-64">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input 
-                    placeholder="Search employee..." 
+                  <Input
+                    placeholder="Search employee..."
                     className="pl-9 h-9"
                     value={employeeSearch}
                     onChange={(e) => {
@@ -1056,6 +1093,105 @@ export default function LMSDashboard() {
           </Card>
         </div>
       )}
+
+      {selectedLog && selectedLog.importType === 'detailed_report' && dashboardType === 'detailed_report' && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          <Card className="border-none shadow-sm">
+            <CardHeader className="pb-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <TableIcon className="h-5 w-5 text-zinc-400" />
+                  <CardTitle>Completion Detailed Report</CardTitle>
+                </div>
+                <div className="relative w-full md:w-64">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                  <Input
+                    placeholder="Search User or Course..."
+                    className="pl-9 h-9"
+                    value={detailedSearch}
+                    onChange={(e) => {
+                      setDetailedSearch(e.target.value)
+                      setDetailedPage(1)
+                    }}
+                  />
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-[600px]">
+                <Table>
+                  <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
+                    <TableRow>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('userName', detailedSort, setDetailedSort)}>
+                          User Name <SortIcon sort={detailedSort} sortKey="userName" />
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('userStatus', detailedSort, setDetailedSort)}>
+                          User Status <SortIcon sort={detailedSort} sortKey="userStatus" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="w-[300px]">
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseName', detailedSort, setDetailedSort)}>
+                          Course Name <SortIcon sort={detailedSort} sortKey="courseName" />
+                        </div>
+                      </TableHead>
+                      <TableHead>
+                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('courseStatus', detailedSort, setDetailedSort)}>
+                          Course Status <SortIcon sort={detailedSort} sortKey="courseStatus" />
+                        </div>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completionPercentage', detailedSort, setDetailedSort)}>
+                          Completion Percentage <SortIcon sort={detailedSort} sortKey="completionPercentage" />
+                        </div>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredDetailedSummary.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="h-24 text-center text-zinc-500">No records found matching your search.</TableCell>
+                      </TableRow>
+                    ) : (
+                      applySort(filteredDetailedSummary, detailedSort).slice((detailedPage - 1) * 20, detailedPage * 20).map((row: any, i: number) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium">{row.userName}</TableCell>
+                          <TableCell>
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${row.userStatus?.toString().trim().toLowerCase() === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'}`}>
+                              {row.userStatus}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <div className="max-w-[300px] truncate" title={row.courseName}>
+                              {row.courseName}
+                            </div>
+                          </TableCell>
+                          <TableCell>{row.courseStatus}</TableCell>
+                          <TableCell className="text-right font-medium">{row.completionPercentage}</TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+              {filteredDetailedSummary.length > 20 && (
+                <div className="flex items-center justify-end space-x-2 pt-4">
+                  <Button variant="outline" size="sm" onClick={() => setDetailedPage(prev => Math.max(prev - 1, 1))} disabled={detailedPage === 1}>
+                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                  </Button>
+                  <div className="text-sm text-zinc-500 font-medium px-2">Page {detailedPage} of {Math.ceil(filteredDetailedSummary.length / 20)}</div>
+                  <Button variant="outline" size="sm" onClick={() => setDetailedPage(prev => Math.min(prev + 1, Math.ceil(filteredDetailedSummary.length / 20)))} disabled={detailedPage === Math.ceil(filteredDetailedSummary.length / 20)}>
+                    Next <ChevronRight className="h-4 w-4 ml-1" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
+
