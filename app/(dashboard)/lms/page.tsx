@@ -477,23 +477,9 @@ export default function LMSDashboard() {
 
     let exportRecords = selectedLog.cleanedData;
     if (selectedLog.importType === 'detailed_report' && dashboardType === 'detailed_report') {
-      exportRecords = exportRecords.filter((row: any) => {
-        const uName = String(row['User Name'] || row['Name'] || "Unknown").trim();
-        const cName = String(row['Course Name'] || "Unknown").trim();
-        const cStatus = String(row['Course Status'] || "Unknown").trim();
-        const dUnit = String(row['Delivery Unit or Department'] || row['Delivery Unit'] || "Unknown").trim();
-        const uStatus = String(row['User Status'] || "Unknown").trim();
-
-        const matchesSearch = uName.toLowerCase().includes(detailedSearch.toLowerCase()) ||
-                              cName.toLowerCase().includes(detailedSearch.toLowerCase());
-        const matchesCourseName = selectedCourseNames.length === 0 || selectedCourseNames.includes(cName);
-        const mappedStatus = cStatus.toLowerCase().replace(/\s/g, '') === 'ongoing' ? 'In Progress' : cStatus;
-        const matchesCourseStatus = selectedCourseStatuses.length === 0 || selectedCourseStatuses.includes(mappedStatus);
-        const matchesDeliveryUnit = selectedDeliveryUnits.length === 0 || selectedDeliveryUnits.includes(dUnit);
-        const matchesUserStatus = selectedUserStatuses.length === 0 || selectedUserStatuses.includes(uStatus);
-        
-        return matchesSearch && matchesCourseName && matchesCourseStatus && matchesDeliveryUnit && matchesUserStatus;
-      });
+      exportRecords = filteredDetailedSummary;
+    } else if (selectedLog.importType === 'status' && dashboardType === 'status') {
+      exportRecords = activeStatusData;
     }
 
     // Clean data for excel (remove the 'id' field we added during upload)
@@ -536,7 +522,7 @@ export default function LMSDashboard() {
       let nextY = 35;
 
       try {
-        const total = (selectedLog.statusSummary || []).reduce((acc, curr) => acc + curr.count, 0)
+        const total = dynamicStatusSummary.reduce((acc, curr) => acc + curr.count, 0)
         if (total > 0 && typeof document !== 'undefined') {
           const canvas = document.createElement('canvas')
           canvas.width = 1000
@@ -549,7 +535,7 @@ export default function LMSDashboard() {
             let currentAngle = -0.5 * Math.PI
             const cx = 130, cy = 100, radius = 90
 
-              ; (selectedLog.statusSummary || []).forEach(slice => {
+              ; dynamicStatusSummary.forEach(slice => {
                 const sliceAngle = (slice.count / total) * 2 * Math.PI
                 ctx.beginPath()
                 ctx.moveTo(cx, cy)
@@ -571,7 +557,7 @@ export default function LMSDashboard() {
             ctx.fill()
 
             // Draw center text natively
-            const completionRate = (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
+            const completionRate = dynamicTotalCount > 0 ? ((dynamicStatusSummary.find(s => s.status === 'Completed')?.count || 0) / dynamicTotalCount * 100).toFixed(1) : "0.0"
             ctx.fillStyle = '#111827'
             ctx.textAlign = 'center'
             ctx.textBaseline = 'middle'
@@ -584,7 +570,7 @@ export default function LMSDashboard() {
 
             // Draw Legend natively onto the right side
             let legendY = 60;
-            ; (selectedLog.statusSummary || []).forEach(slice => {
+            ; dynamicStatusSummary.forEach(slice => {
               if (slice.status === 'Completed') ctx.fillStyle = '#22c55e'
               else if (slice.status === 'Ongoing') ctx.fillStyle = '#3b82f6'
               else ctx.fillStyle = '#ef4444'
@@ -626,7 +612,7 @@ export default function LMSDashboard() {
       autoTable(doc, {
         startY: nextY + 5,
         head: [['Status', 'Count', 'Percentage (%)']],
-        body: (selectedLog.statusSummary || []).map(s => [s.status, s.count, s.rate]),
+        body: dynamicStatusSummary.map(s => [s.status, s.count, s.rate]),
         theme: 'striped',
         headStyles: { fillColor: [0, 70, 171] }
       })
@@ -637,7 +623,7 @@ export default function LMSDashboard() {
       autoTable(doc, {
         startY: (doc as any).lastAutoTable.finalY + 20,
         head: [['Department', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
-        body: (selectedLog.deptSummary as BreakoutItem[]).map(d => [
+        body: filteredDeptSummary.map((d: any) => [
           d.name, d.completed, d.notStarted ?? 0, d.ongoing ?? 0, d.total, d.rate
         ]),
         theme: 'striped',
@@ -645,14 +631,14 @@ export default function LMSDashboard() {
       })
 
       // Manager Summary Table
-      if (selectedLog.mgrSummary && selectedLog.mgrSummary.length > 0) {
+      if (filteredMgrSummary && filteredMgrSummary.length > 0) {
         if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
         doc.text("Manager Completion", 14, (doc as any).lastAutoTable.finalY + 15)
 
         autoTable(doc, {
           startY: (doc as any).lastAutoTable.finalY + 20,
           head: [['Manager', 'Completed', 'Not Started', 'Ongoing', 'Total', 'Rate']],
-          body: selectedLog.mgrSummary.map(m => [
+          body: filteredMgrSummary.map((m: any) => [
             m.name, m.completed, m.notStarted ?? 0, m.ongoing ?? 0, m.total, m.rate
           ]),
           theme: 'striped',
