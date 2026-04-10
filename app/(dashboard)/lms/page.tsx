@@ -149,6 +149,14 @@ export default function LMSDashboard() {
   const [courseDeptSort, setCourseDeptSort] = useState<SortConfig>(null)
   const [employeeSort, setEmployeeSort] = useState<SortConfig>(null)
 
+  // Status Tab internal toggle 
+  const [completionTab, setCompletionTab] = useState<'department' | 'manager'>('department')
+
+  // Status Filters
+  const [selectedStatusLocations, setSelectedStatusLocations] = useState<string[]>([])
+  const [selectedStatusRoles, setSelectedStatusRoles] = useState<string[]>([])
+  const [selectedStatusDUs, setSelectedStatusDUs] = useState<string[]>([])
+
   // Detailed Report states
   const [detailedSearch, setDetailedSearch] = useState("")
   const [detailedPage, setDetailedPage] = useState(1)
@@ -238,17 +246,133 @@ export default function LMSDashboard() {
 
   const statusSummary = selectedLog?.statusSummary || []
 
-  const filteredDeptSummary = (selectedLog?.deptSummary || []).filter((item: any) =>
-    item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
-  )
+  const uniqueStatusLocations = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'status') return []
+    const locs = new Set<string>()
+    selectedLog.cleanedData.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
+    return Array.from(locs).sort()
+  }, [selectedLog, dashboardType])
 
-  const filteredMgrSummary = (selectedLog?.mgrSummary || []).filter((item: any) =>
-    item.name.toLowerCase().includes(mgrSearch.toLowerCase())
-  )
+  const uniqueStatusRoles = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'status') return []
+    const roles = new Set<string>()
+    selectedLog.cleanedData.forEach((r: any) => roles.add(r['Role'] || "Unknown"))
+    return Array.from(roles).sort()
+  }, [selectedLog, dashboardType])
+
+  const uniqueStatusDUs = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'status') return []
+    const dus = new Set<string>()
+    selectedLog.cleanedData.forEach((r: any) => dus.add(r['Delivery Unit'] || "Unknown"))
+    return Array.from(dus).sort()
+  }, [selectedLog, dashboardType])
+
+  const activeStatusData = useMemo(() => {
+    if (!selectedLog?.cleanedData) return []
+    return selectedLog.cleanedData.filter((row: any) => {
+      const loc = row['Location'] || "Unknown"
+      const role = row['Role'] || "Unknown"
+      const du = row['Delivery Unit'] || "Unknown"
+      
+      const locMatch = selectedStatusLocations.length === 0 || selectedStatusLocations.includes(loc)
+      const roleMatch = selectedStatusRoles.length === 0 || selectedStatusRoles.includes(role)
+      const duMatch = selectedStatusDUs.length === 0 || selectedStatusDUs.includes(du)
+      
+      return locMatch && roleMatch && duMatch
+    })
+  }, [selectedLog, selectedStatusLocations, selectedStatusRoles, selectedStatusDUs])
+
+  const filteredDeptSummary = useMemo(() => {
+    let baseData = selectedLog?.deptSummary || []
+    
+    if (dashboardType === 'status' && selectedLog?.cleanedData) {
+      const depts: Record<string, any> = {}
+      activeStatusData.forEach((row: any) => {
+        const key = String(row['Delivery Unit'] || "Unknown")
+        if (!depts[key]) depts[key] = { total: 0, completed: 0, ongoing: 0, notStarted: 0 }
+        depts[key].total += 1
+        const s = String(row['Status'] || row['status'] || "Not Started").toLowerCase()
+        if (s.includes("completed")) depts[key].completed += 1
+        else if (s.includes("ongoing") || s.includes("progress")) depts[key].ongoing += 1
+        else depts[key].notStarted += 1
+      })
+      baseData = Object.entries(depts).map(([name, stats]: [string, any]) => ({
+        name,
+        total: stats.total,
+        completed: stats.completed,
+        ongoing: stats.ongoing,
+        notStarted: stats.notStarted,
+        rate: stats.total > 0 ? `${((stats.completed / stats.total) * 100).toFixed(1)}%` : "0.0%"
+      })).sort((a: any, b: any) => b.name.localeCompare(a.name))
+    }
+    
+    return baseData.filter((item: any) =>
+      item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
+    )
+  }, [selectedLog, activeStatusData, dashboardType, deptSearch, courseDeptSearch])
+
+  const filteredMgrSummary = useMemo(() => {
+    let baseData = selectedLog?.mgrSummary || []
+    
+    if (dashboardType === 'status' && selectedLog?.cleanedData) {
+      const mgrs: Record<string, any> = {}
+      activeStatusData.forEach((row: any) => {
+        const key = String(row['Name of Immediate Supervisor'] || "Unknown")
+        if (!mgrs[key]) mgrs[key] = { total: 0, completed: 0, ongoing: 0, notStarted: 0 }
+        mgrs[key].total += 1
+        const s = String(row['Status'] || row['status'] || "Not Started").toLowerCase()
+        if (s.includes("completed")) mgrs[key].completed += 1
+        else if (s.includes("ongoing") || s.includes("progress")) mgrs[key].ongoing += 1
+        else mgrs[key].notStarted += 1
+      })
+      baseData = Object.entries(mgrs).map(([name, stats]: [string, any]) => ({
+        name,
+        total: stats.total,
+        completed: stats.completed,
+        ongoing: stats.ongoing,
+        notStarted: stats.notStarted,
+        rate: stats.total > 0 ? `${((stats.completed / stats.total) * 100).toFixed(1)}%` : "0.0%"
+      })).sort((a: any, b: any) => b.name.localeCompare(a.name))
+    }
+
+    return baseData.filter((item: any) =>
+      item.name.toLowerCase().includes(mgrSearch.toLowerCase())
+    )
+  }, [selectedLog, activeStatusData, dashboardType, mgrSearch])
 
   const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter((item: any) =>
     item.name.toLowerCase().includes(employeeSearch.toLowerCase())
   )
+
+  const dynamicStatusSummary = useMemo(() => {
+    if ((selectedLog?.importType || 'status') !== 'status') return [];
+    
+    const activeData = completionTab === 'department' ? filteredDeptSummary : filteredMgrSummary;
+    
+    let completed = 0;
+    let ongoing = 0;
+    let notStarted = 0;
+    
+    activeData.forEach((item: any) => {
+      completed += (item.completed || 0);
+      ongoing += (item.ongoing || 0);
+      notStarted += (item.notStarted || 0);
+    });
+    
+    const total = completed + ongoing + notStarted;
+    
+    if (total === 0) return [];
+    
+    return [
+      { status: 'Completed', count: completed, rate: ((completed / total) * 100).toFixed(1) + '%' },
+      { status: 'Ongoing', count: ongoing, rate: ((ongoing / total) * 100).toFixed(1) + '%' },
+      { status: 'Not Started', count: notStarted, rate: ((notStarted / total) * 100).toFixed(1) + '%' }
+    ].filter(s => s.count > 0);
+  }, [selectedLog, completionTab, filteredDeptSummary, filteredMgrSummary]);
+
+  const dynamicTotalCount = useMemo(() => {
+    return dynamicStatusSummary.reduce((acc, curr) => acc + curr.count, 0);
+  }, [dynamicStatusSummary]);
 
   const uniqueCourseNames = useMemo(() => {
     if (!selectedLog?.detailedSummary) return []
@@ -838,7 +962,7 @@ export default function LMSDashboard() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {statusSummary.map((row) => (
+                    {dynamicStatusSummary.map((row) => (
                       <TableRow key={row.status}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
@@ -868,18 +992,18 @@ export default function LMSDashboard() {
               <CardContent>
                 <div className="flex flex-col items-center justify-center h-full pt-4">
                   <div className="relative h-56 w-56 flex items-center justify-center mb-6">
-                    <PieChart data={statusSummary} />
+                    <PieChart data={dynamicStatusSummary} />
                     <div className="absolute inset-12 bg-white rounded-full dark:bg-zinc-900 flex flex-col items-center justify-center shadow-sm border text-center">
                       <span className="text-2xl font-bold">
-                        {(selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1) * 100 > 0
-                          ? (((selectedLog.deptSummary as any[]).reduce((acc, curr) => acc + (curr.completed || 0), 0) / (selectedLog.count || 1)) * 100).toFixed(1)
+                        {dynamicTotalCount > 0
+                          ? ((dynamicStatusSummary.find(s => s.status === 'Completed')?.count || 0) / dynamicTotalCount * 100).toFixed(1)
                           : "0.0"}%
                       </span>
                       <span className="text-[10px] text-zinc-400 uppercase font-bold leading-tight">Total<br />Completion</span>
                     </div>
                   </div>
                   <div className="grid grid-cols-3 gap-4 w-full pt-4 border-t">
-                    {statusSummary.map((s) => (
+                    {dynamicStatusSummary.map((s) => (
                       <div key={s.status} className="flex flex-col items-center">
                         <div className={`h-2.5 w-2.5 rounded-full mb-1 ${getStatusColor(s.status)}`} />
                         <span className="text-[10px] font-medium text-zinc-500 uppercase">{s.status}</span>
@@ -892,31 +1016,154 @@ export default function LMSDashboard() {
             </Card>
           </div>
 
-          {/* Output 2: Department Completion */}
+          {/* Output 2 & 3: Switchable Completion Breakdown */}
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-zinc-400" />
-                  <CardTitle>Department Completion</CardTitle>
+                <div className="flex items-center gap-2 w-auto whitespace-nowrap">
+                  {completionTab === 'department' ? (
+                    <Building2 className="h-5 w-5 text-zinc-400" />
+                  ) : (
+                    <UserCheck className="h-5 w-5 text-zinc-400" />
+                  )}
+                  <CardTitle>Completion Breakdown</CardTitle>
                 </div>
-                <div className="relative w-full md:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input
-                    placeholder="Search department..."
-                    className="pl-9 h-9"
-                    value={deptSearch}
-                    onChange={(e) => {
-                      setDeptSearch(e.target.value)
-                      setDeptPage(1)
-                    }}
-                  />
+                
+                <div className="flex flex-wrap items-center gap-3 w-full justify-end">
+                  {/* Status Filters */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedStatusLocations.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        Location {selectedStatusLocations.length > 0 && `(${selectedStatusLocations.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter Locations</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueStatusLocations.map((loc) => (
+                            <div key={loc} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`loc-${loc}`} 
+                                checked={selectedStatusLocations.includes(loc)}
+                                onCheckedChange={(checked) => setSelectedStatusLocations(prev => checked ? [...prev, loc] : prev.filter(v => v !== loc))}
+                              />
+                              <Label htmlFor={`loc-${loc}`} className="text-sm font-medium leading-none">{loc}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      {selectedStatusLocations.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedStatusLocations([])}>Clear</Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedStatusRoles.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        Role {selectedStatusRoles.length > 0 && `(${selectedStatusRoles.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter Roles</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueStatusRoles.map((role) => (
+                            <div key={role} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`role-${role}`} 
+                                checked={selectedStatusRoles.includes(role)}
+                                onCheckedChange={(checked) => setSelectedStatusRoles(prev => checked ? [...prev, role] : prev.filter(v => v !== role))}
+                              />
+                              <Label htmlFor={`role-${role}`} className="text-sm font-medium leading-none">{role}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      {selectedStatusRoles.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedStatusRoles([])}>Clear</Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedStatusDUs.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        Delivery Unit {selectedStatusDUs.length > 0 && `(${selectedStatusDUs.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter Delivery Units</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueStatusDUs.map((du) => (
+                            <div key={du} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`du-${du}`} 
+                                checked={selectedStatusDUs.includes(du)}
+                                onCheckedChange={(checked) => setSelectedStatusDUs(prev => checked ? [...prev, du] : prev.filter(v => v !== du))}
+                              />
+                              <Label htmlFor={`du-${du}`} className="text-sm font-medium leading-none">{du}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      {selectedStatusDUs.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedStatusDUs([])}>Clear</Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1 hidden md:block"></div>
+
+                  <Tabs value={completionTab} onValueChange={(v) => setCompletionTab(v as 'department' | 'manager')} className="w-full sm:w-auto">
+                    <TabsList className="h-9 w-full grid grid-cols-2">
+                      <TabsTrigger value="department" className="text-xs px-3">Department</TabsTrigger>
+                      <TabsTrigger value="manager" className="text-xs px-3">Manager</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  
+                  <div className="relative w-full md:w-56">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                    <Input
+                      placeholder={completionTab === 'department' ? "Search department..." : "Search manager..."}
+                      className="pl-9 h-9 w-full"
+                      value={completionTab === 'department' ? deptSearch : mgrSearch}
+                      onChange={(e) => {
+                        if (completionTab === 'department') {
+                          setDeptSearch(e.target.value)
+                          setDeptPage(1)
+                        } else {
+                          setMgrSearch(e.target.value)
+                          setMgrPage(1)
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[400px]">
-                <Table>
+              {completionTab === 'department' && (
+              <>
+                <ScrollArea className="h-[400px]">
+                  <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
                       <TableHead>
@@ -965,12 +1212,7 @@ export default function LMSDashboard() {
                           <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
                           <TableCell className="text-right font-bold">{row.total}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-3">
-                              <span className="font-bold text-[#0046ab]">{row.rate}</span>
-                              <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
-                                <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
-                              </div>
-                            </div>
+                            <span className="font-bold text-[#0046ab]">{row.rate}</span>
                           </TableCell>
                         </TableRow>
                       ))
@@ -989,34 +1231,13 @@ export default function LMSDashboard() {
                   </Button>
                 </div>
               )}
-            </CardContent>
-          </Card>
+              </>
+              )}
 
-          {/* Output 3: Manager Completion */}
-          <Card className="border-none shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <UserCheck className="h-5 w-5 text-zinc-400" />
-                  <CardTitle>Manager Completion</CardTitle>
-                </div>
-                <div className="relative w-full md:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input
-                    placeholder="Search manager..."
-                    className="pl-9 h-9"
-                    value={mgrSearch}
-                    onChange={(e) => {
-                      setMgrSearch(e.target.value)
-                      setMgrPage(1)
-                    }}
-                  />
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px]">
-                <Table>
+              {completionTab === 'manager' && (
+              <>
+                <ScrollArea className="h-[400px]">
+                  <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>
                       <TableHead>
@@ -1065,12 +1286,7 @@ export default function LMSDashboard() {
                           <TableCell className="text-right text-blue-500">{row.ongoing ?? "-"}</TableCell>
                           <TableCell className="text-right font-bold">{row.total}</TableCell>
                           <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-3">
-                              <span className="font-bold text-[#0046ab]">{row.rate}</span>
-                              <div className="w-24 bg-zinc-100 rounded-full h-1.5 dark:bg-zinc-800">
-                                <div className="bg-[#0046ab] h-1.5 rounded-full" style={{ width: row.rate }} />
-                              </div>
-                            </div>
+                            <span className="font-bold text-[#0046ab]">{row.rate}</span>
                           </TableCell>
                         </TableRow>
                       ))
@@ -1088,6 +1304,8 @@ export default function LMSDashboard() {
                     Next <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
+              )}
+              </>
               )}
             </CardContent>
           </Card>
@@ -1404,7 +1622,7 @@ export default function LMSDashboard() {
               </div>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="w-full">
+              <ScrollArea className="h-[500px] w-full">
                 <Table>
                   <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                     <TableRow>

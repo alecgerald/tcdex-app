@@ -217,7 +217,7 @@ export default function ExcelUploadPage() {
         }
 
         setRawData(jsonData)
-        if (importType === 'detailed_report') {
+        if (importType === 'detailed_report' || importType === 'status') {
           setTimeout(() => applyFiltersAndProcess(jsonData), 50)
         } else {
           setStep('filter')
@@ -235,15 +235,11 @@ export default function ExcelUploadPage() {
   const applyFiltersAndProcess = (explicitData?: any[]) => {
     const isStatus = importType === 'status'
 
-    if (isStatus && (selectedLocations.length === 0 || selectedRoles.length === 0)) {
-      toast.error(`Please select at least one Location and one Role`)
-      return
-    }
     if (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) {
       toast.error(`Please select at least one User type and Location`)
       return
     }
-    if (importType !== 'detailed_report' && selectedDUs.length === 0) {
+    if (importType === 'courses' && selectedDUs.length === 0) {
       toast.error(`Please select at least one Delivery Unit`)
       return
     }
@@ -258,10 +254,8 @@ export default function ExcelUploadPage() {
         const userType = String(row[userTypeCol] || "Unknown")
         const uStatus = String(row[userStatusCol] || "Unknown")
 
-        let match = importType === 'detailed_report' ? true : selectedDUs.includes(du);
-        if (isStatus) {
-          match = match && selectedLocations.includes(loc) && selectedRoles.includes(role);
-        } else if (importType === 'courses') {
+        let match = importType === 'detailed_report' || importType === 'status' ? true : selectedDUs.includes(du);
+        if (importType === 'courses') {
           match = match && selectedUserTypes.includes(userType) && selectedLocations.includes(loc);
         }
         return match;
