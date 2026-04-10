@@ -217,8 +217,8 @@ export default function ExcelUploadPage() {
         }
 
         setRawData(jsonData)
-        if (importType === 'detailed_report' || importType === 'status') {
-          setTimeout(() => applyFiltersAndProcess(jsonData), 50)
+        if (importType === 'detailed_report' || importType === 'status' || importType === 'courses') {
+          setTimeout(() => applyFiltersAndProcess(jsonData, file.name), 50)
         } else {
           setStep('filter')
           toast.success("File read successfully. Please select filters.")
@@ -232,34 +232,13 @@ export default function ExcelUploadPage() {
     reader.readAsBinaryString(file)
   }
 
-  const applyFiltersAndProcess = (explicitData?: any[]) => {
+  const applyFiltersAndProcess = (explicitData?: any[], explicitFileName?: string) => {
     const isStatus = importType === 'status'
-
-    if (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) {
-      toast.error(`Please select at least one User type and Location`)
-      return
-    }
-    if (importType === 'courses' && selectedDUs.length === 0) {
-      toast.error(`Please select at least one Delivery Unit`)
-      return
-    }
     setIsLoading(true)
 
     setTimeout(() => {
       const dataSrc = explicitData && explicitData.length > 0 ? explicitData : rawData;
-      const filtered = dataSrc.filter(row => {
-        const loc = String(row[locationCol] || "Unknown")
-        const du = String(row[duCol] || "Unknown")
-        const role = String(row[roleCol] || "Unknown")
-        const userType = String(row[userTypeCol] || "Unknown")
-        const uStatus = String(row[userStatusCol] || "Unknown")
-
-        let match = importType === 'detailed_report' || importType === 'status' ? true : selectedDUs.includes(du);
-        if (importType === 'courses') {
-          match = match && selectedUserTypes.includes(userType) && selectedLocations.includes(loc);
-        }
-        return match;
-      }).map((row, index) => ({
+      const filtered = dataSrc.map((row: any, index: number) => ({
         ...row,
         id: `row-${index}-${Date.now()}`
       }))
@@ -274,7 +253,7 @@ export default function ExcelUploadPage() {
       const existingLogs = JSON.parse(localStorage.getItem("lms_audit_logs") || "[]")
       let newLog: any = {
         id: `log-${Date.now()}`,
-        fileName,
+        fileName: explicitFileName || fileName,
         date: uploadTime,
         count: filtered.length,
         importType,

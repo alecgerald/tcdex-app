@@ -152,10 +152,17 @@ export default function LMSDashboard() {
   // Status Tab internal toggle 
   const [completionTab, setCompletionTab] = useState<'department' | 'manager'>('department')
 
-  // Status Filters
+  // Courses Tab internal toggle
+  const [coursesTab, setCoursesTab] = useState<'department' | 'employee'>('department')
+
   const [selectedStatusLocations, setSelectedStatusLocations] = useState<string[]>([])
   const [selectedStatusRoles, setSelectedStatusRoles] = useState<string[]>([])
   const [selectedStatusDUs, setSelectedStatusDUs] = useState<string[]>([])
+
+  // Courses Filters states
+  const [selectedCourseLocations, setSelectedCourseLocations] = useState<string[]>([])
+  const [selectedCourseUserTypes, setSelectedCourseUserTypes] = useState<string[]>([])
+  const [selectedCourseDUs, setSelectedCourseDUs] = useState<string[]>([])
 
   // Detailed Report states
   const [detailedSearch, setDetailedSearch] = useState("")
@@ -282,6 +289,44 @@ export default function LMSDashboard() {
     })
   }, [selectedLog, selectedStatusLocations, selectedStatusRoles, selectedStatusDUs])
 
+  const uniqueCourseLocations = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    const locs = new Set<string>()
+    selectedLog.cleanedData.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
+    return Array.from(locs).sort()
+  }, [selectedLog, dashboardType])
+
+  const uniqueCourseUserTypes = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    const types = new Set<string>()
+    selectedLog.cleanedData.forEach((r: any) => types.add(r['User type'] || r['Role'] || "Unknown"))
+    return Array.from(types).sort()
+  }, [selectedLog, dashboardType])
+
+  const uniqueCourseDUs = useMemo(() => {
+    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    const dus = new Set<string>()
+    const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+    selectedLog.cleanedData.forEach((r: any) => dus.add(r[k] || "Unknown"))
+    return Array.from(dus).sort()
+  }, [selectedLog, dashboardType])
+
+  const activeCoursesData = useMemo(() => {
+    if (!selectedLog?.cleanedData) return []
+    return selectedLog.cleanedData.filter((row: any) => {
+      const loc = row['Location'] || "Unknown"
+      const type = row['User type'] || row['Role'] || "Unknown"
+      const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+      const du = row[k] || "Unknown"
+      
+      const locMatch = selectedCourseLocations.length === 0 || selectedCourseLocations.includes(loc)
+      const typeMatch = selectedCourseUserTypes.length === 0 || selectedCourseUserTypes.includes(type)
+      const duMatch = selectedCourseDUs.length === 0 || selectedCourseDUs.includes(du)
+      
+      return locMatch && typeMatch && duMatch
+    })
+  }, [selectedLog, selectedCourseLocations, selectedCourseUserTypes, selectedCourseDUs])
+
   const filteredDeptSummary = useMemo(() => {
     let baseData = selectedLog?.deptSummary || []
     
@@ -304,12 +349,29 @@ export default function LMSDashboard() {
         notStarted: stats.notStarted,
         rate: stats.total > 0 ? `${((stats.completed / stats.total) * 100).toFixed(1)}%` : "0.0%"
       })).sort((a: any, b: any) => b.name.localeCompare(a.name))
+    } else if (dashboardType === 'courses' && selectedLog?.cleanedData) {
+        const duKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+        const assignedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        
+        const depts: Record<string, any> = {}
+        activeCoursesData.forEach((row: any) => {
+          const key = String(row[duKey] || "Unknown")
+          if (!depts[key]) depts[key] = { name: key, assigned: 0, completed: 0 }
+          depts[key].assigned += Number(row[assignedKey] || 0)
+          depts[key].completed += Number(row[completedKey] || 0)
+        })
+
+        baseData = Object.entries(depts).map(([_, stats]: [string, any]) => ({
+          ...stats,
+          rate: stats.assigned > 0 ? `${((stats.completed / stats.assigned) * 100).toFixed(1)}%` : "0.0%"
+        })).sort((a: any, b: any) => b.assigned - a.assigned)
     }
     
     return baseData.filter((item: any) =>
       item.name.toLowerCase().includes((dashboardType === 'status' ? deptSearch : courseDeptSearch).toLowerCase())
     )
-  }, [selectedLog, activeStatusData, dashboardType, deptSearch, courseDeptSearch])
+  }, [selectedLog, activeStatusData, activeCoursesData, dashboardType, deptSearch, courseDeptSearch])
 
   const filteredMgrSummary = useMemo(() => {
     let baseData = selectedLog?.mgrSummary || []
@@ -340,9 +402,41 @@ export default function LMSDashboard() {
     )
   }, [selectedLog, activeStatusData, dashboardType, mgrSearch])
 
-  const filteredEmployeeSummary = (selectedLog?.employeeSummary || []).filter((item: any) =>
-    item.name.toLowerCase().includes(employeeSearch.toLowerCase())
-  )
+  const filteredEmployeeSummary = useMemo(() => {
+    let baseData = selectedLog?.employeeSummary || []
+    
+    if (dashboardType === 'courses' && selectedLog?.cleanedData) {
+        const nameKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
+        const assignedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        
+        const employees: Record<string, any> = {}
+        activeCoursesData.forEach((row: any) => {
+          const key = String(row[nameKey] || "Unknown")
+          if (!employees[key]) employees[key] = { name: key, assigned: 0, completed: 0 }
+          employees[key].assigned += Number(row[assignedKey] || 0)
+          employees[key].completed += Number(row[completedKey] || 0)
+        })
+
+        baseData = Object.entries(employees).map(([_, stats]: [string, any]) => ({
+          ...stats,
+          rate: stats.assigned > 0 ? `${((stats.completed / stats.assigned) * 100).toFixed(1)}%` : "0.0%"
+        })).sort((a: any, b: any) => b.assigned - a.assigned)
+    }
+
+    return baseData.filter((item: any) =>
+      item.name.toLowerCase().includes(employeeSearch.toLowerCase())
+    )
+  }, [selectedLog, activeCoursesData, dashboardType, employeeSearch])
+
+  const courseCardsData = useMemo(() => {
+    if (dashboardType !== 'courses') return { assigned: 0, completed: 0, rate: "0.0%" }
+    // Calculate total aggregated summary from the fully filtered active subsets
+    const assigned = filteredDeptSummary.reduce((a, b: any) => a + (b.assigned || 0), 0)
+    const completed = filteredDeptSummary.reduce((a, b: any) => a + (b.completed || 0), 0)
+    const rate = assigned > 0 ? ((completed / assigned) * 100).toFixed(1) : "0.0"
+    return { assigned, completed, rate }
+  }, [dashboardType, filteredDeptSummary])
 
   const dynamicStatusSummary = useMemo(() => {
     if ((selectedLog?.importType || 'status') !== 'status') return [];
@@ -480,6 +574,8 @@ export default function LMSDashboard() {
       exportRecords = filteredDetailedSummary;
     } else if (selectedLog.importType === 'status' && dashboardType === 'status') {
       exportRecords = activeStatusData;
+    } else if (selectedLog.importType === 'courses' && dashboardType === 'courses') {
+      exportRecords = activeCoursesData;
     }
 
     // Clean data for excel (remove the 'id' field we added during upload)
@@ -647,9 +743,9 @@ export default function LMSDashboard() {
       }
     } else if (selectedLog.importType === 'courses') {
       // Courses Analysis
-      const totalAssigned = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.assigned || 0), 0)
-      const totalCompleted = (selectedLog.deptSummary as CourseItem[]).reduce((a, b) => a + (b.completed || 0), 0)
-      const overallRate = ((totalCompleted / (totalAssigned || 1)) * 100).toFixed(1) + "%"
+      const totalAssigned = courseCardsData.assigned
+      const totalCompleted = courseCardsData.completed
+      const overallRate = courseCardsData.rate + "%"
 
       doc.setFontSize(14)
       doc.text("Overall Metrics", 14, 35)
@@ -665,7 +761,7 @@ export default function LMSDashboard() {
       autoTable(doc, {
         startY: 80,
         head: [['Department', 'Assigned Courses', 'Completed Courses', 'Rate']],
-        body: (selectedLog.deptSummary as CourseItem[]).map(d => [
+        body: filteredDeptSummary.map((d: any) => [
           d.name, d.assigned.toLocaleString(), d.completed.toLocaleString(), d.rate
         ]),
         theme: 'striped',
@@ -673,14 +769,14 @@ export default function LMSDashboard() {
       })
 
       // Employee Analysis Table
-      if (selectedLog.employeeSummary && selectedLog.employeeSummary.length > 0) {
+      if (filteredEmployeeSummary && filteredEmployeeSummary.length > 0) {
         if ((doc as any).lastAutoTable.finalY + 40 > 280) doc.addPage()
         doc.text("Employee Analysis", 14, (doc as any).lastAutoTable.finalY + 15)
 
         autoTable(doc, {
           startY: (doc as any).lastAutoTable.finalY + 20,
           head: [['Employee Name', 'Assigned', 'Completed', 'Rate']],
-          body: selectedLog.employeeSummary.map(e => [
+          body: filteredEmployeeSummary.map((e: any) => [
             e.name, e.assigned.toLocaleString(), e.completed.toLocaleString(), e.rate
           ]),
           theme: 'striped',
@@ -1310,7 +1406,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Total Courses Assigned</p>
                     <h3 className="text-2xl font-bold">
-                      {(selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.assigned || 0), 0).toLocaleString()}
+                      {courseCardsData.assigned.toLocaleString()}
                     </h3>
                   </div>
                 </div>
@@ -1325,7 +1421,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Total Courses Completed</p>
                     <h3 className="text-2xl font-bold">
-                      {(selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0).toLocaleString()}
+                      {courseCardsData.completed.toLocaleString()}
                     </h3>
                   </div>
                 </div>
@@ -1340,8 +1436,7 @@ export default function LMSDashboard() {
                   <div>
                     <p className="text-white/60 text-xs font-bold uppercase">Overall Completion Rate</p>
                     <h3 className="text-2xl font-bold">
-                      {((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.completed || 0), 0) /
-                        ((selectedLog.deptSummary as any[]).reduce((a, b) => a + (b.assigned || 1), 0)) * 100).toFixed(1)}%
+                      {courseCardsData.rate}%
                     </h3>
                   </div>
                 </div>
@@ -1352,163 +1447,265 @@ export default function LMSDashboard() {
           <Card className="border-none shadow-sm">
             <CardHeader className="pb-4">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-zinc-400" />
-                  <CardTitle>Department Analysis</CardTitle>
+                <div className="flex items-center gap-2 w-auto whitespace-nowrap">
+                  {coursesTab === 'department' ? (
+                    <Building2 className="h-5 w-5 text-zinc-400" />
+                  ) : (
+                    <Users className="h-5 w-5 text-zinc-400" />
+                  )}
+                  <CardTitle>Course Analysis</CardTitle>
                 </div>
-                <div className="relative w-full md:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input
-                    placeholder="Search department..."
-                    className="pl-9 h-9"
-                    value={courseDeptSearch}
-                    onChange={(e) => {
-                      setCourseDeptSearch(e.target.value)
-                      setCourseDeptPage(1)
-                    }}
-                  />
-                </div>
-              </div>
-              <CardDescription>Sum of courses per Delivery Unit</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ScrollArea className="h-[400px]">
-                <Table>
-                  <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
-                    <TableRow>
-                      <TableHead>
-                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', courseDeptSort, setCourseDeptSort)}>
-                          Department <SortIcon sort={courseDeptSort} sortKey="name" />
+                
+                <div className="flex flex-wrap items-center gap-3 w-full justify-end">
+                  {/* Course Filters */}
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedCourseLocations.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        Location {selectedCourseLocations.length > 0 && `(${selectedCourseLocations.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter Locations</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueCourseLocations.map((loc) => (
+                            <div key={loc} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`cloc-${loc}`} 
+                                checked={selectedCourseLocations.includes(loc)}
+                                onCheckedChange={(checked) => setSelectedCourseLocations(prev => checked ? [...prev, loc] : prev.filter(v => v !== loc))}
+                              />
+                              <Label htmlFor={`cloc-${loc}`} className="text-sm font-medium leading-none">{loc}</Label>
+                            </div>
+                          ))}
                         </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', courseDeptSort, setCourseDeptSort)}>
-                          Sum of Assigned Courses <SortIcon sort={courseDeptSort} sortKey="assigned" />
+                      </ScrollArea>
+                      {selectedCourseLocations.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedCourseLocations([])}>Clear</Button>
                         </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', courseDeptSort, setCourseDeptSort)}>
-                          Sum of Completed Courses <SortIcon sort={courseDeptSort} sortKey="completed" />
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', courseDeptSort, setCourseDeptSort)}>
-                          Completion Rate % <SortIcon sort={courseDeptSort} sortKey="rate" />
-                        </div>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredDeptSummary.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
-                      </TableRow>
-                    ) : (
-                      applySort(filteredDeptSummary, courseDeptSort).slice((courseDeptPage - 1) * 10, courseDeptPage * 10).map((row: any) => (
-                        <TableRow key={row.name}>
-                          <TableCell className="font-medium">{row.name}</TableCell>
-                          <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right">
-                            <Badge className="bg-[#0046ab] hover:bg-[#0046ab] font-mono">{row.rate}</Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-              {filteredDeptSummary.length > 10 && (
-                <div className="flex items-center justify-end space-x-2 pt-4">
-                  <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.max(prev - 1, 1))} disabled={courseDeptPage === 1}>
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
-                  </Button>
-                  <div className="text-sm text-zinc-500 font-medium px-2">Page {courseDeptPage} of {Math.ceil(filteredDeptSummary.length / 10)}</div>
-                  <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.min(prev + 1, Math.ceil(filteredDeptSummary.length / 10)))} disabled={courseDeptPage === Math.ceil(filteredDeptSummary.length / 10)}>
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                      )}
+                    </PopoverContent>
+                  </Popover>
 
-          <Card className="border-none shadow-sm">
-            <CardHeader className="pb-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-zinc-400" />
-                  <CardTitle>Employee Analysis</CardTitle>
-                </div>
-                <div className="relative w-full md:w-64">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-                  <Input
-                    placeholder="Search employee..."
-                    className="pl-9 h-9"
-                    value={employeeSearch}
-                    onChange={(e) => {
-                      setEmployeeSearch(e.target.value)
-                      setEmployeePage(1)
-                    }}
-                  />
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedCourseUserTypes.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        User Type {selectedCourseUserTypes.length > 0 && `(${selectedCourseUserTypes.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter User Types</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueCourseUserTypes.map((type) => (
+                            <div key={type} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`ctype-${type}`} 
+                                checked={selectedCourseUserTypes.includes(type)}
+                                onCheckedChange={(checked) => setSelectedCourseUserTypes(prev => checked ? [...prev, type] : prev.filter(v => v !== type))}
+                              />
+                              <Label htmlFor={`ctype-${type}`} className="text-sm font-medium leading-none">{type}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      {selectedCourseUserTypes.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedCourseUserTypes([])}>Clear</Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" size="sm" className={`h-9 border-dashed ${selectedCourseDUs.length > 0 ? "border-[#0046ab] bg-[#0046ab]/5 text-[#0046ab]" : ""}`}>
+                        <Filter className="h-4 w-4 mr-2" />
+                        Delivery Unit {selectedCourseDUs.length > 0 && `(${selectedCourseDUs.length})`}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-0" align="end">
+                      <div className="p-3 border-b border-zinc-100 dark:border-zinc-800">
+                        <h4 className="font-semibold text-sm">Filter Delivery Units</h4>
+                      </div>
+                      <ScrollArea className="h-64">
+                        <div className="p-3 space-y-3">
+                          {uniqueCourseDUs.map((du) => (
+                            <div key={du} className="flex flex-row items-start space-x-3">
+                              <Checkbox 
+                                id={`cdu-${du}`} 
+                                checked={selectedCourseDUs.includes(du)}
+                                onCheckedChange={(checked) => setSelectedCourseDUs(prev => checked ? [...prev, du] : prev.filter(v => v !== du))}
+                              />
+                              <Label htmlFor={`cdu-${du}`} className="text-sm font-medium leading-none">{du}</Label>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                      {selectedCourseDUs.length > 0 && (
+                        <div className="p-2 border-t border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50">
+                          <Button variant="ghost" size="sm" className="w-full text-xs h-7" onClick={() => setSelectedCourseDUs([])}>Clear</Button>
+                        </div>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+
+                  <div className="h-6 w-px bg-zinc-200 dark:bg-zinc-800 mx-1 hidden md:block"></div>
+
+                  <Tabs value={coursesTab} onValueChange={(v) => setCoursesTab(v as 'department' | 'employee')} className="w-full sm:w-auto">
+                    <TabsList className="h-9 w-full grid grid-cols-2">
+                      <TabsTrigger value="department" className="text-xs px-3">Department</TabsTrigger>
+                      <TabsTrigger value="employee" className="text-xs px-3">Employee</TabsTrigger>
+                    </TabsList>
+                  </Tabs>
+                  <div className="relative w-full md:w-64">
+                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                    <Input
+                      placeholder={coursesTab === 'department' ? "Search department..." : "Search employee..."}
+                      className="pl-9 h-9 w-full"
+                      value={coursesTab === 'department' ? courseDeptSearch : employeeSearch}
+                      onChange={(e) => {
+                        if (coursesTab === 'department') {
+                          setCourseDeptSearch(e.target.value)
+                          setCourseDeptPage(1)
+                        } else {
+                          setEmployeeSearch(e.target.value)
+                          setEmployeePage(1)
+                        }
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
-              <CardDescription>Individual course completion performance</CardDescription>
             </CardHeader>
             <CardContent>
-              <ScrollArea className="h-[500px]">
-                <Table>
-                  <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
-                    <TableRow>
-                      <TableHead>
-                        <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', employeeSort, setEmployeeSort)}>
-                          Employee Name <SortIcon sort={employeeSort} sortKey="name" />
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', employeeSort, setEmployeeSort)}>
-                          Sum of Assigned Courses <SortIcon sort={employeeSort} sortKey="assigned" />
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', employeeSort, setEmployeeSort)}>
-                          Sum of Completed Courses <SortIcon sort={employeeSort} sortKey="completed" />
-                        </div>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', employeeSort, setEmployeeSort)}>
-                          Completion Rate % <SortIcon sort={employeeSort} sortKey="rate" />
-                        </div>
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredEmployeeSummary.length === 0 ? (
+              {coursesTab === 'department' && (
+              <>
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
                       <TableRow>
-                        <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
+                        <TableHead>
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', courseDeptSort, setCourseDeptSort)}>
+                            Department <SortIcon sort={courseDeptSort} sortKey="name" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', courseDeptSort, setCourseDeptSort)}>
+                            Sum of Assigned Courses <SortIcon sort={courseDeptSort} sortKey="assigned" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', courseDeptSort, setCourseDeptSort)}>
+                            Sum of Completed Courses <SortIcon sort={courseDeptSort} sortKey="completed" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', courseDeptSort, setCourseDeptSort)}>
+                            Completion Rate % <SortIcon sort={courseDeptSort} sortKey="rate" />
+                          </div>
+                        </TableHead>
                       </TableRow>
-                    ) : (
-                      applySort(filteredEmployeeSummary, employeeSort).slice((employeePage - 1) * 10, employeePage * 10).map((row: any) => (
-                        <TableRow key={row.name}>
-                          <TableCell className="font-medium">{row.name}</TableCell>
-                          <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
-                          <TableCell className="text-right font-bold text-[#0046ab]">{row.rate}</TableCell>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredDeptSummary.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No departments found matching your search.</TableCell>
                         </TableRow>
-                      ))
-                    )}
-                  </TableBody>
-                </Table>
-              </ScrollArea>
-              {filteredEmployeeSummary.length > 10 && (
-                <div className="flex items-center justify-end space-x-2 pt-4">
-                  <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.max(prev - 1, 1))} disabled={employeePage === 1}>
-                    <ChevronLeft className="h-4 w-4 mr-1" /> Prev
-                  </Button>
-                  <div className="text-sm text-zinc-500 font-medium px-2">Page {employeePage} of {Math.ceil(filteredEmployeeSummary.length / 10)}</div>
-                  <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.min(prev + 1, Math.ceil(filteredEmployeeSummary.length / 10)))} disabled={employeePage === Math.ceil(filteredEmployeeSummary.length / 10)}>
-                    Next <ChevronRight className="h-4 w-4 ml-1" />
-                  </Button>
-                </div>
+                      ) : (
+                        applySort(filteredDeptSummary, courseDeptSort).slice((courseDeptPage - 1) * 10, courseDeptPage * 10).map((row: any) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="font-medium">{row.name}</TableCell>
+                            <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-right">
+                              <Badge className="bg-[#0046ab] hover:bg-[#0046ab] font-mono">{row.rate}</Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+                {filteredDeptSummary.length > 10 && (
+                  <div className="flex items-center justify-end space-x-2 pt-4">
+                    <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.max(prev - 1, 1))} disabled={courseDeptPage === 1}>
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                    </Button>
+                    <div className="text-sm text-zinc-500 font-medium px-2">Page {courseDeptPage} of {Math.ceil(filteredDeptSummary.length / 10)}</div>
+                    <Button variant="outline" size="sm" onClick={() => setCourseDeptPage(prev => Math.min(prev + 1, Math.ceil(filteredDeptSummary.length / 10)))} disabled={courseDeptPage === Math.ceil(filteredDeptSummary.length / 10)}>
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
+              </>
+              )}
+
+              {coursesTab === 'employee' && (
+              <>
+                <ScrollArea className="h-[400px]">
+                  <Table>
+                    <TableHeader className="bg-white sticky top-0 dark:bg-zinc-900 z-10">
+                      <TableRow>
+                        <TableHead>
+                          <div className="flex items-center cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('name', employeeSort, setEmployeeSort)}>
+                            Employee Name <SortIcon sort={employeeSort} sortKey="name" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('assigned', employeeSort, setEmployeeSort)}>
+                            Sum of Assigned Courses <SortIcon sort={employeeSort} sortKey="assigned" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('completed', employeeSort, setEmployeeSort)}>
+                            Sum of Completed Courses <SortIcon sort={employeeSort} sortKey="completed" />
+                          </div>
+                        </TableHead>
+                        <TableHead className="text-right">
+                          <div className="flex items-center justify-end cursor-pointer hover:text-zinc-900 dark:hover:text-zinc-100" onClick={() => handleSort('rate', employeeSort, setEmployeeSort)}>
+                            Completion Rate % <SortIcon sort={employeeSort} sortKey="rate" />
+                          </div>
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredEmployeeSummary.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="h-24 text-center text-zinc-500">No employees found matching your search.</TableCell>
+                        </TableRow>
+                      ) : (
+                        applySort(filteredEmployeeSummary, employeeSort).slice((employeePage - 1) * 10, employeePage * 10).map((row: any) => (
+                          <TableRow key={row.name}>
+                            <TableCell className="font-medium">{row.name}</TableCell>
+                            <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
+                            <TableCell className="text-right font-bold text-[#0046ab]">{row.rate}</TableCell>
+                          </TableRow>
+                        ))
+                      )}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+                {filteredEmployeeSummary.length > 10 && (
+                  <div className="flex items-center justify-end space-x-2 pt-4">
+                    <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.max(prev - 1, 1))} disabled={employeePage === 1}>
+                      <ChevronLeft className="h-4 w-4 mr-1" /> Prev
+                    </Button>
+                    <div className="text-sm text-zinc-500 font-medium px-2">Page {employeePage} of {Math.ceil(filteredEmployeeSummary.length / 10)}</div>
+                    <Button variant="outline" size="sm" onClick={() => setEmployeePage(prev => Math.min(prev + 1, Math.ceil(filteredEmployeeSummary.length / 10)))} disabled={employeePage === Math.ceil(filteredEmployeeSummary.length / 10)}>
+                      Next <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                )}
+              </>
               )}
             </CardContent>
           </Card>
