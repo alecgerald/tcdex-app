@@ -156,7 +156,9 @@ export default function ERGAuditLogsPage() {
                         {log.fileName}
                       </div>
                     </TableCell>
-                    <TableCell className="text-zinc-500 text-sm">{log.date}</TableCell>
+                    <TableCell className="text-zinc-500 text-sm">
+                      {new Date(log.date).toLocaleDateString()} {new Date(log.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </TableCell>
                     <TableCell className="text-right font-mono text-xs">{log.count.toLocaleString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">

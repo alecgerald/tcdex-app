@@ -189,7 +189,7 @@ export default function ExcelUploadPage() {
         rate: `${((stats.completed / stats.total) * 100).toFixed(1)}%`
       })).sort((a, b) => b.name.localeCompare(a.name))
 
-      const uploadTime = new Date().toLocaleString()
+      const uploadTime = new Date().toISOString()
       const existingLogs = JSON.parse(localStorage.getItem("lms_audit_logs") || "[]")
       
       const newLog = { 

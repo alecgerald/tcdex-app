@@ -42,6 +42,8 @@ export default function ERGDirectoryPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedERG, setSelectedERG] = useState<string>("All")
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 50
 
   useEffect(() => {
     const data = localStorage.getItem("erg_membership_registry")
@@ -49,6 +51,11 @@ export default function ERGDirectoryPage() {
       setMembers(JSON.parse(data))
     }
   }, [])
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchTerm, selectedERG])
 
   const ergs = ["All", ...Array.from(new Set(members.map(m => m["Primary ERG"] || "Unassigned")))]
 
@@ -60,11 +67,37 @@ export default function ERGDirectoryPage() {
     return matchesSearch && matchesERG
   })
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage)
+  const paginatedMembers = filteredMembers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  )
+
   const exportToExcel = () => {
     const worksheet = utils.json_to_sheet(filteredMembers)
     const workbook = utils.book_new()
     utils.book_append_sheet(workbook, worksheet, "ERG_Members")
     writeFile(workbook, `ERG_Membership_Export_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
+  const formatDate = (dateValue: any) => {
+    if (!dateValue) return "N/A"
+    
+    // ISO string handling
+    if (typeof dateValue === 'string' && dateValue.includes('T')) {
+      const date = new Date(dateValue)
+      return isNaN(date.getTime()) ? dateValue : date.toLocaleDateString()
+    }
+
+    // Excel serial date conversion (fallback for old data)
+    const serial = Number(dateValue)
+    if (!isNaN(serial) && serial > 10000) { // Simple check for serial dates
+      const date = new Date((serial - 25569) * 86400 * 1000)
+      return date.toLocaleDateString()
+    }
+
+    return String(dateValue)
   }
 
   return (
@@ -118,7 +151,7 @@ export default function ERGDirectoryPage() {
               </div>
             </div>
             <div className="text-sm text-zinc-500 font-medium">
-              Showing {filteredMembers.length} members
+              Showing {paginatedMembers.length} members out of {filteredMembers.length}
             </div>
           </div>
         </CardHeader>
@@ -150,7 +183,7 @@ export default function ERGDirectoryPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredMembers.map((member) => (
+                  {paginatedMembers.map((member) => (
                     <TableRow key={member.id}>
                       <TableCell className="font-mono text-xs">{member["Employee ID"]}</TableCell>
                       <TableCell>
@@ -176,7 +209,7 @@ export default function ERGDirectoryPage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-zinc-500 text-sm">{member["Join Date"]}</TableCell>
+                      <TableCell className="text-zinc-500 text-sm">{formatDate(member["Join Date"])}</TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -194,6 +227,31 @@ export default function ERGDirectoryPage() {
             </ScrollArea>
           )}
         </CardContent>
+        {filteredMembers.length > itemsPerPage && (
+          <div className="p-4 border-t flex items-center justify-between bg-zinc-50/50 dark:bg-zinc-900/50">
+            <div className="text-xs text-zinc-500 font-medium">
+              Page {currentPage} of {totalPages}
+            </div>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+              >
+                Previous
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   )

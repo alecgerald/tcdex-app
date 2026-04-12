@@ -42,7 +42,6 @@ const sidebarCategories = [
     items: [
       { name: "Dashboard", href: "/ltd", icon: LayoutDashboard },
       { name: "Import Excel", href: "/ltd/upload", icon: FileUp },
-      { name: "Reports", href: "/ltd/reports", icon: BarChart3 },
     ],
   },
   {
@@ -52,7 +51,6 @@ const sidebarCategories = [
     items: [
       { name: "Dashboard", href: "/ex", icon: LayoutDashboard },
       { name: "Import Excel", href: "/ex/upload", icon: FileUp },
-      { name: "Reports", href: "/ex/reports", icon: BarChart3 },
     ],
   },
   {
@@ -63,7 +61,6 @@ const sidebarCategories = [
       { name: "Dashboard", href: "/erg", icon: LayoutDashboard },
       { name: "Membership Directory", href: "/erg/directory", icon: Contact },
       { name: "Import Excel", href: "/erg/upload", icon: FileUp },
-      { name: "Reports", href: "/erg/reports", icon: BarChart3 },
       { name: "Audit Logs", href: "/erg/audit-logs", icon: FileClock },
     ],
   },
@@ -74,7 +71,6 @@ const sidebarCategories = [
     items: [
       { name: "Dashboard", href: "/comms", icon: LayoutDashboard },
       { name: "Import Excel", href: "/comms/upload", icon: FileUp },
-      { name: "Reports", href: "/comms/reports", icon: BarChart3 },
     ],
   },
   {
@@ -84,7 +80,6 @@ const sidebarCategories = [
     items: [
       { name: "Dashboard", href: "/governance", icon: LayoutDashboard },
       { name: "Import Excel", href: "/governance/upload", icon: FileUp },
-      { name: "Reports", href: "/governance/reports", icon: BarChart3 },
     ],
   },
 ]

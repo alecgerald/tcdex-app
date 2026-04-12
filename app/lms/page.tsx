@@ -173,7 +173,7 @@ export default function LMSDashboard() {
             </Select>
           </div>
           {selectedLog && (
-            <p className="text-[10px] text-zinc-400 uppercase font-bold">Uploaded: {selectedLog.date}</p>
+            <p className="text-[10px] text-zinc-400 uppercase font-bold">Uploaded: {new Date(selectedLog.date).toLocaleDateString()} {new Date(selectedLog.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
           )}
         </div>
       </div>

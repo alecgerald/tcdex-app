@@ -48,14 +48,17 @@ export default function ERGDashboard() {
   const ALL_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
   const [startMonth, setStartMonth] = useState(0) // Jan
   const [endMonth, setEndMonth] = useState(11)    // Dec
+  const [growthYear, setGrowthYear] = useState(new Date().getFullYear())
 
   // Figure 3 (Attendance) Date Range Filter States
   const [attendanceStartMonth, setAttendanceStartMonth] = useState(0)
   const [attendanceEndMonth, setAttendanceEndMonth] = useState(11)
+  const [attendanceYear, setAttendanceYear] = useState(new Date().getFullYear())
 
   // Figure 4 (Feedback) Date Range Filter States
   const [feedbackStartMonth, setFeedbackStartMonth] = useState(0)
   const [feedbackEndMonth, setFeedbackEndMonth] = useState(11)
+  const [feedbackYear, setFeedbackYear] = useState(new Date().getFullYear())
   const [selectedDEIB, setSelectedDEIB] = useState("All")
   const [hoveredFeedbackIndex, setHoveredFeedbackIndex] = useState<number | null>(null)
   const [hoveredAttendance, setHoveredAttendance] = useState<{erg: string, type: string | null} | null>(null)
@@ -63,6 +66,7 @@ export default function ERGDashboard() {
   // Figure 5 (Heatmap) Date Range Filter States
   const [heatmapStartMonth, setHeatmapStartMonth] = useState(0)
   const [heatmapEndMonth, setHeatmapEndMonth] = useState(11)
+  const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
 
   useEffect(() => {
     setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
@@ -119,7 +123,11 @@ export default function ERGDashboard() {
 
   // Figure 2: Monthly Growth Trends (Dynamic Scale Line Chart)
   const growthTrendInfo = useMemo(() => {
-    const relevantSnapshots = snapshots.filter(s => selectedERG === "All" || s.ERG === selectedERG)
+    const relevantSnapshots = snapshots.filter(s => {
+      const matchERG = selectedERG === "All" || s.ERG === selectedERG
+      const matchYear = s.Year === undefined || Number(s.Year) === growthYear || String(s.Year).includes(String(growthYear))
+      return matchERG && matchYear
+    })
     const allMonthKeys = [
       "Jan Members", "Feb Members", "Mar Members", "Apr Members", 
       "May Members", "Jun Members", "Jul Members", "Aug Members", 
@@ -148,21 +156,44 @@ export default function ERGDashboard() {
       growth: s["Growth Rate %"] || 0
     }))
 
-    return { trends, maxVal, months: displayMonths }
-  }, [snapshots, selectedERG, startMonth, endMonth])
+    let totalStartVal = 0
+    let totalEndVal = 0
+    trends.forEach(t => {
+      totalStartVal += t.data[0] || 0
+      totalEndVal += t.data[t.data.length - 1] || 0
+    })
+
+    const netChange = totalEndVal - totalStartVal
+    const growthRate = totalStartVal > 0 ? (netChange / totalStartVal) * 100 : 0
+
+    return { trends, maxVal, months: displayMonths, netChange, growthRate }
+  }, [snapshots, selectedERG, startMonth, endMonth, growthYear])
 
 
   // Figure 3: Attendance by Activity Type (Stacked Column)
   const attendanceByType = useMemo(() => {
+    const parseEventDate = (val: any) => {
+      if (!val) return new Date(NaN)
+      if (typeof val === 'number' || (!isNaN(Number(val)) && !String(val).includes('-') && !String(val).includes('/'))) {
+        const serial = Number(val)
+        // Excel dates start from Dec 30, 1899
+        return new Date((serial - 25569) * 86400 * 1000)
+      }
+      return new Date(val)
+    }
+
     const relevantEvents = eventLogs.filter(e => {
       const matchERG = selectedERG === "All" || e.ERG === selectedERG
       
       // Date Filtering
-      const date = new Date(e["Event Date"])
+      const date = parseEventDate(e["Event Date"])
       const monthIndex = date.getMonth()
-      const matchDate = !isNaN(monthIndex) && monthIndex >= attendanceStartMonth && monthIndex <= attendanceEndMonth
+      const year = date.getFullYear()
       
-      return matchERG && matchDate
+      const matchMonth = !isNaN(monthIndex) && monthIndex >= attendanceStartMonth && monthIndex <= attendanceEndMonth
+      const matchYear = !isNaN(year) && year === attendanceYear
+      
+      return matchERG && matchMonth && matchYear
     })
     
     // Dynamically derive ERG list from relevant events
@@ -174,7 +205,7 @@ export default function ERGDashboard() {
     
     const data = ergsWithData.map(erg => {
       const ergEvents = relevantEvents.filter(e => e.ERG === erg)
-      const typeCounts: Record<string, number> = {}
+      const typeCounts: Record<string, any> = {}
       let total = 0
       types.forEach(t => {
         const count = ergEvents.filter(e => e["Activity Type"] === t)
@@ -189,7 +220,7 @@ export default function ERGDashboard() {
     const roundedMax = Math.ceil(maxVal / 10) * 10
 
     return { data, maxVal: roundedMax }
-  }, [eventLogs, selectedERG, attendanceStartMonth, attendanceEndMonth])
+  }, [eventLogs, selectedERG, attendanceStartMonth, attendanceEndMonth, attendanceYear])
 
   // Figure 4: Feedback Effectiveness (Combo Chart)
   const feedbackEffectiveness = useMemo(() => {
@@ -203,9 +234,11 @@ export default function ERGDashboard() {
       
       const date = new Date(dateStr)
       const monthIndex = date.getMonth()
+      const year = date.getFullYear()
       const matchDate = !isNaN(monthIndex) && monthIndex >= feedbackStartMonth && monthIndex <= feedbackEndMonth
+      const matchYear = !isNaN(year) && year === feedbackYear
       
-      return matchERG && matchDEIB && matchDate
+      return matchERG && matchDEIB && matchDate && matchYear
     })
 
     const data = relevantFeedback.map(f => ({
@@ -220,7 +253,7 @@ export default function ERGDashboard() {
     const maxVal = Math.ceil(maxCount / 10) * 10
 
     return { data, maxVal }
-  }, [feedback, selectedERG, selectedDEIB, feedbackStartMonth, feedbackEndMonth])
+  }, [feedback, selectedERG, selectedDEIB, feedbackStartMonth, feedbackEndMonth, feedbackYear])
 
   const deibEvents = useMemo(() => ["All", ...Array.from(new Set(feedback.map(f => f["DEIB event"])))].filter(Boolean), [feedback])
 
@@ -235,9 +268,11 @@ export default function ERGDashboard() {
       
       const date = new Date(dateStr)
       const monthIndex = date.getMonth()
+      const year = date.getFullYear()
       const matchDate = !isNaN(monthIndex) && monthIndex >= heatmapStartMonth && monthIndex <= heatmapEndMonth
+      const matchYear = !isNaN(year) && year === heatmapYear
       
-      return matchERG && matchDate
+      return matchERG && matchDate && matchYear
     })
 
     // Dynamically derive labels from filtered data
@@ -253,7 +288,7 @@ export default function ERGDashboard() {
     })
 
     return { rows, columns: busInData }
-  }, [participation, selectedERG, heatmapStartMonth, heatmapEndMonth])
+  }, [participation, selectedERG, heatmapStartMonth, heatmapEndMonth, heatmapYear])
 
   const kpis = useMemo(() => {
     const active = filteredMembership.filter(m => m.Status === "Active").length
@@ -310,7 +345,7 @@ export default function ERGDashboard() {
             </div>
           </div>
         </div>
-        <div className="flex gap-4">
+        <div className="flex gap-4 no-print">
           <Select value={selectedERG} onValueChange={setSelectedERG}>
             <SelectTrigger className="w-[180px]"><SelectValue placeholder="All ERGs" /></SelectTrigger>
             <SelectContent>{ergs.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
@@ -345,7 +380,7 @@ export default function ERGDashboard() {
               {latestRegistryUpdate && (
                 <Badge variant="outline" className="text-[10px] font-medium text-zinc-400 border-zinc-100 flex items-center gap-1.5">
                   <Calendar className="h-3 w-3" />
-                  Latest Upload: {latestRegistryUpdate}
+                  Latest Upload: {new Date(latestRegistryUpdate).toLocaleDateString()} {new Date(latestRegistryUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Badge>
               )}
             </div>
@@ -405,6 +440,32 @@ export default function ERGDashboard() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <div className="h-4 w-px bg-zinc-200 mx-1" />
+                  <Select value={String(growthYear)} onValueChange={(v) => setGrowthYear(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                      <SelectValue placeholder="Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[2023, 2024, 2025, 2026].map(y => (
+                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <div className="ml-4 flex items-center gap-4 border-l pl-4 border-zinc-100">
+                    <div className="flex flex-col">
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Net Change</span>
+                      <span className={`text-[11px] font-black leading-none ${growthTrendInfo.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {growthTrendInfo.netChange >= 0 ? '+' : ''}{growthTrendInfo.netChange.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Growth Rate</span>
+                      <span className={`text-[11px] font-black leading-none ${growthTrendInfo.growthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {growthTrendInfo.growthRate >= 0 ? '+' : ''}{growthTrendInfo.growthRate.toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 flex-wrap justify-end max-w-[200px]">
@@ -562,6 +623,17 @@ export default function ERGDashboard() {
                     ))}
                   </SelectContent>
                 </Select>
+                <div className="h-4 w-px bg-zinc-200 mx-1" />
+                <Select value={String(attendanceYear)} onValueChange={(v) => setAttendanceYear(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2023, 2024, 2025, 2026].map(y => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
           </CardHeader>
@@ -607,7 +679,7 @@ export default function ERGDashboard() {
                               onMouseLeave={() => setHoveredAttendance(null)}
                             >
                               {types.map((t, typeIdx) => {
-                                const val = item[t] || 0
+                                const val = (item as any)[t] || 0
                                 if (val === 0) return null
                                 const height = (val / attendanceByType.maxVal) * 100
                                 
@@ -628,11 +700,11 @@ export default function ERGDashboard() {
                               {/* Combined Tooltip */}
                               {hoveredAttendance?.erg === item.erg && (
                                 <div className="absolute -top-12 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] px-3 py-2 rounded-md z-[100] whitespace-nowrap pointer-events-none border border-white/10 shadow-2xl flex items-center gap-3 animate-in fade-in zoom-in duration-200">
-                                  {hoveredAttendance.type && (
+                                  {hoveredAttendance?.type && (
                                     <>
                                       <div className="flex items-center gap-1.5">
                                         <div className={`h-2 w-2 rounded-full ${colors[types.indexOf(hoveredAttendance.type)]}`} />
-                                        <span className="font-bold">{hoveredAttendance.type.replace('Internal ', '')}: {item[hoveredAttendance.type].toLocaleString()}</span>
+                                        <span className="font-bold">{hoveredAttendance.type.replace('Internal ', '')}: {(item as any)[hoveredAttendance.type].toLocaleString()}</span>
                                       </div>
                                       <div className="w-px h-3 bg-white/20" />
                                     </>
@@ -702,6 +774,17 @@ export default function ERGDashboard() {
                       <SelectContent>
                         {ALL_MONTHS.map((m, i) => (
                           <SelectItem key={m} value={String(i)} disabled={i < feedbackStartMonth}>{m}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <div className="h-4 w-px bg-zinc-200 mx-1" />
+                    <Select value={String(feedbackYear)} onValueChange={(v) => setFeedbackYear(parseInt(v))}>
+                      <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
+                        <SelectValue placeholder="Year" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[2023, 2024, 2025, 2026].map(y => (
+                          <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -900,6 +983,17 @@ export default function ERGDashboard() {
                   ))}
                 </SelectContent>
               </Select>
+              <div className="h-4 w-px bg-zinc-200 mx-1" />
+              <Select value={String(heatmapYear)} onValueChange={(v) => setHeatmapYear(parseInt(v))}>
+                <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {[2023, 2024, 2025, 2026].map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
         </CardHeader>
@@ -946,8 +1040,8 @@ export default function ERGDashboard() {
                       {row.erg}
                     </div>
                     {heatmapData.columns.map(bu => {
-                      const val = row[bu] || 0
-                      const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => r[b] || 0)))
+                      const val = (row as any)[bu] || 0
+                      const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => (r as any)[b] || 0)))
                       const intensity = maxPossible > 0 ? (val / maxPossible) : 0
                       
                       return (

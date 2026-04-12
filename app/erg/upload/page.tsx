@@ -119,8 +119,31 @@ export default function ERGUploadPage() {
   const standardizeData = (data: any[], type: TemplateType) => {
     return data.map(row => {
       const newRow = { ...row }
+      
+      // Helper to convert Excel serial date to ISO date string (YYYY-MM-DD)
+      const convertExcelDate = (val: any) => {
+        if (!val) return val
+        if (typeof val === 'number') {
+          // Excel dates start from Dec 30, 1899
+          const date = new Date((val - 25569) * 86400 * 1000)
+          return date.toISOString().split('T')[0]
+        }
+        // If it's already an ISO string with time, strip it
+        if (typeof val === 'string' && val.includes('T')) {
+          return val.split('T')[0]
+        }
+        return val
+      }
+
       if (type === 'membership_registry') {
         newRow.Status = "Active" // Automatically mark all as active
+        newRow["Join Date"] = convertExcelDate(newRow["Join Date"])
+      }
+      if (type === 'event_activity') {
+        newRow["Event Date"] = convertExcelDate(newRow["Event Date"])
+      }
+      if (type === 'membership_snapshot') {
+        newRow.Year = new Date().getFullYear()
       }
       if (type === 'membership_registry' || type === 'participation_detail') {
         const buKey = "Delivery Unit / Business Unit"
@@ -241,8 +264,8 @@ export default function ERGUploadPage() {
       const getUniqueKey = (row: any) => {
         switch (templateType) {
           case 'membership_snapshot':
-            // Merge by ERG name (updates existing ERG stats)
-            return String(row["ERG"]).trim().toLowerCase()
+            // Merge by ERG name + Year (updates existing ERG stats for that specific year)
+            return `${row["ERG"]}-${row["Year"]}`.trim().toLowerCase()
           case 'event_activity':
             // Merge by Date + Title + ERG
             return `${row["ERG"]}-${row["Event Date"]}-${row["Activity Title"]}`.toLowerCase()
@@ -265,13 +288,13 @@ export default function ERGUploadPage() {
         const key = getUniqueKey(row)
         if (templateType === 'membership_snapshot' && dataMap.has(key)) {
           // DEEP MERGE for snapshots: keep Jan-Apr while adding May-Jun
-          dataMap.set(key, { ...dataMap.get(key), ...row })
+          dataMap.set(key, { ...(dataMap.get(key) as any), ...row })
         } else {
           dataMap.set(key, row)
         }
       })
 
-      finalData = Array.from(dataMap.values())
+      finalData = Array.from(dataMap.values()) as any[]
 
       // Update columns state to include any new monthly columns found in existing data
       if (finalData.length > 0) {
