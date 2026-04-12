@@ -75,7 +75,10 @@ export default function ERGDirectoryPage() {
   )
 
   const exportToExcel = () => {
-    const worksheet = utils.json_to_sheet(filteredMembers)
+    // Filter out internal/unwanted fields before export
+    const dataToExport = filteredMembers.map(({ id, uploadDate, status, Status, ...rest }) => rest)
+    
+    const worksheet = utils.json_to_sheet(dataToExport)
     const workbook = utils.book_new()
     utils.book_append_sheet(workbook, worksheet, "ERG_Members")
     writeFile(workbook, `ERG_Membership_Export_${new Date().toISOString().split('T')[0]}.xlsx`)
@@ -84,17 +87,22 @@ export default function ERGDirectoryPage() {
   const formatDate = (dateValue: any) => {
     if (!dateValue) return "N/A"
     
+    // Handle YYYY-MM-DD strings directly
+    if (typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue)) {
+      return dateValue
+    }
+
     // ISO string handling
     if (typeof dateValue === 'string' && dateValue.includes('T')) {
       const date = new Date(dateValue)
-      return isNaN(date.getTime()) ? dateValue : date.toLocaleDateString()
+      return isNaN(date.getTime()) ? dateValue : date.toISOString().split('T')[0]
     }
 
     // Excel serial date conversion (fallback for old data)
     const serial = Number(dateValue)
     if (!isNaN(serial) && serial > 10000) { // Simple check for serial dates
       const date = new Date((serial - 25569) * 86400 * 1000)
-      return date.toLocaleDateString()
+      return date.toISOString().split('T')[0]
     }
 
     return String(dateValue)
@@ -111,10 +119,6 @@ export default function ERGDirectoryPage() {
           <Button variant="outline" onClick={exportToExcel} disabled={members.length === 0}>
             <Download className="h-4 w-4 mr-2" />
             Export XLSX
-          </Button>
-          <Button className="bg-[#0046ab] hover:bg-[#003a8f] text-white">
-            <UserPlus className="h-4 w-4 mr-2" />
-            Add Member
           </Button>
         </div>
       </div>
@@ -133,21 +137,21 @@ export default function ERGDirectoryPage() {
                 />
               </div>
               <div className="flex flex-wrap items-center gap-6">
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold uppercase text-zinc-400">ERG Filter</span>
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar max-w-[400px]">
-                    {ergs.map(erg => (
-                      <Badge 
-                        key={erg}
-                        variant={selectedERG === erg ? "default" : "outline"}
-                        className={selectedERG === erg ? "bg-[#0046ab] hover:bg-[#0046ab]" : "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800"}
-                        onClick={() => setSelectedERG(erg)}
-                      >
-                        {erg}
-                      </Badge>
-                    ))}
-                  </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase text-zinc-400">ERG Filter</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  {ergs.map(erg => (
+                    <Badge 
+                      key={erg}
+                      variant={selectedERG === erg ? "default" : "outline"}
+                      className={`whitespace-nowrap ${selectedERG === erg ? "bg-[#0046ab] hover:bg-[#0046ab]" : "cursor-pointer hover:bg-zinc-100 dark:hover:bg-zinc-800"}`}
+                      onClick={() => setSelectedERG(erg)}
+                    >
+                      {erg}
+                    </Badge>
+                  ))}
                 </div>
+              </div>
               </div>
             </div>
             <div className="text-sm text-zinc-500 font-medium">
@@ -179,7 +183,6 @@ export default function ERGDirectoryPage() {
                     <TableHead>Primary ERG</TableHead>
                     <TableHead>Location</TableHead>
                     <TableHead>Join Date</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -210,16 +213,6 @@ export default function ERGDirectoryPage() {
                         </div>
                       </TableCell>
                       <TableCell className="text-zinc-500 text-sm">{formatDate(member["Join Date"])}</TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <Mail className="h-4 w-4 text-zinc-400" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontal className="h-4 w-4 text-zinc-400" />
-                          </Button>
-                        </div>
-                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

@@ -120,18 +120,40 @@ export default function ERGUploadPage() {
     return data.map(row => {
       const newRow = { ...row }
       
-      // Helper to convert Excel serial date to ISO date string (YYYY-MM-DD)
+      // Helper to convert Excel serial date or various string formats to ISO date string (YYYY-MM-DD)
       const convertExcelDate = (val: any) => {
         if (!val) return val
+        
+        // Handle Excel serial numbers
         if (typeof val === 'number') {
           // Excel dates start from Dec 30, 1899
           const date = new Date((val - 25569) * 86400 * 1000)
           return date.toISOString().split('T')[0]
         }
-        // If it's already an ISO string with time, strip it
-        if (typeof val === 'string' && val.includes('T')) {
-          return val.split('T')[0]
+        
+        if (typeof val === 'string') {
+          const trimmed = val.trim()
+
+          // 1. Handle M/D/Y format (e.g., 1/13/2026 or 01/13/2026)
+          const mdyMatch = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+          if (mdyMatch) {
+            const [_, m, d, y] = mdyMatch
+            return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+          }
+
+          // 2. Handle YYYY-MM-DD format (ensure double digits even if input is 2026-1-1)
+          const ymdMatch = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/)
+          if (ymdMatch) {
+            const [_, y, m, d] = ymdMatch
+            return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+          }
+          
+          // 3. If it's an ISO string with time, strip it
+          if (trimmed.includes('T')) {
+            return trimmed.split('T')[0]
+          }
         }
+        
         return val
       }
 

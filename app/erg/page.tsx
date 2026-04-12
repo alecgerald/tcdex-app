@@ -325,6 +325,15 @@ export default function ERGDashboard() {
     )
   }
 
+  const formatLocalDate = (date: Date | string) => {
+    const d = new Date(date)
+    if (isNaN(d.getTime())) return "N/A"
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${year}-${month}-${day}`
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -341,7 +350,7 @@ export default function ERGDashboard() {
             <span>•</span>
             <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase bg-zinc-100 px-2 py-0.5 rounded text-zinc-400 dark:bg-zinc-800">
               <Activity className="h-3 w-3" />
-              Last Sync: {new Date().toLocaleDateString()} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              Last Sync: {formatLocalDate(new Date())} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
         </div>
@@ -372,7 +381,7 @@ export default function ERGDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Figure 1: Horizontal Bar */}
+        {/* Figure 1: Active Members by ERG */}
         <Card className="border-none shadow-sm">
           <CardHeader>
             <div className="flex justify-between items-center">
@@ -380,7 +389,7 @@ export default function ERGDashboard() {
               {latestRegistryUpdate && (
                 <Badge variant="outline" className="text-[10px] font-medium text-zinc-400 border-zinc-100 flex items-center gap-1.5">
                   <Calendar className="h-3 w-3" />
-                  Latest Upload: {new Date(latestRegistryUpdate).toLocaleDateString()} {new Date(latestRegistryUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  Latest Upload: {formatLocalDate(latestRegistryUpdate)} {new Date(latestRegistryUpdate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </Badge>
               )}
             </div>
@@ -403,196 +412,6 @@ export default function ERGDashboard() {
           </CardContent>
         </Card>
 
-        {/* Figure 2: Growth Trends */}
-        <Card className="border-none shadow-sm">
-          <CardHeader>
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="flex items-center gap-2 mb-1">
-                  <CardTitle className="text-lg">Membership Growth Trends</CardTitle>
-                  <button 
-                    onClick={() => setShowTrendlines(!showTrendlines)}
-                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${showTrendlines ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-500 border-zinc-200'}`}
-                  >
-                    {showTrendlines ? 'Line Chart: ON' : 'Line Chart: OFF'}
-                  </button>
-                </div>
-                <CardDescription>Monthly enrollment progress</CardDescription>
-                <div className="flex items-center gap-2 mt-2">
-                  <Select value={String(startMonth)} onValueChange={(v) => setStartMonth(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
-                      <SelectValue placeholder="Start" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ALL_MONTHS.map((m, i) => (
-                        <SelectItem key={m} value={String(i)} disabled={i > endMonth}>{m}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">to</span>
-                  <Select value={String(endMonth)} onValueChange={(v) => setEndMonth(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
-                      <SelectValue placeholder="End" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ALL_MONTHS.map((m, i) => (
-                        <SelectItem key={m} value={String(i)} disabled={i < startMonth}>{m}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <div className="h-4 w-px bg-zinc-200 mx-1" />
-                  <Select value={String(growthYear)} onValueChange={(v) => setGrowthYear(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
-                      <SelectValue placeholder="Year" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[2023, 2024, 2025, 2026].map(y => (
-                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  <div className="ml-4 flex items-center gap-4 border-l pl-4 border-zinc-100">
-                    <div className="flex flex-col">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Net Change</span>
-                      <span className={`text-[11px] font-black leading-none ${growthTrendInfo.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {growthTrendInfo.netChange >= 0 ? '+' : ''}{growthTrendInfo.netChange.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Growth Rate</span>
-                      <span className={`text-[11px] font-black leading-none ${growthTrendInfo.growthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {growthTrendInfo.growthRate >= 0 ? '+' : ''}{growthTrendInfo.growthRate.toFixed(1)}%
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="flex gap-2 flex-wrap justify-end max-w-[200px]">
-                {growthTrendInfo.trends.map((t) => (
-                  <div key={t.name} className="flex items-center gap-1 text-[10px] font-bold">
-                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: ergColors[t.name] }} />
-                    {t.name}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-4">
-              {/* Y-AXIS */}
-              <div className="flex flex-col justify-between text-[10px] text-zinc-400 h-[200px] pb-0 font-bold">
-                <span>{growthTrendInfo.maxVal}</span>
-                <span>{Math.round(growthTrendInfo.maxVal * 0.75)}</span>
-                <span>{Math.round(growthTrendInfo.maxVal * 0.5)}</span>
-                <span>{Math.round(growthTrendInfo.maxVal * 0.25)}</span>
-                <span>0</span>
-              </div>
-              
-              {/* CHART AREA */}
-              <div className="flex-1">
-                <div className="h-[200px] w-full border-b border-l border-zinc-100 relative flex items-end justify-between px-2 overflow-visible">
-                  {/* Grid Lines */}
-                  <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
-                    {[0, 1, 2, 3, 4].map(line => (
-                      <div key={line} className="w-full border-t border-zinc-100/50" style={{ height: '0px' }} />
-                    ))}
-                  </div>
-
-                  {/* SVG TRENDLINES */}
-                  {showTrendlines && (
-                    <svg 
-                      viewBox="0 0 100 100" 
-                      className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" 
-                      preserveAspectRatio="none"
-                    >
-                      {growthTrendInfo.trends.map((trend, trendIdx) => {
-                        const points = trend.data.map((val, monthIdx) => {
-                          if (val === 0) return null
-                          
-                          // 1. Account for the padding on the sides of the chart (8px approx 1.2%)
-                          const sidePadding = 1.2 
-                          const usableWidth = 100 - (sidePadding * 2)
-                          
-                          // 2. Find the center of the month group
-                          const monthWidth = usableWidth / growthTrendInfo.months.length
-                          const groupX = sidePadding + (monthIdx * monthWidth) + (monthWidth / 2)
-                          
-                          // 3. Offset to the specific bar (8px bar + 1px gap = approx 0.85% shift)
-                          const barOffset = (trendIdx - (growthTrendInfo.trends.length - 1) / 2) * 0.85
-                          const finalX = groupX + barOffset
-                          
-                          const y = 100 - ((val / growthTrendInfo.maxVal) * 100)
-                          return `${finalX},${y}`
-                        }).filter(Boolean)
-
-                        if (points.length < 2) return null
-
-                        return (
-                          <path 
-                            key={trend.name}
-                            d={`M ${points.join(' L ')}`}
-                            fill="none"
-                            stroke={ergColors[trend.name]}
-                            strokeWidth="0.4"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="transition-all duration-500 opacity-80"
-                          />
-                        )
-                      })}
-                    </svg>
-                  )}
-
-                  {/* Monthly Groups */}
-                  {growthTrendInfo.months.map((month, monthIdx) => (
-                    <div key={month} className="flex-1 flex flex-col items-center justify-end h-full gap-0.5 hover:relative hover:z-50">
-                      <div className="flex items-end gap-px h-full">
-                        {growthTrendInfo.trends.map((trend) => {
-                          const val = trend.data[monthIdx]
-                          const height = (val / growthTrendInfo.maxVal) * 100
-                          return (
-                            <div 
-                              key={trend.name} 
-                              className="w-1.5 sm:w-2 relative group"
-                              style={{ height: `${height}%` }}
-                            >
-                              {/* VISUAL BAR */}
-                              <div 
-                                className="absolute inset-0 rounded-t-sm transition-all hover:brightness-110"
-                                style={{ 
-                                  backgroundColor: ergColors[trend.name],
-                                  opacity: val > 0 ? (showTrendlines ? 0.4 : 1) : 0.1
-                                }}
-                              />
-
-                              {/* TOOLTIP (Always full opacity on hover) */}
-                              {val > 0 && (
-                                <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all duration-200 shadow-xl border border-white/10 flex items-center gap-2">
-                                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: ergColors[trend.name] }} />
-                                  <span>{trend.name}: {val.toLocaleString()}</span>
-                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
-                                </div>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                
-                {/* X-AXIS LABELS */}
-                <div className="flex justify-between mt-2 text-[10px] text-zinc-400 font-bold uppercase pl-2">
-                  {growthTrendInfo.months.map(m => <span key={m} className="flex-1 text-center">{m}</span>)}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Figure 3: Stacked Attendance */}
         <Card className="border-none shadow-sm">
           <CardHeader>
@@ -625,7 +444,7 @@ export default function ERGDashboard() {
                 </Select>
                 <div className="h-4 w-px bg-zinc-200 mx-1" />
                 <Select value={String(attendanceYear)} onValueChange={(v) => setAttendanceYear(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
+                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
                     <SelectValue placeholder="Year" />
                   </SelectTrigger>
                   <SelectContent>
@@ -651,7 +470,7 @@ export default function ERGDashboard() {
               {/* Scrollable Chart Area */}
               <div className="flex-1 overflow-x-auto overflow-y-hidden pb-20 pt-16 custom-scrollbar">
                 <div 
-                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-4"
+                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-32"
                   style={{ minWidth: `${Math.max(attendanceByType.data.length * 80, 400)}px` }}
                 >
                   {/* Grid Lines */}
@@ -746,7 +565,200 @@ export default function ERGDashboard() {
             </div>
           </CardContent>
         </Card>
+      </div>
 
+      {/* Figure 2: Growth Trends - FULL WIDTH */}
+      <Card className="border-none shadow-sm">
+        <CardHeader>
+          <div className="flex justify-between items-start">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <CardTitle className="text-lg">Membership Growth Trends</CardTitle>
+                <button 
+                  onClick={() => setShowTrendlines(!showTrendlines)}
+                  className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${showTrendlines ? 'bg-zinc-900 text-white border-zinc-900' : 'bg-white text-zinc-500 border-zinc-200'}`}
+                >
+                  {showTrendlines ? 'Line Chart: ON' : 'Line Chart: OFF'}
+                </button>
+              </div>
+              <CardDescription>Monthly enrollment progress</CardDescription>
+              <div className="flex items-center gap-2 mt-2">
+                <Select value={String(startMonth)} onValueChange={(v) => setStartMonth(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                    <SelectValue placeholder="Start" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_MONTHS.map((m, i) => (
+                      <SelectItem key={m} value={String(i)} disabled={i > endMonth}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">to</span>
+                <Select value={String(endMonth)} onValueChange={(v) => setEndMonth(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                    <SelectValue placeholder="End" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALL_MONTHS.map((m, i) => (
+                      <SelectItem key={m} value={String(i)} disabled={i < startMonth}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <div className="h-4 w-px bg-zinc-200 mx-1" />
+                <Select value={String(growthYear)} onValueChange={(v) => setGrowthYear(parseInt(v))}>
+                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[2023, 2024, 2025, 2026].map(y => (
+                      <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                <div className="ml-4 flex items-center gap-4 border-l pl-4 border-zinc-100">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Net Change</span>
+                    <span className={`text-[11px] font-black leading-none ${growthTrendInfo.netChange >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {growthTrendInfo.netChange >= 0 ? '+' : ''}{growthTrendInfo.netChange.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[9px] text-zinc-400 font-bold uppercase leading-none mb-1">Growth Rate</span>
+                    <span className={`text-[11px] font-black leading-none ${growthTrendInfo.growthRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {growthTrendInfo.growthRate >= 0 ? '+' : ''}{growthTrendInfo.growthRate.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap justify-end max-w-[400px]">
+              {growthTrendInfo.trends.map((t) => (
+                <div key={t.name} className="flex items-center gap-1 text-[10px] font-bold">
+                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: ergColors[t.name] }} />
+                  {t.name}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            {/* Y-AXIS */}
+            <div className="flex flex-col justify-between text-[10px] text-zinc-400 h-[200px] pb-0 font-bold">
+              <span>{growthTrendInfo.maxVal}</span>
+              <span>{Math.round(growthTrendInfo.maxVal * 0.75)}</span>
+              <span>{Math.round(growthTrendInfo.maxVal * 0.5)}</span>
+              <span>{Math.round(growthTrendInfo.maxVal * 0.25)}</span>
+              <span>0</span>
+            </div>
+            
+            {/* CHART AREA */}
+            <div className="flex-1">
+              <div className="h-[200px] w-full border-b border-l border-zinc-100 relative flex items-end justify-between px-2 overflow-visible">
+                {/* Grid Lines */}
+                <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
+                  {[0, 1, 2, 3, 4].map(line => (
+                    <div key={line} className="w-full border-t border-zinc-100/50" style={{ height: '0px' }} />
+                  ))}
+                </div>
+
+                {/* SVG TRENDLINES */}
+                {showTrendlines && (
+                  <svg 
+                    viewBox="0 0 100 100" 
+                    className="absolute inset-0 w-full h-full pointer-events-none overflow-visible" 
+                    preserveAspectRatio="none"
+                  >
+                    {growthTrendInfo.trends.map((trend, trendIdx) => {
+                      const points = trend.data.map((val, monthIdx) => {
+                        if (val === 0) return null
+                        
+                        // 1. Account for the padding on the sides of the chart (8px approx 1.2%)
+                        const sidePadding = 1.2 
+                        const usableWidth = 100 - (sidePadding * 2)
+                        
+                        // 2. Find the center of the month group
+                        const monthWidth = usableWidth / growthTrendInfo.months.length
+                        const groupX = sidePadding + (monthIdx * monthWidth) + (monthWidth / 2)
+                        
+                        // 3. Offset to the specific bar (8px bar + 1px gap = approx 0.85% shift)
+                        const barOffset = (trendIdx - (growthTrendInfo.trends.length - 1) / 2) * 0.85
+                        const finalX = groupX + barOffset
+                        
+                        const y = 100 - ((val / growthTrendInfo.maxVal) * 100)
+                        return `${finalX},${y}`
+                      }).filter(Boolean)
+
+                      if (points.length < 2) return null
+
+                      return (
+                        <path 
+                          key={trend.name}
+                          d={`M ${points.join(' L ')}`}
+                          fill="none"
+                          stroke={ergColors[trend.name]}
+                          strokeWidth="0.4"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className="transition-all duration-500 opacity-80"
+                        />
+                      )
+                    })}
+                  </svg>
+                )}
+
+                {/* Monthly Groups */}
+                {growthTrendInfo.months.map((month, monthIdx) => (
+                  <div key={month} className="flex-1 flex flex-col items-center justify-end h-full gap-0.5 hover:relative hover:z-50">
+                    <div className="flex items-end gap-px h-full">
+                      {growthTrendInfo.trends.map((trend) => {
+                        const val = trend.data[monthIdx]
+                        const height = (val / growthTrendInfo.maxVal) * 100
+                        return (
+                          <div 
+                            key={trend.name} 
+                            className="w-1.5 sm:w-2 relative group"
+                            style={{ height: `${height}%` }}
+                          >
+                            {/* VISUAL BAR */}
+                            <div 
+                              className="absolute inset-0 rounded-t-sm transition-all hover:brightness-110"
+                              style={{ 
+                                backgroundColor: ergColors[trend.name],
+                                opacity: val > 0 ? (showTrendlines ? 0.4 : 1) : 0.1
+                              }}
+                            />
+
+                            {/* TOOLTIP (Always full opacity on hover) */}
+                            {val > 0 && (
+                              <div className="absolute -top-14 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[11px] font-bold px-3 py-1.5 rounded-md opacity-0 group-hover:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all duration-200 shadow-xl border border-white/10 flex flex-col items-center gap-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: ergColors[trend.name] }} />
+                                  <span>{trend.name}: {val.toLocaleString()}</span>
+                                </div>
+                                <span className="text-[9px] text-zinc-400 uppercase tracking-tighter">{growthTrendInfo.months[monthIdx]} {growthYear}</span>
+                                <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              {/* X-AXIS LABELS */}
+              <div className="flex justify-between mt-2 text-[10px] text-zinc-400 font-bold uppercase pl-2">
+                {growthTrendInfo.months.map(m => <span key={m} className="flex-1 text-center">{m}</span>)}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Figure 4: Feedback Balance */}
         <Card className="border-none shadow-sm flex flex-col">
           <CardHeader>
@@ -779,7 +791,7 @@ export default function ERGDashboard() {
                     </Select>
                     <div className="h-4 w-px bg-zinc-200 mx-1" />
                     <Select value={String(feedbackYear)} onValueChange={(v) => setFeedbackYear(parseInt(v))}>
-                      <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
+                      <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
                       <SelectContent>
@@ -802,7 +814,7 @@ export default function ERGDashboard() {
             </div>
           </CardHeader>
           <CardContent className="flex-1 pb-12">
-            {/* Legend - Back at the Top */}
+            {/* Legend */}
             <div className="mb-6 flex flex-wrap gap-4 justify-center">
               <div className="flex items-center gap-1.5 text-[9px] font-bold uppercase text-zinc-500">
                 <div className="h-2 w-2 rounded-full bg-green-500" /> Positive
@@ -816,7 +828,7 @@ export default function ERGDashboard() {
             </div>
 
             <div className="flex gap-2">
-              {/* Left Y-Axis (Feedback Count) */}
+              {/* Left Y-Axis */}
               <div className="flex flex-col justify-between text-[9px] text-zinc-400 h-[260px] pb-0 font-bold w-6 border-r border-zinc-50 pr-1 mt-20">
                 <span>{feedbackEffectiveness.maxVal}</span>
                 <span>{Math.round(feedbackEffectiveness.maxVal * 0.75)}</span>
@@ -826,262 +838,245 @@ export default function ERGDashboard() {
               </div>
 
               {/* Scrollable Chart Area */}
-              <div className="flex-1 overflow-x-auto overflow-y-hidden pb-32 pt-20">
+              <div className="flex-1 overflow-x-auto overflow-y-hidden pb-32 pt-16 custom-scrollbar">
                 <div 
-                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-4"
+                  className="h-[260px] relative border-b border-zinc-100 flex items-end px-32"
                   style={{ minWidth: `${Math.max(feedbackEffectiveness.data.length * 80, 400)}px` }}
                 >
-                    {/* Grid Lines */}
                     <div className="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-20">
                       {[0, 1, 2, 3, 4].map(line => (
                         <div key={line} className="w-full border-t border-zinc-300" />
                       ))}
                     </div>
 
-                    {/* SVG Line Chart (Score Axis) */}
-                    <svg 
-                      viewBox="0 0 100 100" 
-                      className="absolute inset-y-0 left-4 right-4 w-[calc(100%-2rem)] h-[260px] pointer-events-none overflow-visible z-20" 
-                      preserveAspectRatio="none"
-                    >
-                      {(() => {
-                        const points = feedbackEffectiveness.data.map((d, i) => {
+                    <div className="flex-1 h-full relative flex items-end">
+                      <svg 
+                        viewBox="0 0 100 100" 
+                        className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-20" 
+                        preserveAspectRatio="none"
+                      >
+                        {(() => {
                           const n = feedbackEffectiveness.data.length || 1
-                          const x = (i / n) * 100 + (100 / n / 2)
-                          const y = 100 - (Math.min(Math.max(d.score, 0), 5) / 5) * 100
-                          return `${x},${y}`
-                        })
-                        
-                        return (
-                          <>
-                            {points.length >= 2 && (
+                          const points = feedbackEffectiveness.data.map((d, i) => {
+                            const x = (i / n) * 100 + (100 / n / 2)
+                            const y = 100 - (Math.min(Math.max(d.score, 0), 5) / 5) * 100
+                            return `${x},${y}`
+                          })
+                          
+                          return (
+                            points.length >= 2 && (
                               <path 
                                 d={`M ${points.join(' L ')}`}
                                 fill="none"
                                 stroke="#eab308"
-                                strokeWidth="0.6"
+                                strokeWidth="1.5"
+                                vectorEffect="non-scaling-stroke"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
-                                className="transition-all duration-500 opacity-80"
+                                className="transition-all duration-500 opacity-60"
                               />
-                            )}
-                            {points.map((p, i) => {
-                              const [x, y] = p.split(',')
-                              return (
-                                <circle 
-                                  key={i} 
-                                  cx={x} 
-                                  cy={y} 
-                                  r="1.5" 
-                                  fill="#eab308" 
-                                  stroke="white" 
-                                  strokeWidth="0.3" 
-                                  className="pointer-events-auto cursor-pointer"
-                                  onMouseEnter={() => setHoveredFeedbackIndex(i)}
-                                  onMouseLeave={() => setHoveredFeedbackIndex(null)}
-                                />
-                              )
-                            })}
-                          </>
-                        )
-                      })()}
-                    </svg>
+                            )
+                          )
+                        })()}
+                      </svg>
 
-                    {/* Clustered Bars */}
-                    <div className="flex-1 flex justify-around items-end h-full">
-                      {feedbackEffectiveness.data.map((item, i) => (
-                        <div key={`${item.title}-${i}`} className="flex flex-col items-center justify-end h-full relative flex-1 min-w-[60px]">
-                          <div className="flex items-end gap-1.5 mb-0 h-full pointer-events-none">
-                            {/* Positive Bar */}
+                      {/* Score Points (Divs to prevent oval distortion) */}
+                      <div className="absolute inset-0 pointer-events-none z-30">
+                        {feedbackEffectiveness.data.map((d, i) => {
+                          const n = feedbackEffectiveness.data.length || 1
+                          const x = (i / n) * 100 + (100 / n / 2)
+                          const y = 100 - (Math.min(Math.max(d.score, 0), 5) / 5) * 100
+                          return (
                             <div 
-                              className="w-4 bg-green-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
-                              style={{ height: `${(item.pos / feedbackEffectiveness.maxVal) * 100}%` }}
+                              key={i}
+                              className="absolute w-1.5 h-1.5 bg-yellow-500 rounded-full border border-white shadow-sm -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer"
+                              style={{ left: `${x}%`, top: `${y}%` }}
                               onMouseEnter={() => setHoveredFeedbackIndex(i)}
                               onMouseLeave={() => setHoveredFeedbackIndex(null)}
                             />
-                            {/* Negative Bar */}
+                          )
+                        })}
+                      </div>
+
+                      <div className="flex-1 flex justify-around items-end h-full">
+                        {feedbackEffectiveness.data.map((item, i) => (
+                          <div key={`${item.title}-${i}`} className="flex flex-col items-center justify-end h-full relative flex-1 min-w-[60px]">
+                            <div className="flex items-end gap-1.5 mb-0 h-full pointer-events-none">
+                              <div 
+                                className="w-4 bg-green-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
+                                style={{ height: `${(item.pos / feedbackEffectiveness.maxVal) * 100}%` }}
+                                onMouseEnter={() => setHoveredFeedbackIndex(i)}
+                                onMouseLeave={() => setHoveredFeedbackIndex(null)}
+                              />
+                              <div 
+                                className="w-4 bg-red-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
+                                style={{ height: `${(item.neg / feedbackEffectiveness.maxVal) * 100}%` }}
+                                onMouseEnter={() => setHoveredFeedbackIndex(i)}
+                              />
+                            </div>
+                            
+                            <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-px h-2 bg-zinc-300" />
+                            <div className="absolute top-[272px] left-1/2 w-0 overflow-visible">
+                              <div className="w-48 origin-top-left rotate-45 text-[9px] font-bold text-zinc-500 hover:text-zinc-900 transition-colors cursor-default leading-tight">
+                                {item.title}
+                              </div>
+                            </div>
+
                             <div 
-                              className="w-4 bg-red-500 rounded-t-sm transition-all hover:brightness-110 shadow-sm pointer-events-auto cursor-pointer" 
-                              style={{ height: `${(item.neg / feedbackEffectiveness.maxVal) * 100}%` }}
-                              onMouseEnter={() => setHoveredFeedbackIndex(i)}
-                            />
-                          </div>
-                          
-                          {/* X-Axis Tick */}
-                          <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-px h-2 bg-zinc-300" />
-
-                          {/* X-Axis Label (Rotated) */}
-                          <div className="absolute top-[272px] left-1/2 w-0 overflow-visible">
-                            <div className="w-48 origin-top-left rotate-45 text-[9px] font-bold text-zinc-500 hover:text-zinc-900 transition-colors cursor-default leading-tight">
-                              {item.title}
+                              className={`absolute top-0 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] p-2.5 rounded shadow-2xl z-[100] pointer-events-none transition-all whitespace-nowrap flex flex-col gap-1.5 border border-white/10 ${hoveredFeedbackIndex === i ? 'opacity-100 scale-100 translate-y-2' : 'opacity-0 scale-95 translate-y-0'}`}
+                            >
+                              <div className="font-bold border-b border-zinc-700 pb-1 mb-1">{item.title}</div>
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-green-500" />
+                                Positive: {item.pos}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-red-500" />
+                                Negative: {item.neg}
+                              </div>
+                              <div className="flex items-center gap-2 border-t border-zinc-700 pt-1 mt-1 font-bold text-yellow-400">
+                                <Award className="h-3.5 w-3.5" />
+                                Score: {item.score.toFixed(1)}/5
+                              </div>
+                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
                             </div>
                           </div>
-
-                          {/* Tooltip */}
-                          <div 
-                            className={`absolute top-0 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] p-2.5 rounded shadow-2xl z-[100] pointer-events-none transition-all whitespace-nowrap flex flex-col gap-1.5 border border-white/10 ${hoveredFeedbackIndex === i ? 'opacity-100 scale-100 translate-y-2' : 'opacity-0 scale-95 translate-y-0'}`}
-                          >
-                            <div className="font-bold border-b border-zinc-700 pb-1 mb-1">{item.title}</div>
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-2 rounded-full bg-green-500" />
-                              Positive: {item.pos}
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-2 rounded-full bg-red-500" />
-                              Negative: {item.neg}
-                            </div>
-                            <div className="flex items-center gap-2 border-t border-zinc-700 pt-1 mt-1 font-bold text-yellow-400">
-                              <Award className="h-3.5 w-3.5" />
-                              Score: {item.score.toFixed(1)}/5
-                            </div>
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Right Y-Axis (Evaluation Score) */}
+                {/* Right Y-Axis */}
                 <div className="flex flex-col justify-between text-[9px] text-yellow-600 h-[260px] pb-0 font-bold w-6 text-right border-l border-zinc-50 pl-1 mt-20">
                   <span>5.0</span>
                   <span>3.75</span>
                   <span>2.5</span>
                   <span>1.25</span>
                   <span>0</span>
-                  </div>
-                  </div>
-                  </CardContent>        </Card>
-      </div>
-
-      {/* Figure 5: Heatmap */}
-      <Card className="border-none shadow-sm">
-        <CardHeader>
-          <div className="flex justify-between items-start">
-            <div>
-              <CardTitle className="text-lg">Cross-BU Participation Heatmap</CardTitle>
-              <CardDescription>Member distribution across delivery units</CardDescription>
-            </div>
-            <div className="flex items-center gap-2">
-              <Select value={String(heatmapStartMonth)} onValueChange={(v) => setHeatmapStartMonth(parseInt(v))}>
-                <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
-                  <SelectValue placeholder="Start" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_MONTHS.map((m, i) => (
-                    <SelectItem key={m} value={String(i)} disabled={i > heatmapEndMonth}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <span className="text-[10px] font-black text-zinc-300">TO</span>
-              <Select value={String(heatmapEndMonth)} onValueChange={(v) => setHeatmapEndMonth(parseInt(v))}>
-                <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
-                  <SelectValue placeholder="End" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ALL_MONTHS.map((m, i) => (
-                    <SelectItem key={m} value={String(i)} disabled={i < heatmapStartMonth}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <div className="h-4 w-px bg-zinc-200 mx-1" />
-              <Select value={String(heatmapYear)} onValueChange={(v) => setHeatmapYear(parseInt(v))}>
-                <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-900 text-white border-zinc-900">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {[2023, 2024, 2025, 2026].map(y => (
-                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto border-t pt-8 pb-16 min-h-[450px] custom-scrollbar">
-            {heatmapData.rows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-zinc-400">
-                <BarChart3 className="h-10 w-10 mb-2 opacity-20" />
-                <p className="text-sm font-medium">No participation data for this period</p>
+                </div>
               </div>
-            ) : (
-              <div className="text-[11px] mx-auto flex flex-col gap-[4px] w-fit">
-                {/* Header Row */}
-                <div className="flex" style={{ gap: '4px', height: '140px' }}>
-                  <div 
-                    style={{ width: '160px', flexShrink: 0 }} 
-                    className="flex items-end p-3 font-bold text-zinc-500"
-                  >
-                    ERG / Business Unit
-                  </div>
-                  {heatmapData.columns.map(bu => (
-                    <div 
-                      key={bu} 
-                      style={{ width: '80px', flexShrink: 0 }} 
-                      className="flex items-center justify-center font-bold text-zinc-500 pb-2"
-                    >
-                      <div 
-                        style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }} 
-                        className="uppercase tracking-wider"
-                      >
-                        {bu}
+          </CardContent>
+        </Card>
+
+        {/* Figure 5: Heatmap */}
+        <Card className="border-none shadow-sm flex flex-col">
+          <CardHeader>
+            <div className="flex justify-between items-start">
+              <div>
+                <CardTitle className="text-lg">Cross-BU Participation Heatmap</CardTitle>
+                <CardDescription>Member distribution across units</CardDescription>
+                <div className="flex items-center gap-2 mt-2">
+                  <Select value={String(heatmapStartMonth)} onValueChange={(v) => setHeatmapStartMonth(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                      <SelectValue placeholder="Start" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_MONTHS.map((m, i) => (
+                        <SelectItem key={m} value={String(i)} disabled={i > heatmapEndMonth}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={String(heatmapEndMonth)} onValueChange={(v) => setHeatmapEndMonth(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                      <SelectValue placeholder="End" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ALL_MONTHS.map((m, i) => (
+                        <SelectItem key={m} value={String(i)} disabled={i < heatmapStartMonth}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="h-4 w-px bg-zinc-200 mx-1" />
+                  <Select value={String(heatmapYear)} onValueChange={(v) => setHeatmapYear(parseInt(v))}>
+                    <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                      <SelectValue placeholder="Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {[2023, 2024, 2025, 2026].map(y => (
+                        <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0 flex-1 flex flex-col overflow-hidden">
+            <div className="flex-1 overflow-x-auto overflow-y-auto border-t pt-2 pb-12 min-h-[500px] custom-scrollbar flex flex-col items-center">
+              {heatmapData.rows.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full py-20 text-zinc-400">
+                  <BarChart3 className="h-10 w-10 mb-2 opacity-20" />
+                  <p className="text-sm font-medium">No data found</p>
+                </div>
+              ) : (
+                <div className="text-[11px] flex flex-col gap-[4px] w-fit pr-12 -ml-12 -mt-4">
+                  {/* Header Row */}
+                  <div className="flex" style={{ gap: '4px', height: '150px' }}>
+                    <div style={{ width: '200px', flexShrink: 0 }} className="flex items-end justify-end p-4 pb-6 font-black text-[11px] uppercase tracking-[0.15em] text-zinc-400 border-b-2 border-zinc-100 pr-8">ERG / BU</div>
+                    {heatmapData.columns.map(bu => (
+                      <div key={bu} style={{ width: '65px', flexShrink: 0 }} className="flex items-end justify-center font-bold text-zinc-500 relative">
+                        <div 
+                          style={{ 
+                            transform: 'rotate(-45deg)', 
+                            transformOrigin: 'bottom left',
+                            marginBottom: '10px',
+                            marginLeft: '15px'
+                          }} 
+                          className="uppercase tracking-wider text-[10px] whitespace-nowrap absolute bottom-0 left-1/2"
+                        >
+                          {bu}
+                        </div>
                       </div>
+                    ))}
+                  </div>
+
+                  {/* Data Rows */}
+                  {heatmapData.rows.map((row) => (
+                    <div key={row.erg} className="flex" style={{ gap: '4px' }}>
+                      <div 
+                        style={{ width: '200px', height: '65px', flexShrink: 0 }} 
+                        className="flex items-center justify-end px-8 font-semibold text-zinc-600 dark:text-zinc-400 border-r-2 border-zinc-100 text-[12px] leading-snug text-right"
+                      >
+                        {row.erg}
+                      </div>
+                      {heatmapData.columns.map(bu => {
+                        const val = (row as any)[bu] || 0
+                        const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => (r as any)[b] || 0)))
+                        const intensity = maxPossible > 0 ? (val / maxPossible) : 0
+                        return (
+                          <div 
+                            key={bu} 
+                            className="relative group/cell font-bold transition-all duration-200"
+                            style={{ 
+                              width: '65px', 
+                              height: '65px', 
+                              flexShrink: 0,
+                              backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
+                              border: val > 0 ? 'none' : '1px solid #e4e4e7',
+                              color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc'),
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '14px'
+                            }}
+                          >
+                            <span className="w-full text-center">{val}</span>
+                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 px-3 py-2 bg-zinc-900 text-white rounded text-[10px] opacity-0 group-hover/cell:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all shadow-xl flex flex-col items-center">
+                              <span className="font-bold border-b border-white/20 mb-1 pb-1 w-full text-center">{row.erg}</span>
+                              <span>BU: {bu}</span>
+                              <span className="text-blue-400 font-black mt-1">Total: {val}</span>
+                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
                   ))}
                 </div>
-
-                {/* Data Rows */}
-                {heatmapData.rows.map((row, rowIndex) => (
-                  <div key={row.erg} className="flex" style={{ gap: '4px' }}>
-                    <div 
-                      style={{ width: '160px', height: '80px', flexShrink: 0 }} 
-                      className="flex items-center p-3 font-bold bg-white dark:bg-zinc-950 text-zinc-700 whitespace-nowrap"
-                    >
-                      {row.erg}
-                    </div>
-                    {heatmapData.columns.map(bu => {
-                      const val = (row as any)[bu] || 0
-                      const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => (r as any)[b] || 0)))
-                      const intensity = maxPossible > 0 ? (val / maxPossible) : 0
-                      
-                      return (
-                        <div 
-                          key={bu} 
-                          className="relative group/cell font-bold transition-all duration-200"
-                          style={{ 
-                            width: '80px', 
-                            height: '80px', 
-                            flexShrink: 0,
-                            backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
-                            border: val > 0 ? 'none' : '1px solid #e4e4e7',
-                            color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc'),
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center'
-                          }}
-                        >
-                          {val}
-                          
-                          {/* TOOLTIP */}
-                          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 bg-zinc-900 text-white rounded text-[10px] opacity-0 group-hover/cell:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all shadow-xl flex flex-col items-center gap-1 border border-white/10">
-                            <span className="text-zinc-400 uppercase font-black tracking-wider text-[8px] border-b border-zinc-700 pb-1 mb-1 w-full text-center">
-                              Participation Details
-                            </span>
-                            <span className="font-bold">{row.erg}</span>
-                            <span className="opacity-80">Unit: {bu}</span>
-                            <span className="text-[#3b82f6] text-xs mt-1">Total: {val}</span>
-                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
