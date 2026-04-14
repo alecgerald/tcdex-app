@@ -5,6 +5,8 @@ import * as XLSX from 'xlsx';
 import { createClient } from '@/utils/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { 
   FileUp, 
   Loader2, 
@@ -31,6 +33,8 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState<UploadSummary | null>(null);
+  const [year, setYear] = useState<string>("2026");
+  const [cohort, setCohort] = useState<string>("Q1 Cohort 1");
   
   const supabase = createClient();
 
@@ -43,6 +47,18 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
 
   const processFile = async () => {
     if (!file) return;
+
+    // Validation
+    const yearNum = parseInt(year);
+    if (isNaN(yearNum) || year.length !== 4) {
+      toast.error("Please enter a valid 4-digit year.");
+      return;
+    }
+    if (!cohort.trim()) {
+      toast.error("Please enter a cohort name.");
+      return;
+    }
+
     setUploading(true);
     setSummary(null);
 
@@ -127,8 +143,8 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
             "M3F-B1": isSet(colIndices.m3fb1),
             "M4": isSet(colIndices.m4)
           },
-          year: "2026",
-          cohort: "Q1 Cohort 1",
+          year: yearNum,
+          cohort: cohort.trim(),
           updated_at: new Date().toISOString()
         });
       }
@@ -176,11 +192,35 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
           </div>
           <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md">
             <Info className="h-3 w-3 text-[#0046ab]" />
-            <span className="text-[9px] font-black text-[#0046ab] uppercase">2026 Q1 C1</span>
+            <span className="text-[9px] font-black text-[#0046ab] uppercase">{year} {cohort}</span>
           </div>
         </div>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
+        {/* Session Details */}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black uppercase text-zinc-400">Target Year</Label>
+            <Input 
+              type="number" 
+              value={year} 
+              onChange={(e) => setYear(e.target.value)} 
+              className="h-10 text-xs font-bold"
+              placeholder="2026"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-[10px] font-black uppercase text-zinc-400">Target Cohort</Label>
+            <Input 
+              type="text" 
+              value={cohort} 
+              onChange={(e) => setCohort(e.target.value)} 
+              className="h-10 text-xs font-bold"
+              placeholder="e.g., Q1 Cohort 1"
+            />
+          </div>
+        </div>
+
         {/* Upload Area */}
         <div 
           className={cn(

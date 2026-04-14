@@ -314,67 +314,122 @@ const SelfPacedDashboard: React.FC = () => {
 
   const handleExport = () => {
     try {
-      const wb = XLSX.utils.book_new();
+      const toastId = toast.loading("Preparing full participant-course matrix...");
+      
+      // 1. Identify all unique participants and courses from the entire dataset
+      const emails = new Set<string>();
+      const courses = new Set<string>();
+      const participantInfo = new Map<string, { firstName: string, lastName: string }>();
+      
+      // Map for quick status lookup: email -> course_name -> record
+      const lookup = new Map<string, Map<string, LMSCompletion>>();
 
-      // 1. Summary Sheet
-      const summaryData = [
-        { Metric: "Total Learners", Value: processed.metrics.totalLearners },
-        { Metric: "Avg per User", Value: processed.metrics.avgPerUser },
-        { Metric: "Total Rate (%)", Value: processed.metrics.overallCompletionRate },
-        { Metric: "Participation (%)", Value: processed.metrics.participationRate },
-        { Metric: "Program Completion Rate (%)", Value: processed.metrics.programCompRate },
-        { Metric: "Drop-off Rate (%)", Value: processed.metrics.dropOffRate },
-        { Metric: "Total Completions", Value: processed.metrics.totalCompletions },
-        { Metric: "Year Filter", Value: selectedYear === "all" ? "All Time" : selectedYear }
-      ];
-      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
-      XLSX.utils.book_append_sheet(wb, wsSummary, "Summary");
+      records.forEach(r => {
+        const email = r.email.toLowerCase();
+        emails.add(email);
+        courses.add(r.course_name);
+        
+        if (!lookup.has(email)) lookup.set(email, new Map());
+        const emailMap = lookup.get(email)!;
+        
+        // Determine if this is a "completion" record according to the new mapping rules
+        const rawStatus = r.status || "";
+        const lowerStatus = rawStatus.toLowerCase();
+        const isCompleted = lowerStatus.includes('completed');
+        
+        // Store/Update record: Prefer completed records or the latest status
+        const existing = emailMap.get(r.course_name);
+        if (!existing || (!existing.status?.toLowerCase().includes('completed') && isCompleted)) {
+          emailMap.set(r.course_name, r);
+        }
 
-      // 2. Participant Progress Sheet
-      const progressData = participants.map(p => {
-        const row: any = {
-          "Name": p.name || "Anonymous",
-          "Email": p.email
-        };
-
-        let totalCompleted = 0;
-        REQUIRED_COURSE_CODES.forEach(code => {
-          const record = records.find(r => 
-            r.email.toLowerCase() === p.email.toLowerCase() && 
-            extractCourseCode(r.course_name) === code.toUpperCase()
-          );
-          const status = record?.status || "Not started";
-          row[code] = status;
-          if (status === "Completed") totalCompleted++;
-        });
-
-        row["Total Completed"] = totalCompleted;
-        row["Progress (%)"] = ((totalCompleted / 27) * 100).toFixed(1);
-        return row;
+        // Try to capture name if not already set for this participant
+        if (r.name && !participantInfo.has(email)) {
+          const nameClean = r.name.trim();
+          let firstName = "";
+          let lastName = "";
+          
+          if (nameClean.includes(',')) {
+            // Handle "Last, First" format
+            const parts = nameClean.split(',').map(p => p.trim());
+            lastName = parts[0];
+            firstName = parts[1];
+          } else {
+            // Handle "First Last" format
+            const parts = nameClean.split(' ');
+            firstName = parts[0];
+            lastName = parts.slice(1).join(' ');
+          }
+          participantInfo.set(email, { firstName, lastName });
+        }
       });
 
-      // Reorder columns to have Name, Email, Total Completed, Progress (%) first
-      const headers = ["Name", "Email", "Total Completed", "Progress (%)", ...REQUIRED_COURSE_CODES];
-      const wsProgress = XLSX.utils.json_to_sheet(progressData, { header: headers });
-      XLSX.utils.book_append_sheet(wb, wsProgress, "Participant Progress");
+      const sortedEmails = Array.from(emails).sort();
+      const sortedCourses = Array.from(courses).sort();
 
-      // 3. Course Metrics Sheet
-      const courseMetricsData = processed.allCoursesStats.map(c => ({
-        "Module Code": c.code,
-        "Module Name": c.name,
-        "Completions": c.completions,
-        "Rate (%)": c.rate.toFixed(1)
-      }));
-      const wsCourseMetrics = XLSX.utils.json_to_sheet(courseMetricsData);
-      XLSX.utils.book_append_sheet(wb, wsCourseMetrics, "Course Metrics");
+      const exportData: any[] = [];
 
-      // Save file
-      const fileName = `SelfPaced_Dashboard_Export_${selectedYear === "all" ? "AllTime" : selectedYear}_${new Date().toISOString().split('T')[0]}.xlsx`;
+      // 2. Build the matrix: For every participant, every course
+      sortedEmails.forEach(email => {
+        const info = participantInfo.get(email) || { firstName: "", lastName: "" };
+        const emailMap = lookup.get(email);
+
+        sortedCourses.forEach(courseName => {
+          const record = emailMap?.get(courseName);
+          let status = "Not started";
+          let enrolledOn = "";
+
+          if (record) {
+            const rawStatus = record.status || "Not started";
+            const lowerStatus = rawStatus.toLowerCase();
+            
+            if (lowerStatus.includes('completed')) {
+              status = "Completed";
+            } else if (rawStatus === '0%' || lowerStatus.includes('in progress')) {
+              status = "In progress";
+            } else {
+              status = rawStatus;
+            }
+            
+            enrolledOn = record.completed_at ? new Date(record.completed_at).toLocaleDateString() : "";
+          }
+
+          exportData.push({
+            "First name": info.firstName,
+            "Last name": info.lastName,
+            "Email": email,
+            "Course": courseName,
+            "Enrolled on": enrolledOn,
+            "Status": status
+          });
+        });
+      });
+
+      // 3. Generate Excel
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      
+      // Auto-width columns
+      const wscols = [
+        { wch: 15 }, // First name
+        { wch: 15 }, // Last name
+        { wch: 25 }, // Email
+        { wch: 50 }, // Course
+        { wch: 15 }, // Enrolled on
+        { wch: 15 }  // Status
+      ];
+      ws['!cols'] = wscols;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "LMS Matrix");
+
+      const fileName = `LMS_Complete_Matrix_${new Date().toISOString().split('T')[0]}.xlsx`;
       XLSX.writeFile(wb, fileName);
-      toast.success("Excel file exported successfully.");
+      
+      toast.dismiss(toastId);
+      toast.success("Complete matrix exported successfully.");
     } catch (error) {
       console.error("Export failed:", error);
-      toast.error("Failed to export Excel file.");
+      toast.error("Failed to export complete matrix.");
     }
   };
 
