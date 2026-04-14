@@ -31,6 +31,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
+const parseEventDate = (val: any) => {
+  if (!val) return new Date(NaN)
+  if (typeof val === 'number' || (!isNaN(Number(val)) && !String(val).includes('-') && !String(val).includes('/'))) {
+    const serial = Number(val)
+    // Excel dates start from Dec 30, 1899
+    return new Date((serial - 25569) * 86400 * 1000)
+  }
+  return new Date(val)
+}
+
 export default function ERGDashboard() {
   const [membershipData, setMembershipData] = useState<any[]>([])
   const [snapshots, setSnapshots] = useState<any[]>([])
@@ -41,6 +51,7 @@ export default function ERGDashboard() {
   
   // Filter States
   const [selectedERG, setSelectedERG] = useState("All")
+  const [chartSelectedERG, setChartSelectedERG] = useState("All")
   const [selectedBU, setSelectedBU] = useState("All")
   const [showTrendlines, setShowTrendlines] = useState(true)
 
@@ -67,6 +78,137 @@ export default function ERGDashboard() {
   const [heatmapStartMonth, setHeatmapStartMonth] = useState(0)
   const [heatmapEndMonth, setHeatmapEndMonth] = useState(11)
   const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
+
+  // Available Month Detectors
+  const growthAvailableMonths = useMemo(() => {
+    const relevantSnapshots = snapshots.filter(s => {
+      const matchYear = s.Year === undefined || Number(s.Year) === growthYear || String(s.Year).includes(String(growthYear))
+      return matchYear
+    })
+    const allMonthKeys = ["Jan Members", "Feb Members", "Mar Members", "Apr Members", "May Members", "Jun Members", "Jul Members", "Aug Members", "Sep Members", "Oct Members", "Nov Members", "Dec Members"]
+    const indices = new Set<number>()
+    relevantSnapshots.forEach(s => {
+      allMonthKeys.forEach((key, i) => {
+        if (Number(s[key]) > 0) indices.add(i)
+      })
+    })
+    return indices
+  }, [snapshots, growthYear])
+
+  const attendanceAvailableMonths = useMemo(() => {
+    const indices = new Set<number>()
+    eventLogs.forEach(e => {
+      const date = parseEventDate(e["Event Date"])
+      if (!isNaN(date.getTime()) && date.getFullYear() === attendanceYear) {
+        indices.add(date.getMonth())
+      }
+    })
+    return indices
+  }, [eventLogs, attendanceYear])
+
+  const feedbackAvailableMonths = useMemo(() => {
+    const indices = new Set<number>()
+    feedback.forEach(f => {
+      const dateStr = f.uploadDate
+      if (dateStr) {
+        const date = new Date(dateStr)
+        if (!isNaN(date.getTime()) && date.getFullYear() === feedbackYear) {
+          indices.add(date.getMonth())
+        }
+      }
+    })
+    return indices
+  }, [feedback, feedbackYear])
+
+  const heatmapAvailableMonths = useMemo(() => {
+    const indices = new Set<number>()
+    participation.forEach(p => {
+      const dateStr = p.uploadDate
+      if (dateStr) {
+        const date = new Date(dateStr)
+        if (!isNaN(date.getTime()) && date.getFullYear() === heatmapYear) {
+          indices.add(date.getMonth())
+        }
+      }
+    })
+    return indices
+  }, [participation, heatmapYear])
+
+  // Available Year Detectors
+  const growthAvailableYears = useMemo(() => {
+    const years = new Set<number>()
+    snapshots.forEach(s => {
+      const y = Number(s.Year)
+      if (!isNaN(y)) years.add(y)
+    })
+    return years.size > 0 ? Array.from(years).sort((a, b) => a - b) : [new Date().getFullYear()]
+  }, [snapshots])
+
+  const attendanceAvailableYears = useMemo(() => {
+    const years = new Set<number>()
+    eventLogs.forEach(e => {
+      const date = parseEventDate(e["Event Date"])
+      if (!isNaN(date.getTime())) years.add(date.getFullYear())
+    })
+    return years.size > 0 ? Array.from(years).sort((a, b) => a - b) : [new Date().getFullYear()]
+  }, [eventLogs])
+
+  const feedbackAvailableYears = useMemo(() => {
+    const years = new Set<number>()
+    feedback.forEach(f => {
+      const dateStr = f.uploadDate
+      if (dateStr) {
+        const date = new Date(dateStr)
+        if (!isNaN(date.getTime())) years.add(date.getFullYear())
+      }
+    })
+    return years.size > 0 ? Array.from(years).sort((a, b) => a - b) : [new Date().getFullYear()]
+  }, [feedback])
+
+  const heatmapAvailableYears = useMemo(() => {
+    const years = new Set<number>()
+    participation.forEach(p => {
+      const dateStr = p.uploadDate
+      if (dateStr) {
+        const date = new Date(dateStr)
+        if (!isNaN(date.getTime())) years.add(date.getFullYear())
+      }
+    })
+    return years.size > 0 ? Array.from(years).sort((a, b) => a - b) : [new Date().getFullYear()]
+  }, [participation])
+
+  const kpiAvailableYears = useMemo(() => {
+    const years = new Set<number>([
+      ...growthAvailableYears,
+      ...attendanceAvailableYears,
+      ...feedbackAvailableYears,
+      ...heatmapAvailableYears
+    ])
+    return Array.from(years).sort((a, b) => a - b)
+  }, [growthAvailableYears, attendanceAvailableYears, feedbackAvailableYears, heatmapAvailableYears])
+
+  // Auto-adjust selections when year changes or data is loaded
+  useEffect(() => {
+    if (!kpiAvailableYears.includes(kpiYear)) setKpiYear(kpiAvailableYears[kpiAvailableYears.length - 1])
+  }, [kpiAvailableYears])
+
+  useEffect(() => {
+    if (!growthAvailableYears.includes(growthYear)) setGrowthYear(growthAvailableYears[growthAvailableYears.length - 1])
+  }, [growthAvailableYears])
+
+  useEffect(() => {
+    if (!attendanceAvailableYears.includes(attendanceYear)) setAttendanceYear(attendanceAvailableYears[attendanceAvailableYears.length - 1])
+  }, [attendanceAvailableYears])
+
+  useEffect(() => {
+    if (!feedbackAvailableYears.includes(feedbackYear)) setFeedbackYear(feedbackAvailableYears[feedbackAvailableYears.length - 1])
+  }, [feedbackAvailableYears])
+
+  useEffect(() => {
+    if (!heatmapAvailableYears.includes(heatmapYear)) setHeatmapYear(heatmapAvailableYears[heatmapAvailableYears.length - 1])
+  }, [heatmapAvailableYears])
+
+  // Auto-adjust selections when months are filtered
 
   useEffect(() => {
     setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
@@ -124,7 +266,7 @@ export default function ERGDashboard() {
   // Figure 2: Monthly Growth Trends (Dynamic Scale Line Chart)
   const growthTrendInfo = useMemo(() => {
     const relevantSnapshots = snapshots.filter(s => {
-      const matchERG = selectedERG === "All" || s.ERG === selectedERG
+      const matchERG = chartSelectedERG === "All" ? (selectedERG === "All" || s.ERG === selectedERG) : s.ERG === chartSelectedERG
       const matchYear = s.Year === undefined || Number(s.Year) === growthYear || String(s.Year).includes(String(growthYear))
       return matchERG && matchYear
     })
@@ -167,21 +309,11 @@ export default function ERGDashboard() {
     const growthRate = totalStartVal > 0 ? (netChange / totalStartVal) * 100 : 0
 
     return { trends, maxVal, months: displayMonths, netChange, growthRate }
-  }, [snapshots, selectedERG, startMonth, endMonth, growthYear])
+  }, [snapshots, selectedERG, chartSelectedERG, startMonth, endMonth, growthYear])
 
 
   // Figure 3: Attendance by Activity Type (Stacked Column)
   const attendanceByType = useMemo(() => {
-    const parseEventDate = (val: any) => {
-      if (!val) return new Date(NaN)
-      if (typeof val === 'number' || (!isNaN(Number(val)) && !String(val).includes('-') && !String(val).includes('/'))) {
-        const serial = Number(val)
-        // Excel dates start from Dec 30, 1899
-        return new Date((serial - 25569) * 86400 * 1000)
-      }
-      return new Date(val)
-    }
-
     const relevantEvents = eventLogs.filter(e => {
       const matchERG = selectedERG === "All" || e.ERG === selectedERG
       
@@ -290,26 +422,71 @@ export default function ERGDashboard() {
     return { rows, columns: busInData }
   }, [participation, selectedERG, heatmapStartMonth, heatmapEndMonth, heatmapYear])
 
+  // KPI Section Year Filter
+  const [kpiYear, setKpiYear] = useState(new Date().getFullYear())
+
   const kpis = useMemo(() => {
+    // 1. Active Members (Authoritative / Live)
     const active = filteredMembership.filter(m => m.Status === "Active").length
-    const growth = snapshots.filter(s => selectedERG === "All" || s.ERG === selectedERG)
-      .reduce((acc, curr) => acc + (parseFloat(curr["Growth Rate %"]) || 0), 0) / (snapshots.length || 1)
     
-    const events = eventLogs.filter(e => selectedERG === "All" || e.ERG === selectedERG)
+    // 2. Avg Growth Rate (Filtered by kpiYear)
+    const relevantSnapshots = snapshots.filter(s => {
+      const matchERG = selectedERG === "All" || s.ERG === selectedERG
+      const matchYear = s.Year === undefined || Number(s.Year) === kpiYear || String(s.Year).includes(String(kpiYear))
+      return matchERG && matchYear
+    })
+
+    const allMonthKeys = [
+      "Jan Members", "Feb Members", "Mar Members", "Apr Members", 
+      "May Members", "Jun Members", "Jul Members", "Aug Members", 
+      "Sep Members", "Oct Members", "Nov Members", "Dec Members"
+    ]
+
+    let totalStartVal = 0
+    let totalEndVal = 0
+    relevantSnapshots.forEach(s => {
+      // Find first non-zero month and last non-zero month for the year
+      let firstVal = 0
+      let lastVal = 0
+      for (const m of allMonthKeys) {
+        if (Number(s[m]) > 0) {
+          if (firstVal === 0) firstVal = Number(s[m])
+          lastVal = Number(s[m])
+        }
+      }
+      totalStartVal += firstVal
+      totalEndVal += lastVal
+    })
+    const growth = totalStartVal > 0 ? ((totalEndVal - totalStartVal) / totalStartVal) * 100 : 0
+    const netChange = totalEndVal - totalStartVal
+
+    // 3. Total Attendance (Filtered by kpiYear)
+    const events = eventLogs.filter(e => {
+      const date = parseEventDate(e["Event Date"])
+      return !isNaN(date.getTime()) && date.getFullYear() === kpiYear
+    })
     const attendance = events.reduce((acc, curr) => acc + (Number(curr["Attendance / Participation Count"]) || 0), 0)
     
-    const filteredFeedback = feedback.filter(f => selectedERG === "All" || f.ERG === selectedERG)
+    // 4. Evaluation Score (Filtered by kpiYear)
+    const filteredFeedback = feedback.filter(f => {
+      const matchERG = selectedERG === "All" || f.ERG === selectedERG
+      const dateStr = f.uploadDate
+      if (!dateStr) return matchERG
+      const date = new Date(dateStr)
+      return !isNaN(date.getTime()) && date.getFullYear() === kpiYear
+    })
     const avgScore = (filteredFeedback.length > 0)
       ? filteredFeedback.reduce((acc, curr) => acc + (Number(curr["Overall Evaluation Score"]) || 0), 0) / filteredFeedback.length
       : 0
 
     return [
-      { title: "Active Members", value: active.toLocaleString(), icon: Users, description: "Total in directory" },
-      { title: "Avg Growth Rate", value: `${growth.toFixed(1)}%`, icon: TrendingUp, description: "Month-over-month" },
-      { title: "Total Attendance", value: attendance.toLocaleString(), icon: Activity, description: "Across all events" },
-      { title: "Evaluation Score", value: `${avgScore.toFixed(1)}/5.0`, icon: Award, description: "Event quality avg" }
+      { title: "Active Members", value: active.toLocaleString(), icon: Users, description: "Current Registry", isLive: true },
+      { title: "Net Change", value: `${netChange >= 0 ? '+' : ''}${netChange.toLocaleString()}`, icon: TrendingUp, description: `Net Growth (${kpiYear})` },
+      { title: "Avg Growth Rate", value: `${growth.toFixed(1)}%`, icon: TrendingUp, description: `Annual Growth (${kpiYear})` },
+      { title: "Total Attendance", value: attendance.toLocaleString(), icon: Activity, description: `Total reached in ${kpiYear}` },
+      { title: "Evaluation Score", value: `${avgScore.toFixed(1)}/5.0`, icon: Award, description: `Quality avg (${kpiYear})` }
     ]
-  }, [filteredMembership, snapshots, eventLogs, feedback, selectedERG])
+  }, [filteredMembership, snapshots, eventLogs, feedback, selectedERG, kpiYear])
 
   if (membershipData.length === 0) {
     return (
@@ -356,22 +533,49 @@ export default function ERGDashboard() {
         </div>
         <div className="flex gap-4 no-print">
           <Select value={selectedERG} onValueChange={setSelectedERG}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All ERGs" /></SelectTrigger>
+            <SelectTrigger className="w-[180px] print-keep"><SelectValue placeholder="All ERGs" /></SelectTrigger>
             <SelectContent>{ergs.map(e => <SelectItem key={e} value={e}>{e}</SelectItem>)}</SelectContent>
           </Select>
           <Select value={selectedBU} onValueChange={setSelectedBU}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="All Business Units" /></SelectTrigger>
+            <SelectTrigger className="w-[180px] print-keep"><SelectValue placeholder="All Business Units" /></SelectTrigger>
             <SelectContent>{bus.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant="outline" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> PDF</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Target className="h-5 w-5 text-zinc-400" />
+          <h2 className="text-lg font-bold">Key Performance Indicators</h2>
+        </div>
+        <div className="flex items-center gap-3 bg-zinc-100 p-1 rounded-lg dark:bg-zinc-800">
+          <span className="text-[10px] font-black uppercase text-zinc-400 px-2">Filter Metrics By Year</span>
+          <Select value={String(kpiYear)} onValueChange={(v) => setKpiYear(parseInt(v))}>
+            <SelectTrigger className="h-8 w-[100px] text-[11px] font-bold bg-white dark:bg-zinc-900 border-none shadow-sm print-keep">
+              <SelectValue placeholder="Year" />
+            </SelectTrigger>
+            <SelectContent>
+              {kpiAvailableYears.map(y => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         {kpis.map(kpi => (
-          <Card key={kpi.title} className="border-none shadow-sm">
+          <Card key={kpi.title} className="border-none shadow-sm relative overflow-hidden group">
+            {(kpi as any).isLive && (
+              <div className="absolute top-0 right-0 p-2">
+                <Badge className="bg-green-500/10 text-green-600 text-[8px] border-none uppercase tracking-tighter">Live</Badge>
+              </div>
+            )}
             <CardContent className="p-6">
-              <div className="p-2 bg-[#0046ab]/10 rounded-lg w-fit mb-4"><kpi.icon className="h-5 w-5 text-[#0046ab]" /></div>
+              <div className="p-2 bg-[#0046ab]/10 rounded-lg w-fit mb-4 group-hover:bg-[#0046ab] transition-colors">
+                <kpi.icon className="h-5 w-5 text-[#0046ab] group-hover:text-white" />
+              </div>
               <h3 className="text-sm font-medium text-zinc-500">{kpi.title}</h3>
               <p className="text-2xl font-bold">{kpi.value}</p>
               <p className="text-xs text-zinc-400 mt-1">{kpi.description}</p>
@@ -422,33 +626,45 @@ export default function ERGDashboard() {
               </div>
               <div className="flex items-center gap-2">
                 <Select value={String(attendanceStartMonth)} onValueChange={(v) => setAttendanceStartMonth(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                     <SelectValue placeholder="Start" />
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_MONTHS.map((m, i) => (
-                      <SelectItem key={m} value={String(i)} disabled={i > attendanceEndMonth}>{m}</SelectItem>
+                      <SelectItem 
+                        key={m} 
+                        value={String(i)} 
+                        disabled={i > attendanceEndMonth || (attendanceAvailableMonths.size > 0 && !attendanceAvailableMonths.has(i))}
+                      >
+                        {m}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <span className="text-[10px] font-black text-zinc-300">TO</span>
                 <Select value={String(attendanceEndMonth)} onValueChange={(v) => setAttendanceEndMonth(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                  <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                     <SelectValue placeholder="End" />
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_MONTHS.map((m, i) => (
-                      <SelectItem key={m} value={String(i)} disabled={i < attendanceStartMonth}>{m}</SelectItem>
+                      <SelectItem 
+                        key={m} 
+                        value={String(i)} 
+                        disabled={i < attendanceStartMonth || (attendanceAvailableMonths.size > 0 && !attendanceAvailableMonths.has(i))}
+                      >
+                        {m}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <div className="h-4 w-px bg-zinc-200 mx-1" />
                 <Select value={String(attendanceYear)} onValueChange={(v) => setAttendanceYear(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900 print-keep">
                     <SelectValue placeholder="Year" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2023, 2024, 2025, 2026].map(y => (
+                    {attendanceAvailableYears.map(y => (
                       <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                     ))}
                   </SelectContent>
@@ -583,34 +799,55 @@ export default function ERGDashboard() {
               </div>
               <CardDescription>Monthly enrollment progress</CardDescription>
               <div className="flex items-center gap-2 mt-2">
+                <Select value={chartSelectedERG} onValueChange={setChartSelectedERG}>
+                  <SelectTrigger className="h-8 w-[140px] text-[11px] font-bold bg-blue-50 text-blue-700 border-blue-100 print-keep">
+                    <SelectValue placeholder="All ERGs" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ergs.map(e => <SelectItem key={e} value={e}>{e === "All" ? "All ERGs" : e}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <div className="h-4 w-px bg-zinc-200 mx-1" />
                 <Select value={String(startMonth)} onValueChange={(v) => setStartMonth(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100 print-keep">
                     <SelectValue placeholder="Start" />
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_MONTHS.map((m, i) => (
-                      <SelectItem key={m} value={String(i)} disabled={i > endMonth}>{m}</SelectItem>
+                      <SelectItem 
+                        key={m} 
+                        value={String(i)} 
+                        disabled={i > endMonth || (growthAvailableMonths.size > 0 && !growthAvailableMonths.has(i))}
+                      >
+                        {m}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <span className="text-[10px] font-black text-zinc-300 uppercase tracking-widest">to</span>
                 <Select value={String(endMonth)} onValueChange={(v) => setEndMonth(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100">
+                  <SelectTrigger className="h-8 w-[100px] text-[11px] font-semibold bg-zinc-50/50 border-zinc-100 print-keep">
                     <SelectValue placeholder="End" />
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_MONTHS.map((m, i) => (
-                      <SelectItem key={m} value={String(i)} disabled={i < startMonth}>{m}</SelectItem>
+                      <SelectItem 
+                        key={m} 
+                        value={String(i)} 
+                        disabled={i < startMonth || (growthAvailableMonths.size > 0 && !growthAvailableMonths.has(i))}
+                      >
+                        {m}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
                 <div className="h-4 w-px bg-zinc-200 mx-1" />
                 <Select value={String(growthYear)} onValueChange={(v) => setGrowthYear(parseInt(v))}>
-                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                  <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900 print-keep">
                     <SelectValue placeholder="Year" />
                   </SelectTrigger>
                   <SelectContent>
-                    {[2023, 2024, 2025, 2026].map(y => (
+                    {growthAvailableYears.map(y => (
                       <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                     ))}
                   </SelectContent>
@@ -769,40 +1006,52 @@ export default function ERGDashboard() {
                 <div className="flex flex-col gap-2 mt-2">
                   <div className="flex items-center gap-2">
                     <Select value={String(feedbackStartMonth)} onValueChange={(v) => setFeedbackStartMonth(parseInt(v))}>
-                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                         <SelectValue placeholder="Start" />
                       </SelectTrigger>
                       <SelectContent>
                         {ALL_MONTHS.map((m, i) => (
-                          <SelectItem key={m} value={String(i)} disabled={i > feedbackEndMonth}>{m}</SelectItem>
+                          <SelectItem 
+                            key={m} 
+                            value={String(i)} 
+                            disabled={i > feedbackEndMonth || (feedbackAvailableMonths.size > 0 && !feedbackAvailableMonths.has(i))}
+                          >
+                            {m}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <span className="text-[10px] font-black text-zinc-300">TO</span>
                     <Select value={String(feedbackEndMonth)} onValueChange={(v) => setFeedbackEndMonth(parseInt(v))}>
-                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                      <SelectTrigger className="h-8 w-[90px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                         <SelectValue placeholder="End" />
                       </SelectTrigger>
                       <SelectContent>
                         {ALL_MONTHS.map((m, i) => (
-                          <SelectItem key={m} value={String(i)} disabled={i < feedbackStartMonth}>{m}</SelectItem>
+                          <SelectItem 
+                            key={m} 
+                            value={String(i)} 
+                            disabled={i < feedbackStartMonth || (feedbackAvailableMonths.size > 0 && !feedbackAvailableMonths.has(i))}
+                          >
+                            {m}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                     <div className="h-4 w-px bg-zinc-200 mx-1" />
                     <Select value={String(feedbackYear)} onValueChange={(v) => setFeedbackYear(parseInt(v))}>
-                      <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                      <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900 print-keep">
                         <SelectValue placeholder="Year" />
                       </SelectTrigger>
                       <SelectContent>
-                        {[2023, 2024, 2025, 2026].map(y => (
+                        {feedbackAvailableYears.map(y => (
                           <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
                   <Select value={selectedDEIB} onValueChange={setSelectedDEIB}>
-                    <SelectTrigger className="h-8 w-full text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                    <SelectTrigger className="h-8 w-full text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                       <SelectValue placeholder="Filter by DEIB Event" />
                     </SelectTrigger>
                     <SelectContent>
@@ -968,32 +1217,44 @@ export default function ERGDashboard() {
                 <CardDescription>Member distribution across units</CardDescription>
                 <div className="flex items-center gap-2 mt-2">
                   <Select value={String(heatmapStartMonth)} onValueChange={(v) => setHeatmapStartMonth(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                       <SelectValue placeholder="Start" />
                     </SelectTrigger>
                     <SelectContent>
                       {ALL_MONTHS.map((m, i) => (
-                        <SelectItem key={m} value={String(i)} disabled={i > heatmapEndMonth}>{m}</SelectItem>
+                        <SelectItem 
+                          key={m} 
+                          value={String(i)} 
+                          disabled={i > heatmapEndMonth || (heatmapAvailableMonths.size > 0 && !heatmapAvailableMonths.has(i))}
+                        >
+                          {m}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <Select value={String(heatmapEndMonth)} onValueChange={(v) => setHeatmapEndMonth(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100">
+                    <SelectTrigger className="h-8 w-[80px] text-[10px] font-bold bg-zinc-50/50 border-zinc-100 print-keep">
                       <SelectValue placeholder="End" />
                     </SelectTrigger>
                     <SelectContent>
                       {ALL_MONTHS.map((m, i) => (
-                        <SelectItem key={m} value={String(i)} disabled={i < heatmapStartMonth}>{m}</SelectItem>
+                        <SelectItem 
+                          key={m} 
+                          value={String(i)} 
+                          disabled={i < heatmapStartMonth || (heatmapAvailableMonths.size > 0 && !heatmapAvailableMonths.has(i))}
+                        >
+                          {m}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                   <div className="h-4 w-px bg-zinc-200 mx-1" />
                   <Select value={String(heatmapYear)} onValueChange={(v) => setHeatmapYear(parseInt(v))}>
-                    <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900">
+                    <SelectTrigger className="h-8 w-[80px] text-[11px] font-bold bg-zinc-900 text-white border-zinc-900 print-keep">
                       <SelectValue placeholder="Year" />
                     </SelectTrigger>
                     <SelectContent>
-                      {[2023, 2024, 2025, 2026].map(y => (
+                      {heatmapAvailableYears.map(y => (
                         <SelectItem key={y} value={String(y)}>{y}</SelectItem>
                       ))}
                     </SelectContent>

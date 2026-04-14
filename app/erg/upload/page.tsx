@@ -15,7 +15,8 @@ import {
   ChevronRight,
   Info,
   Layers,
-  Download
+  Download,
+  Clock
 } from "lucide-react"
 import { toast } from "sonner"
 import { read, utils } from "xlsx"
@@ -85,7 +86,17 @@ export default function ERGUploadPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   
+  // Test mode states
+  const [isTestMode, setIsTestMode] = useState(false)
+  const [customUploadDate, setCustomUploadDate] = useState("")
+  
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const getLocalDatetimeString = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  };
 
   const detectTemplateType = (headers: string[]): TemplateType | null => {
     for (const [key, config] of Object.entries(templateConfigs)) {
@@ -116,7 +127,7 @@ export default function ERGUploadPage() {
     return errors
   }
 
-  const standardizeData = (data: any[], type: TemplateType) => {
+  const standardizeData = (data: any[], type: TemplateType, uploadDate?: string) => {
     return data.map(row => {
       const newRow = { ...row }
       
@@ -165,7 +176,7 @@ export default function ERGUploadPage() {
         newRow["Event Date"] = convertExcelDate(newRow["Event Date"])
       }
       if (type === 'membership_snapshot') {
-        newRow.Year = new Date().getFullYear()
+        newRow.Year = uploadDate ? new Date(uploadDate).getFullYear() : new Date().getFullYear()
       }
       if (type === 'membership_registry' || type === 'participation_detail') {
         const buKey = "Delivery Unit / Business Unit"
@@ -231,7 +242,11 @@ export default function ERGUploadPage() {
           return
         }
 
-        const standardized = standardizeData(jsonData, detectedType)
+        const standardized = standardizeData(
+          jsonData, 
+          detectedType, 
+          isTestMode ? customUploadDate : undefined
+        )
         const processed = standardized.map((row, index) => ({
           ...row,
           id: `erg-${detectedType}-${index}-${Date.now()}`
@@ -256,7 +271,13 @@ export default function ERGUploadPage() {
     setIsLoading(true)
     
     const logId = `log-${Date.now()}`
-    const uploadTime = new Date().toISOString()
+    
+    // Use custom date if in test mode, otherwise use current time
+    let uploadTime = new Date().toISOString()
+    if (isTestMode && customUploadDate) {
+      uploadTime = new Date(customUploadDate).toISOString()
+    }
+    
     const existingLogs = JSON.parse(localStorage.getItem("erg_audit_logs") || "[]")
     
     const newLog = { 
@@ -344,6 +365,8 @@ export default function ERGUploadPage() {
     setStep('upload')
     setProcessedData([])
     setTemplateType(null)
+    setIsTestMode(false)
+    setCustomUploadDate("")
     if (fileInputRef.current) fileInputRef.current.value = ""
     setIsLoading(false)
   }
@@ -424,7 +447,7 @@ export default function ERGUploadPage() {
             </CardContent>
           </Card>
 
-          <Card className="lg:col-span-2 border-dashed border-2 bg-transparent flex flex-col items-center justify-center py-24 text-center">
+          <Card className="lg:col-span-2 border-dashed border-2 bg-transparent flex flex-col items-center justify-center py-24 text-center relative">
             <div className="h-20 w-20 rounded-full bg-zinc-100 flex items-center justify-center mb-6 dark:bg-zinc-800">
               <FileSpreadsheet className="h-10 w-10 text-zinc-400" />
             </div>
@@ -432,9 +455,26 @@ export default function ERGUploadPage() {
             <p className="text-zinc-500 max-w-sm mb-8 px-4">Simply upload any of the 5 ERG templates. The system will identify and validate the data automatically.</p>
             
             <input type="file" accept=".xlsx, .xls, .csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
-            <Button className="bg-[#0046ab] hover:bg-[#003a8f] text-white px-10 py-6 h-auto text-lg rounded-xl" onClick={() => fileInputRef.current?.click()} disabled={isLoading}>
+            <Button className="bg-[#0046ab] hover:bg-[#003a8f] text-white px-10 py-6 h-auto text-lg rounded-xl" onClick={() => {
+              setIsTestMode(false)
+              fileInputRef.current?.click()
+            }} disabled={isLoading}>
               {isLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <FileUp className="h-5 w-5 mr-2" />}
               Upload Excel or CSV
+            </Button>
+
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="absolute bottom-4 right-4 text-[10px] text-zinc-400 hover:text-amber-600 hover:bg-amber-50"
+              onClick={() => {
+                setIsTestMode(true)
+                setCustomUploadDate(getLocalDatetimeString())
+                fileInputRef.current?.click()
+              }}
+            >
+              <Clock className="h-3 w-3 mr-1" />
+              Test: Backdate Upload
             </Button>
           </Card>
         </div>
@@ -456,6 +496,26 @@ export default function ERGUploadPage() {
               </div>
             </div>
           </CardHeader>
+          
+          {isTestMode && (
+            <div className="flex items-center gap-3 p-3 bg-amber-50 border-b border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50">
+              <div className="bg-amber-100 p-2 rounded-full dark:bg-amber-900/50">
+                <Clock className="h-4 w-4 text-amber-600" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase">Test Mode: Manual Upload Date</p>
+                <p className="text-[10px] text-amber-600 dark:text-amber-400">Specify the date and time this file should be recorded as uploaded.</p>
+              </div>
+              <Input 
+                type="datetime-local" 
+                className="w-auto h-9 text-xs border-amber-200 focus:ring-amber-500" 
+                value={customUploadDate} 
+                max={getLocalDatetimeString()}
+                onChange={(e) => setCustomUploadDate(e.target.value)}
+              />
+            </div>
+          )}
+
           <CardContent className="p-0">
             <ScrollArea className="h-[450px]">
               <Table>
