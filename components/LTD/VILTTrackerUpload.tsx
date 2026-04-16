@@ -5,8 +5,6 @@ import * as XLSX from 'xlsx';
 import { createClient } from '@/utils/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { 
   FileUp, 
   Loader2, 
@@ -23,6 +21,9 @@ interface UploadSummary {
   processed: number;
   inserted: number;
   skipped: number;
+  year: string;
+  cohort: string;
+  skippedDetails: string[];
 }
 
 interface VILTTrackerUploadProps {
@@ -33,8 +34,6 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [summary, setSummary] = useState<UploadSummary | null>(null);
-  const [year, setYear] = useState<string>("2026");
-  const [cohort, setCohort] = useState<string>("Q1 Cohort 1");
   
   const supabase = createClient();
 
@@ -48,17 +47,6 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
   const processFile = async () => {
     if (!file) return;
 
-    // Validation
-    const yearNum = parseInt(year);
-    if (isNaN(yearNum) || year.length !== 4) {
-      toast.error("Please enter a valid 4-digit year.");
-      return;
-    }
-    if (!cohort.trim()) {
-      toast.error("Please enter a cohort name.");
-      return;
-    }
-
     setUploading(true);
     setSummary(null);
 
@@ -66,113 +54,144 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      
-      // Get data as array of arrays to manually find headers
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
       
-      // 1. Find Header Row
-      let headerRowIndex = -1;
-      let colIndices = { 
-        email: -1, name: -1, dept: -1, remarks: -1,
-        m1: -1, m2a: -1, m2b: -1, m3e: -1, m3fb1: -1, m4: -1
-      };
+      console.log("VILT DEBUG: Analyzing top 10 rows...", rows.slice(0, 10));
 
-      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+      // 1. Dynamic Header Mapping
+      let headerRowIndex = -1;
+      let colMap: Record<string, number> = {};
+      const essential = ['email', 'name'];
+
+      for (let i = 0; i < Math.min(rows.length, 25); i++) {
         const row = rows[i];
         if (!row) continue;
         
-        const rowStr = row.map(c => String(c).toLowerCase().trim());
-        const emailIdx = rowStr.findIndex(c => c === 'email');
-        const nameIdx = rowStr.findIndex(c => c === 'name');
-
-        if (emailIdx !== -1 && nameIdx !== -1) {
-          headerRowIndex = i;
-          colIndices.email = emailIdx;
-          colIndices.name = nameIdx;
-          colIndices.dept = rowStr.findIndex(c => c.includes('department') || c.includes('delivery unit'));
-          colIndices.remarks = rowStr.findIndex(c => c === 'remarks');
+        const rowLower = row.map(c => String(c || "").toLowerCase().trim());
+        const tempMap: Record<string, number> = {};
+        
+        rowLower.forEach((val, idx) => {
+          if (val === 'email') tempMap.email = idx;
+          if (val === 'name' || val.includes('name (first, last name only)')) tempMap.name = idx;
+          if (val === 'cohort') tempMap.cohort = idx;
+          if (val === 'year') tempMap.year = idx;
+          if (val === 'remarks') tempMap.remarks = idx;
+          if (val.includes('delivery unit') || val.includes('department')) tempMap.department = idx;
           
-          // Module detection
-          colIndices.m1 = rowStr.findIndex(c => c === 'm1');
-          colIndices.m2a = rowStr.findIndex(c => c === 'm2a');
-          colIndices.m2b = rowStr.findIndex(c => c === 'm2b');
-          colIndices.m3e = rowStr.findIndex(c => c === 'm3e');
-          colIndices.m3fb1 = rowStr.findIndex(c => c === 'm3f-b1');
-          colIndices.m4 = rowStr.findIndex(c => c === 'm4');
+          ['m1', 'm2a', 'm2b', 'm3e', 'm3f-b1', 'm4'].forEach(m => {
+            if (val === m) tempMap[m] = idx;
+          });
+        });
+
+        if (tempMap.email !== undefined && tempMap.name !== undefined) {
+          headerRowIndex = i;
+          colMap = tempMap;
           break;
         }
       }
 
+      console.log("VILT DEBUG: Column Map Detected:", colMap);
+
       if (headerRowIndex === -1) {
-        throw new Error("Could not find required headers (Email, Name).");
+        throw new Error(`Critical Error: Headers 'Email' and 'Name' not found. Headers detected: [${rows[0]?.join(', ')}]`);
       }
 
-      // 2. Extract Data Rows
+      // Check for year/cohort columns
+      if (colMap.year === undefined || colMap.cohort === undefined) {
+        throw new Error(`Configuration Error: Missing 'Year' or 'Cohort' columns. Found headers: [${rows[headerRowIndex]?.join(', ')}]`);
+      }
+
+      // 2. Process Data Rows
       const dataRows = rows.slice(headerRowIndex + 1);
       const finalRecords: any[] = [];
-      let skipped = 0;
+      const skippedDetails: string[] = [];
+      let totalSkipped = 0;
+      let detectedYear = "";
+      let detectedCohort = "";
 
-      for (const row of dataRows) {
-        const email = String(row[colIndices.email] || "").trim().toLowerCase();
-        const name = String(row[colIndices.name] || "").trim();
-        
-        if (String(row[0]).toUpperCase().startsWith('SUMMARY') || (!email && !name)) {
-          if (finalRecords.length > 0) break; 
-          skipped++;
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        if (!row || row.length === 0) continue;
+
+        // Break on summary or empty start
+        const firstValue = String(row[0] || "");
+        if (firstValue.toUpperCase().startsWith('SUMMARY')) break;
+
+        const email = String(row[colMap.email] || "").trim().toLowerCase();
+        const name = String(row[colMap.name] || "").trim();
+        const year = String(row[colMap.year] || "").trim();
+        const cohort = String(row[colMap.cohort] || "").trim();
+        const department = colMap.department !== undefined ? String(row[colMap.department] || "Unknown").trim() : "Unknown";
+
+        // Logging first 5 rows for visibility
+        if (i < 5) {
+          console.log(`VILT ROW ${i+1}:`, { email, name, year, cohort, department });
+        }
+
+        // Validity Checks
+        if (!email || !email.includes('@')) {
+          totalSkipped++;
           continue;
         }
 
-        if (!email.includes('@')) {
-          skipped++;
+        // Graceful skip for missing Year/Cohort
+        if (!year || !cohort) {
+          console.warn(`VILT SKIP: Row ${i+1} (${email}) is missing Year or Cohort.`);
+          skippedDetails.push(`${email} (Missing ${!year ? 'Year' : 'Cohort'})`);
+          totalSkipped++;
           continue;
         }
 
-        // Helper to parse "1" as true
-        const isSet = (idx: number) => idx !== -1 && String(row[idx]) === "1";
+        // Lock baseline session
+        if (!detectedYear) detectedYear = year;
+        if (!detectedCohort) detectedCohort = cohort;
+
+        const isSet = (key: string) => colMap[key] !== undefined && String(row[colMap[key]] || "") === "1";
 
         finalRecords.push({
           email,
           name,
-          department: colIndices.dept !== -1 ? String(row[colIndices.dept] || "Unknown").trim() : "Unknown",
-          overall_status: colIndices.remarks !== -1 ? String(row[colIndices.remarks] || "Incomplete").trim() : "Incomplete",
+          department,
+          overall_status: colMap.remarks !== undefined ? String(row[colMap.remarks] || "Incomplete").trim() : "Incomplete",
           modules: {
-            "M1": isSet(colIndices.m1),
-            "M2A": isSet(colIndices.m2a),
-            "M2B": isSet(colIndices.m2b),
-            "M3E": isSet(colIndices.m3e),
-            "M3F-B1": isSet(colIndices.m3fb1),
-            "M4": isSet(colIndices.m4)
+            "M1": isSet('m1'), "M2A": isSet('m2a'), "M2B": isSet('m2b'),
+            "M3E": isSet('m3e'), "M3F-B1": isSet('m3f-b1'), "M4": isSet('m4')
           },
-          year: yearNum,
-          cohort: cohort.trim(),
+          year,
+          cohort,
           updated_at: new Date().toISOString()
         });
       }
 
-      // 3. Batch Upsert to Supabase
+      console.log(`VILT SYNC: Preparing to upload ${finalRecords.length} records. ${totalSkipped} skipped.`);
+
+      // 3. Batch Upsert (Chunks of 100)
       if (finalRecords.length > 0) {
-        // Process in chunks of 100 to avoid request size limits
         const chunkSize = 100;
-        for (let i = 0; i < finalRecords.length; i += chunkSize) {
-          const chunk = finalRecords.slice(i, i + chunkSize);
+        for (let j = 0; j < finalRecords.length; j += chunkSize) {
           const { error } = await supabase
             .from('vilt_tracker')
-            .upsert(chunk, { onConflict: 'email, year, cohort' });
-          
+            .upsert(finalRecords.slice(j, j + chunkSize), { 
+              onConflict: 'email, year, cohort' 
+            });
           if (error) throw error;
         }
       }
 
       setSummary({
-        processed: finalRecords.length + skipped,
+        processed: finalRecords.length + totalSkipped,
         inserted: finalRecords.length,
-        skipped: skipped
+        skipped: totalSkipped,
+        year: detectedYear,
+        cohort: detectedCohort,
+        skippedDetails
       });
-      toast.success("VILT Data synchronized successfully.");
+      
+      toast.success(`Sync Complete: ${finalRecords.length} records for ${detectedCohort} (${detectedYear})`);
       setFile(null);
       if (onUploadSuccess) onUploadSuccess();
     } catch (err: any) {
-      console.error("Upload error:", err);
+      console.error("VILT PROCESSOR ERROR:", err);
       toast.error(err.message || "Failed to process VILT file.");
     } finally {
       setUploading(false);
@@ -186,42 +205,18 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
           <div className="flex items-center gap-3">
             <div className="p-2 bg-[#0046ab] rounded-lg"><FileSpreadsheet className="h-4 w-4 text-white" /></div>
             <div>
-              <CardTitle className="text-xs font-black uppercase tracking-wider">VILT Enrollment Import</CardTitle>
-              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Sync attendance from Microsoft Forms / Teams exports</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-wider">VILT Enrollment Sync</CardTitle>
+              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Fully automated data detection & batch sync</CardDescription>
             </div>
           </div>
-          <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-md">
-            <Info className="h-3 w-3 text-[#0046ab]" />
-            <span className="text-[9px] font-black text-[#0046ab] uppercase">{year} {cohort}</span>
-          </div>
+          {summary && (
+            <Badge variant="outline" className="text-[9px] font-black bg-blue-50 text-[#0046ab] border-blue-100 uppercase">
+              {summary.year} {summary.cohort}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
-        {/* Session Details */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label className="text-[10px] font-black uppercase text-zinc-400">Target Year</Label>
-            <Input 
-              type="number" 
-              value={year} 
-              onChange={(e) => setYear(e.target.value)} 
-              className="h-10 text-xs font-bold"
-              placeholder="2026"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label className="text-[10px] font-black uppercase text-zinc-400">Target Cohort</Label>
-            <Input 
-              type="text" 
-              value={cohort} 
-              onChange={(e) => setCohort(e.target.value)} 
-              className="h-10 text-xs font-bold"
-              placeholder="e.g., Q1 Cohort 1"
-            />
-          </div>
-        </div>
-
-        {/* Upload Area */}
         <div 
           className={cn(
             "border-2 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center transition-all cursor-pointer",
@@ -229,82 +224,55 @@ const VILTTrackerUpload: React.FC<VILTTrackerUploadProps> = ({ onUploadSuccess }
           )}
           onClick={() => document.getElementById('vilt-upload-input')?.click()}
         >
-          <input 
-            id="vilt-upload-input" 
-            type="file" 
-            className="hidden" 
-            accept=".csv,.xlsx" 
-            onChange={handleFileChange} 
-          />
-          
+          <input id="vilt-upload-input" type="file" className="hidden" accept=".csv,.xlsx" onChange={handleFileChange} />
           {file ? (
             <div className="text-center">
-              <div className="p-4 bg-white rounded-2xl shadow-sm border mb-4 inline-block">
-                <FileSpreadsheet className="h-10 w-10 text-emerald-500" />
-              </div>
+              <FileSpreadsheet className="h-10 w-10 text-emerald-500 mx-auto mb-4" />
               <p className="text-sm font-black text-zinc-800">{file.name}</p>
-              <p className="text-[10px] font-medium text-zinc-400 uppercase mt-1">Ready for processing</p>
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="mt-4 text-rose-500 hover:text-rose-600 font-black text-[10px] uppercase h-7"
-                onClick={(e) => { e.stopPropagation(); setFile(null); }}
-              >
+              <Button variant="ghost" size="sm" className="mt-4 text-rose-500 font-black text-[10px] uppercase h-7" onClick={(e) => { e.stopPropagation(); setFile(null); }}>
                 <Trash2 className="h-3 w-3 mr-1.5" /> Clear File
               </Button>
             </div>
           ) : (
             <div className="text-center">
-              <div className="p-4 bg-white rounded-2xl shadow-sm border mb-4 inline-block">
-                <FileUp className="h-10 w-10 text-zinc-200" />
-              </div>
-              <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">Select enrollment CSV</p>
-              <p className="text-[10px] font-medium text-zinc-400 mt-2">Will auto-detect headers and ignore summary rows</p>
+              <FileUp className="h-10 w-10 text-zinc-200 mx-auto mb-4" />
+              <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">Select enrollment file</p>
+              <p className="text-[10px] font-medium text-zinc-400 mt-2">Required: Year, Cohort, Email, Name</p>
             </div>
           )}
         </div>
 
-        {/* Action Button */}
-        <Button 
-          className="w-full h-12 rounded-xl bg-[#0046ab] hover:bg-[#003580] font-black text-xs uppercase tracking-widest transition-all"
-          disabled={!file || uploading}
-          onClick={processFile}
-        >
-          {uploading ? (
-            <>
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Analyzing & Syncing...
-            </>
-          ) : (
-            <>
-              <FileUp className="h-4 w-4 mr-2" />
-              Sync VILT Tracker
-            </>
-          )}
+        <Button className="w-full h-12 rounded-xl bg-[#0046ab] hover:bg-[#003580] font-black text-xs uppercase tracking-widest transition-all" disabled={!file || uploading} onClick={processFile}>
+          {uploading ? <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Processing...</> : <><FileUp className="h-4 w-4 mr-2" /> Start Sync</>}
         </Button>
 
-        {/* Summary Result */}
         {summary && (
-          <div className={cn(
-            "p-4 rounded-2xl border flex items-center justify-between",
-            summary.inserted > 0 ? "bg-emerald-50 border-emerald-100" : "bg-rose-50 border-rose-100"
-          )}>
-            <div className="flex items-center gap-3">
-              {summary.inserted > 0 ? (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl border bg-emerald-50 border-emerald-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 text-emerald-500" />
-              ) : (
-                <AlertCircle className="h-5 w-5 text-rose-500" />
-              )}
-              <div>
-                <p className="text-xs font-black text-zinc-800 uppercase">Process Complete</p>
-                <p className="text-[10px] font-medium text-zinc-500 uppercase">
-                  {summary.inserted} Updated / {summary.skipped} Skipped
-                </p>
+                <div>
+                  <p className="text-xs font-black text-zinc-800 uppercase">Sync Complete</p>
+                  <p className="text-[10px] font-medium text-zinc-500 uppercase">
+                    {summary.inserted} Participants / {summary.skipped} Skipped
+                  </p>
+                </div>
               </div>
             </div>
-            <Badge variant="outline" className="text-[10px] font-black bg-white">
-              {summary.processed} Total Rows
-            </Badge>
+
+            {summary.skippedDetails.length > 0 && (
+              <div className="p-4 rounded-2xl border bg-amber-50 border-amber-100">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertCircle className="h-4 w-4 text-amber-600" />
+                  <p className="text-[10px] font-black text-amber-800 uppercase">Rows skipped due to missing session data:</p>
+                </div>
+                <div className="max-h-24 overflow-y-auto space-y-1">
+                  {summary.skippedDetails.map((detail, idx) => (
+                    <p key={idx} className="text-[10px] font-medium text-amber-700 font-mono">{detail}</p>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </CardContent>
