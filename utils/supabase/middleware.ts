@@ -31,7 +31,15 @@ export async function updateSession(request: NextRequest) {
   // supabase.auth.getUser(). A simple mistake can make it very hard to debug
   // issues with users being logged out.
 
-  await supabase.auth.getUser()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user && request.nextUrl.pathname.startsWith('/lms')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
 
   return supabaseResponse
 }

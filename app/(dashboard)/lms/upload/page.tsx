@@ -18,6 +18,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { read, utils } from "xlsx"
+import { createClient } from "@/utils/supabase/client"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -236,7 +237,7 @@ export default function ExcelUploadPage() {
     const isStatus = importType === 'status'
     setIsLoading(true)
 
-    setTimeout(() => {
+    setTimeout(async () => {
       const dataSrc = explicitData && explicitData.length > 0 ? explicitData : rawData;
       const filtered = dataSrc.map((row: any, index: number) => ({
         ...row,
@@ -250,7 +251,6 @@ export default function ExcelUploadPage() {
       }
 
       const uploadTime = new Date().toLocaleString()
-      const existingLogs = JSON.parse(localStorage.getItem("lms_audit_logs") || "[]")
       let newLog: any = {
         id: `log-${Date.now()}`,
         fileName: explicitFileName || fileName,
@@ -391,7 +391,99 @@ export default function ExcelUploadPage() {
         newLog = { ...newLog, detailedSummary }
       }
 
-      localStorage.setItem("lms_audit_logs", JSON.stringify([newLog, ...existingLogs]))
+      const batchId = crypto.randomUUID()
+      newLog.batch_id = batchId
+      
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+
+      const { error: batchError } = await supabase.from('lms_batches').insert({
+        batch_id: batchId,
+        filename: explicitFileName || fileName,
+        upload_type: importType,
+        uploaded_by: user?.email || 'system',
+        upload_timestamp: new Date().toISOString(),
+        records_parsed: dataSrc.length,
+        records_imported: filtered.length,
+        records_rejected: dataSrc.length - filtered.length,
+        status: 'completed'
+      })
+
+      if (batchError) {
+        console.error("Batch insert failed:", JSON.stringify(batchError, null, 2))
+        toast.error("Supabase Error (History Log): " + (batchError?.message || JSON.stringify(batchError)))
+      }
+
+      if (!batchError) {
+        if (importType === 'courses') {
+          const userTypeKey = Object.keys(filtered[0]).find(k => /user type/i.test(k)) || userTypeCol || "User type"
+          const locKey = Object.keys(filtered[0]).find(k => /location/i.test(k)) || locationCol || "Location"
+          const mgrKey = Object.keys(filtered[0]).find(k => /immediate supervisor|manager/i.test(k)) || "Name of Immediate Supervisor"
+          const nameKey = Object.keys(filtered[0]).find(k => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
+          const assignedKey = Object.keys(filtered[0]).find(k => /assigned/i.test(k)) || "Assigned Courses"
+          const completedKey = Object.keys(filtered[0]).find(k => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+          const duKey = Object.keys(filtered[0]).find(k => /delivery unit|department|dept/i.test(k)) || duCol
+          
+          const coursesData = filtered.map((row: any) => ({
+            batch_id: batchId,
+            name: String(row[nameKey] || ""),
+            user_type: String(row[userTypeKey] || row['User type'] || row['Role'] || "Unknown"),
+            assigned_courses: Number(row[assignedKey] || 0),
+            completed_courses: Number(row[completedKey] || 0),
+            delivery_unit: String(row[duKey] || "Unknown"),
+            location: String(row[locKey] || "Unknown"),
+            immediate_supervisor: String(row[mgrKey] || "Unknown")
+          }))
+          
+          for (let i = 0; i < coursesData.length; i += 500) {
+            const { error: insertError } = await supabase.from('lms_assigned_courses').insert(coursesData.slice(i, i + 500))
+            if (insertError) {
+               console.error("Course Data Batch insert failed:", JSON.stringify(insertError, null, 2))
+               toast.error("Supabase Error (Courses DB): " + (insertError?.message || JSON.stringify(insertError)))
+            }
+          }
+        } else if (importType === 'status') {
+          const statusData = filtered.map((row: any) => ({
+            batch_id: batchId,
+            name: String(row['Name'] || ""),
+            role: String(row['Role'] || "Unknown"),
+            status: String(row['Status'] || "Unknown"),
+            delivery_unit: String(row['Delivery Unit'] || "Unknown"),
+            location: String(row['Location'] || "Unknown"),
+            immediate_supervisor: String(row['Name of Immediate Supervisor'] || "Unknown")
+          }))
+          
+          for (let i = 0; i < statusData.length; i += 500) {
+            const { error: insertError } = await supabase.from('lms_status_completion').insert(statusData.slice(i, i + 500))
+            if (insertError) {
+               console.error("Status Data Batch insert failed:", JSON.stringify(insertError, null, 2))
+               toast.error("Supabase Error (Status DB): " + (insertError?.message || JSON.stringify(insertError)))
+            }
+          }
+        } else if (importType === 'detailed_report') {
+          const detailedData = filtered.map((row: any) => ({
+            batch_id: batchId,
+            user_name: String(row['User Name'] || row['Name'] || ""),
+            user_status: String(row['User Status'] || "Unknown"),
+            course_name: String(row['Course Name'] || "Unknown"),
+            course_status: String(row['Course Status'] || "Unknown"),
+            completion_percentage: parseFloat(String(row['Completion Percentage'] || "0").replace('%', '')) || 0,
+            delivery_unit_or_department: String(row['Delivery Unit or Department'] || "Unknown"),
+            project_name: String(row['Project Name'] || "Unknown"),
+            project_manager: String(row['Project Manager'] || "Unknown"),
+            reporting_manager: String(row['Reporting Manager'] || "Unknown")
+          }))
+          
+          for (let i = 0; i < detailedData.length; i += 500) {
+            const { error: insertError } = await supabase.from('lms_detailed_report').insert(detailedData.slice(i, i + 500))
+            if (insertError) {
+               console.error("Detailed Data Batch insert failed:", JSON.stringify(insertError, null, 2))
+               toast.error("Supabase Error (Detailed DB): " + (insertError?.message || JSON.stringify(insertError)))
+            }
+          }
+        }
+      }
+
       setProcessedData(filtered)
       setColumns(Object.keys(filtered[0]).filter(c => c !== 'id'))
       setStep('preview')
@@ -599,8 +691,8 @@ export default function ExcelUploadPage() {
                     Ready to process records
                   </p>
                   <Button
-                    onClick={applyFiltersAndProcess}
-                    disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) || (importType === 'detailed_report' && selectedUserStatuses.length === 0) || selectedDUs.length === 0}
+                    onClick={() => applyFiltersAndProcess()}
+                    disabled={isLoading || (importType === 'status' && (selectedLocations.length === 0 || selectedRoles.length === 0)) || (importType === 'courses' && (selectedUserTypes.length === 0 || selectedLocations.length === 0)) || selectedDUs.length === 0}
                     className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
                   >
                     {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ChevronRight className="h-4 w-4 mr-2" />}

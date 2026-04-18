@@ -10,7 +10,8 @@ import {
   AlertTriangle,
   Eye,
   Database,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -34,9 +35,11 @@ import {
 } from "@/components/ui/dialog"
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
+import { createClient } from "@/utils/supabase/client"
 
 interface AuditLog {
   id: string
+  batch_id?: string
   fileName: string
   date: string
   count: number
@@ -56,23 +59,43 @@ export default function AuditLogsPage() {
   const [isViewOpen, setIsViewOpen] = useState(false)
 
   useEffect(() => {
-    const existingLogs = localStorage.getItem("lms_audit_logs")
-    if (existingLogs) {
-      try {
-        setLogs(JSON.parse(existingLogs))
-      } catch (e) {
-        console.error("Failed to parse logs", e)
+    const fetchLogs = async () => {
+      const supabase = createClient()
+      const { data, error } = await supabase.from('lms_batches').select('*').order('upload_timestamp', { ascending: false })
+      if (data) {
+        const parsed = data.map(b => {
+          return {
+            fileName: b.filename,
+            importType: b.upload_type,
+            date: new Date(b.upload_timestamp).toLocaleString(),
+            count: b.records_imported,
+            id: b.batch_id,
+            batch_id: b.batch_id
+          } as AuditLog
+        })
+        setLogs(parsed)
+      } else if (error) {
+        console.error("Failed to fetch history logs", error)
       }
     }
+    fetchLogs()
   }, [])
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteId) return
+    const supabase = createClient()
+    
+    // Purge linked cascade constraints manually just in case
+    await supabase.from('lms_assigned_courses').delete().eq('batch_id', deleteId)
+    await supabase.from('lms_status_completion').delete().eq('batch_id', deleteId)
+    await supabase.from('lms_detailed_report').delete().eq('batch_id', deleteId)
+    // Purge the batch record itself
+    await supabase.from('lms_batches').delete().eq('batch_id', deleteId)
+
     const updatedLogs = logs.filter(log => log.id !== deleteId)
-    localStorage.setItem("lms_audit_logs", JSON.stringify(updatedLogs))
     setLogs(updatedLogs)
     setDeleteId(null)
-    toast.success("Log removed from system")
+    toast.success("Log and underlying database records permanently removed")
   }
 
   const handleSetActive = (log: AuditLog, e: React.MouseEvent) => {
@@ -82,9 +105,72 @@ export default function AuditLogsPage() {
     toast.success(`Dashboard data updated to: ${log.fileName}`)
   }
 
-  const openLogDetails = (log: AuditLog) => {
+  const [isLoadingData, setIsLoadingData] = useState(false)
+
+  const openLogDetails = async (log: AuditLog) => {
     setSelectedLog(log)
     setIsViewOpen(true)
+    
+    if (log.cleanedData) return
+    
+    setIsLoadingData(true)
+    try {
+      const supabase = createClient()
+      let cleanedData: any[] = []
+      
+      if (log.importType === 'courses') {
+        const { data } = await supabase.from('lms_assigned_courses').select('*').eq('batch_id', log.id)
+        if (data) {
+          cleanedData = data.map(row => ({
+            id: row.id,
+            Location: row.location,
+            'User type': row.user_type,
+            'Assigned Courses': row.assigned_courses,
+            'Completed Courses': row.completed_courses,
+            'Delivery Unit': row.delivery_unit,
+            Name: row.name,
+            'Name of Immediate Supervisor': row.immediate_supervisor
+          }))
+        }
+      } else if (log.importType === 'status') {
+        const { data } = await supabase.from('lms_status_completion').select('*').eq('batch_id', log.id)
+        if (data) {
+          cleanedData = data.map(row => ({
+            id: row.id,
+            Location: row.location,
+            Role: row.role,
+            Status: row.status,
+            'Delivery Unit': row.delivery_unit,
+            Name: row.name,
+            'Name of Immediate Supervisor': row.immediate_supervisor
+          }))
+        }
+      } else if (log.importType === 'detailed_report') {
+        const { data } = await supabase.from('lms_detailed_report').select('*').eq('batch_id', log.id)
+        if (data) {
+          cleanedData = data.map(row => ({
+            id: row.id,
+            'User Name': row.user_name,
+            'User Status': row.user_status,
+            'Course Name': row.course_name,
+            'Course Status': row.course_status,
+            'Completion Percentage': `${row.completion_percentage}%`,
+            'Delivery Unit or Department': row.delivery_unit_or_department,
+            'Project Name': row.project_name,
+            'Project Manager': row.project_manager,
+            'Reporting Manager': row.reporting_manager
+          }))
+        }
+      }
+      
+      setSelectedLog({ ...log, cleanedData })
+      setLogs(prev => prev.map(l => l.id === log.id ? { ...l, cleanedData } : l))
+    } catch (e) {
+      console.error("Failed fetching data", e)
+      toast.error("Failed to load historical records")
+    } finally {
+      setIsLoadingData(false)
+    }
   }
 
   const filteredLogs = logs.filter(log => 
@@ -251,7 +337,13 @@ export default function AuditLogsPage() {
             <div className="flex-1 overflow-hidden">
               <ScrollArea className="h-full w-full">
                 <div className="p-6">
-                  {selectedLog?.cleanedData ? (
+                  {isLoadingData ? (
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-500 py-20">
+                      <Loader2 className="h-10 w-10 animate-spin mb-4 text-[#0046ab]" />
+                      <p className="font-medium animate-pulse text-[#0046ab]">Querying Supabase Records...</p>
+                      <p className="text-sm mt-2 opacity-70">Please hold on while we securely fetch the batch data from your database.</p>
+                    </div>
+                  ) : selectedLog?.cleanedData ? (
                     <SheetDataTable data={selectedLog.cleanedData} />
                   ) : (
                     <div className="text-center py-20 text-zinc-400">

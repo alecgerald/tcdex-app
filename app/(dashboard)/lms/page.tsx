@@ -53,6 +53,7 @@ import { Label } from "@/components/ui/label"
 import { utils, writeFile } from "xlsx"
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { createClient } from "@/utils/supabase/client"
 
 interface SummaryItem {
   status: string
@@ -83,7 +84,7 @@ interface AuditLog {
   count: number
   importType?: 'status' | 'courses' | 'detailed_report'
   statusSummary?: SummaryItem[]
-  deptSummary: any[]
+  deptSummary?: any[]
   mgrSummary?: BreakoutItem[]
   employeeSummary?: CourseItem[]
   detailedSummary?: any[]
@@ -209,11 +210,33 @@ export default function LMSDashboard() {
   }
 
   useEffect(() => {
-    const existingLogs = localStorage.getItem("lms_audit_logs")
-    const activeData = localStorage.getItem("lms_active_data")
+    const loadData = async () => {
+      const activeData = localStorage.getItem("lms_active_data")
+      let parsedLogs: AuditLog[] = []
 
-    if (existingLogs) {
-      const parsedLogs = JSON.parse(existingLogs) as AuditLog[]
+      try {
+        const supabase = createClient()
+        const { data: batches } = await supabase.from('lms_batches').select('*').order('upload_timestamp', { ascending: false })
+        
+        if (batches) {
+          parsedLogs = batches.map(b => {
+            return {
+              id: String(b.batch_id),
+              batch_id: String(b.batch_id),
+              fileName: b.filename,
+              date: new Date(b.upload_timestamp).toLocaleString(),
+              count: b.records_imported,
+              importType: b.upload_type as any
+            }
+          })
+          
+          // Explicitly clear aggregated hooks so all queries fetch completely from their distinct relational child tables
+          parsedLogs = parsedLogs.map(l => ({ ...l, cleanedData: undefined, detailedSummary: undefined }))
+        }
+      } catch (err) {
+        console.error("Failed to load supabase batches:", err)
+      }
+
       setLogs(parsedLogs)
 
       if (activeData) {
@@ -225,7 +248,6 @@ export default function LMSDashboard() {
           if (parsedLogs.length > 0) setSelectedLogId(parsedLogs[0].id)
         }
       } else if (parsedLogs.length > 0) {
-        // Find latest log of current type if possible, or just the first one
         const latestOfCurrentType = parsedLogs.find(l => (l.importType || 'status') === dashboardType)
         if (latestOfCurrentType) {
           setSelectedLogId(latestOfCurrentType.id)
@@ -234,9 +256,74 @@ export default function LMSDashboard() {
           setDashboardType(parsedLogs[0].importType || 'status')
         }
       }
+      setIsLoading(false)
     }
-    setIsLoading(false)
+
+    loadData()
   }, [])
+
+  useEffect(() => {
+    if (selectedLogId) {
+      const log = logs.find(l => l.id === selectedLogId)
+      if (log && !log.cleanedData) {
+        const fetchData = async () => {
+          try {
+            const supabase = createClient()
+            if (dashboardType === 'courses') {
+              const { data } = await supabase.from('lms_assigned_courses').select('*').eq('batch_id', selectedLogId)
+              if (data) {
+                const cleanedData = data.map(row => ({
+                  id: row.id,
+                  Location: row.location,
+                  'User type': row.user_type,
+                  'Assigned Courses': row.assigned_courses,
+                  'Completed Courses': row.completed_courses,
+                  'Delivery Unit': row.delivery_unit,
+                  Name: row.name,
+                  'Name of Immediate Supervisor': row.immediate_supervisor
+                }))
+                setLogs(prev => prev.map(l => l.id === selectedLogId ? { ...l, cleanedData } : l))
+              }
+            } else if (dashboardType === 'status') {
+              const { data } = await supabase.from('lms_status_completion').select('*').eq('batch_id', selectedLogId)
+              if (data) {
+                const cleanedData = data.map(row => ({
+                  id: row.id,
+                  Location: row.location,
+                  Role: row.role,
+                  Status: row.status,
+                  'Delivery Unit': row.delivery_unit,
+                  Name: row.name,
+                  'Name of Immediate Supervisor': row.immediate_supervisor
+                }))
+                setLogs(prev => prev.map(l => l.id === selectedLogId ? { ...l, cleanedData } : l))
+              }
+            } else if (dashboardType === 'detailed_report') {
+              const { data } = await supabase.from('lms_detailed_report').select('*').eq('batch_id', selectedLogId)
+              if (data) {
+                const detailedSummary = data.map(row => ({
+                  id: row.id,
+                  userName: row.user_name,
+                  userStatus: row.user_status,
+                  courseName: row.course_name,
+                  courseStatus: row.course_status,
+                  completionPercentage: `${row.completion_percentage}%`,
+                  deliveryUnit: row.delivery_unit_or_department,
+                  projectName: row.project_name,
+                  projectManager: row.project_manager,
+                  reportingManager: row.reporting_manager
+                }))
+                setLogs(prev => prev.map(l => l.id === selectedLogId ? { ...l, cleanedData: detailedSummary, detailedSummary } : l))
+              }
+            }
+          } catch (e) {
+            console.error("Failed fetching detailed table data", e)
+          }
+        }
+        fetchData()
+      }
+    }
+  }, [dashboardType, selectedLogId, logs])
 
   // Update selected log when dashboard type changes
   useEffect(() => {
@@ -350,9 +437,9 @@ export default function LMSDashboard() {
         rate: stats.total > 0 ? `${((stats.completed / stats.total) * 100).toFixed(1)}%` : "0.0%"
       })).sort((a: any, b: any) => b.name.localeCompare(a.name))
     } else if (dashboardType === 'courses' && selectedLog?.cleanedData) {
-        const duKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
-        const assignedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
-        const completedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        const duKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+        const assignedKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
         
         const depts: Record<string, any> = {}
         activeCoursesData.forEach((row: any) => {
@@ -406,9 +493,9 @@ export default function LMSDashboard() {
     let baseData = selectedLog?.employeeSummary || []
     
     if (dashboardType === 'courses' && selectedLog?.cleanedData) {
-        const nameKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
-        const assignedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
-        const completedKey = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
+        const nameKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /name/i.test(k) && !/manager|supervisor|unit/i.test(k)) || "Name"
+        const assignedKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /assigned/i.test(k)) || "Assigned Courses"
+        const completedKey = Object.keys(selectedLog?.cleanedData?.[0] || {}).find((k: string) => /completed/i.test(k) && !/status/i.test(k)) || "Completed Courses"
         
         const employees: Record<string, any> = {}
         activeCoursesData.forEach((row: any) => {

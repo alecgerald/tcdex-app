@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
+import { createClient } from "@/utils/supabase/client"
 import {
   LayoutDashboard,
   FileUp,
@@ -88,18 +89,27 @@ const sidebarCategories = [
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
   const username = "tcdex.user"
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push("/login")
+  }
 
   // Automatically open the category corresponding to the current pathname
   useEffect(() => {
     // pathname example: "/lms/upload"
     const currentCategory = sidebarCategories.find(cat => pathname.startsWith(`/${cat.id}`))
-    if (currentCategory && !openCategories.includes(currentCategory.id)) {
-      setOpenCategories((prev) => [...prev, currentCategory.id])
+    if (currentCategory) {
+      setOpenCategories((prev) => 
+        prev.includes(currentCategory.id) ? prev : [...prev, currentCategory.id]
+      )
     }
-  }, [pathname, openCategories])
+  }, [pathname])
 
   const toggleCategory = (id: string) => {
     setOpenCategories((prev) =>
@@ -224,16 +234,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <div className="p-4 border-t shrink-0">
           <Button
             variant="ghost"
-            asChild
+            onClick={handleLogout}
             className={cn(
               "w-full justify-start text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-50",
               !isSidebarOpen && "justify-center"
             )}
           >
-            <Link href="/login">
-              <LogOut className="h-5 w-5 shrink-0" />
-              <span className={cn("ml-3 transition-all duration-300", !isSidebarOpen && "hidden opacity-0")}>Logout</span>
-            </Link>
+            <LogOut className="h-5 w-5 shrink-0" />
+            <span className={cn("ml-3 transition-all duration-300", !isSidebarOpen && "hidden opacity-0")}>Logout</span>
           </Button>
         </div>
       </aside>

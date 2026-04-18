@@ -21,8 +21,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { createClient } from "@/utils/supabase/client"
 
 const formSchema = z.object({
-  username: z.string().min(2, {
-    message: "Username must be at least 2 characters.",
+  email: z.string().email({
+    message: "Must be a valid email address.",
   }),
   password: z.string().min(6, {
     message: "Password must be at least 6 characters.",
@@ -37,33 +37,17 @@ export default function LoginPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   })
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
-    
-    // Handling admin credentials separately as requested
-    if (values.username === "admin" && values.password === "admintcdex.123") {
-      toast.success("Admin login successful")
-      router.push("/admin")
-      return
-    }
-
-    // Generic login for all users since they have the same access
-    if (values.username === "tcdexuser" && values.password === "tcdex123") {
-      toast.success("Login successful")
-      router.push("/lms")
-      return
-    }
 
     try {
-      // For Supabase Auth, we'll use an internal email format
-      const email = `${values.username}@internal.tcdex`
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: values.email,
         password: values.password,
       })
 
@@ -104,12 +88,12 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
-                name="username"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username</FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="j.doe" {...field} />
+                      <Input placeholder="your.email@example.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
