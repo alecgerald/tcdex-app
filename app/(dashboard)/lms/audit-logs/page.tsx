@@ -1,9 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { 
-  FileClock, 
-  Search, 
+import {
+  FileClock,
+  Search,
   Calendar,
   FileSpreadsheet,
   Trash2,
@@ -14,13 +14,13 @@ import {
   Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
 } from "@/components/ui/table"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -84,7 +84,7 @@ export default function AuditLogsPage() {
   const handleDelete = async () => {
     if (!deleteId) return
     const supabase = createClient()
-    
+
     // Purge linked cascade constraints manually just in case
     await supabase.from('lms_assigned_courses').delete().eq('batch_id', deleteId)
     await supabase.from('lms_status_completion').delete().eq('batch_id', deleteId)
@@ -110,14 +110,14 @@ export default function AuditLogsPage() {
   const openLogDetails = async (log: AuditLog) => {
     setSelectedLog(log)
     setIsViewOpen(true)
-    
+
     if (log.cleanedData) return
-    
+
     setIsLoadingData(true)
     try {
       const supabase = createClient()
       let cleanedData: any[] = []
-      
+
       if (log.importType === 'courses') {
         const { data } = await supabase.from('lms_assigned_courses').select('*').eq('batch_id', log.id)
         if (data) {
@@ -162,7 +162,7 @@ export default function AuditLogsPage() {
           }))
         }
       }
-      
+
       setSelectedLog({ ...log, cleanedData })
       setLogs(prev => prev.map(l => l.id === log.id ? { ...l, cleanedData } : l))
     } catch (e) {
@@ -173,7 +173,7 @@ export default function AuditLogsPage() {
     }
   }
 
-  const filteredLogs = logs.filter(log => 
+  const filteredLogs = logs.filter(log =>
     log.fileName?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
@@ -194,9 +194,7 @@ export default function AuditLogsPage() {
                 <FileClock className="h-5 w-5 text-[#0046ab]" />
                 Upload History
               </CardTitle>
-              <CardDescription>
-                Detailed employee data is stored locally in your browser for preview. Deleting a record removes it permanently.
-              </CardDescription>
+
             </div>
             <div className="relative w-full md:w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
@@ -230,7 +228,7 @@ export default function AuditLogsPage() {
               </TableHeader>
               <TableBody>
                 {filteredLogs.map((log) => (
-                  <TableRow 
+                  <TableRow
                     key={log.id}
                     className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     onClick={() => openLogDetails(log)}
@@ -250,18 +248,18 @@ export default function AuditLogsPage() {
                     <TableCell className="text-right font-mono text-xs">{log.count.toLocaleString()}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-[#0046ab]"
                           title="Set as Active for Dashboard"
                           onClick={(e) => handleSetActive(log, e)}
                         >
                           <ArrowLeftRight className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-zinc-500"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -270,9 +268,9 @@ export default function AuditLogsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -301,7 +299,7 @@ export default function AuditLogsPage() {
               Confirm Deletion
             </DialogTitle>
             <DialogDescription>
-              This will remove this upload&apos;s data from the system and the dashboard. 
+              This will remove this upload&apos;s data from the system and the dashboard.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -357,10 +355,10 @@ export default function AuditLogsPage() {
               </ScrollArea>
             </div>
           </div>
-          
+
           <DialogFooter className="p-4 border-t bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between sm:justify-between shrink-0">
             <p className="text-xs text-zinc-500 font-medium italic">Showing cleaned data from Excel source.</p>
-            <Button 
+            <Button
               className="bg-[#0046ab] hover:bg-[#003a8f] text-white"
               onClick={() => {
                 if (selectedLog) {
