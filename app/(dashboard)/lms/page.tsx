@@ -1625,9 +1625,7 @@ export default function LMSDashboard() {
                             <TableCell className="font-medium">{row.name}</TableCell>
                             <TableCell className="text-right">{Number(row.assigned || 0).toLocaleString()}</TableCell>
                             <TableCell className="text-right text-green-600 font-semibold">{Number(row.completed || 0).toLocaleString()}</TableCell>
-                            <TableCell className="text-right">
-                              <Badge className="bg-[#0046ab] hover:bg-[#0046ab] font-mono">{row.rate}</Badge>
-                            </TableCell>
+                            <TableCell className="text-right font-bold text-[#0046ab]">{row.rate}</TableCell>
                           </TableRow>
                         ))
                       )}
