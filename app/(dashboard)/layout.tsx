@@ -30,9 +30,9 @@ const sidebarCategories = [
     id: "lms",
     icon: GraduationCap,
     items: [
-      { name: "Dashboard", href: "/lms", icon: LayoutDashboard },
-      { name: "Upload Excel", href: "/lms/upload", icon: FileUp },
-      { name: "History", href: "/lms/audit-logs", icon: FileClock },
+      { name: "Dashboard", href: "/lms/dashboard", icon: LayoutDashboard },
+      { name: "Upload Excel", href: "/lms/upload-excel", icon: FileUp },
+      { name: "History", href: "/lms/history", icon: FileClock },
     ],
   },
   {
@@ -41,7 +41,7 @@ const sidebarCategories = [
     icon: Briefcase,
     items: [
       { name: "Dashboard", href: "/ltd", icon: LayoutDashboard },
-      { name: "Import Excel", href: "/ltd/upload", icon: FileUp },
+      { name: "Upload Excel", href: "/ltd/upload", icon: FileUp },
       { name: "Reports", href: "/ltd/reports", icon: BarChart3 },
     ],
   },
@@ -51,7 +51,7 @@ const sidebarCategories = [
     icon: Heart,
     items: [
       { name: "Dashboard", href: "/ex", icon: LayoutDashboard },
-      { name: "Import Excel", href: "/ex/upload", icon: FileUp },
+      { name: "Upload Excel", href: "/ex/upload", icon: FileUp },
       { name: "Reports", href: "/ex/reports", icon: BarChart3 },
     ],
   },
@@ -61,7 +61,7 @@ const sidebarCategories = [
     icon: Users,
     items: [
       { name: "Dashboard", href: "/erg", icon: LayoutDashboard },
-      { name: "Import Excel", href: "/erg/upload", icon: FileUp },
+      { name: "Upload Excel", href: "/erg/upload", icon: FileUp },
       { name: "Reports", href: "/erg/reports", icon: BarChart3 },
     ],
   },
@@ -71,8 +71,8 @@ const sidebarCategories = [
     icon: Megaphone,
     items: [
       { name: "External Brand", href: "/comms/external-brand", icon: Heart },
-      { name: "Upload Excel", href: "/comms/import-excel", icon: FileUp },
-      { name: "History", href: "/comms/audit-logs", icon: FileClock },
+      { name: "Upload Excel", href: "/comms/upload-excel", icon: FileUp },
+      { name: "History", href: "/comms/history", icon: FileClock },
     ],
   },
   {
@@ -81,7 +81,7 @@ const sidebarCategories = [
     icon: Shield,
     items: [
       { name: "Dashboard", href: "/governance", icon: LayoutDashboard },
-      { name: "Import Excel", href: "/governance/upload", icon: FileUp },
+      { name: "Upload Excel", href: "/governance/upload", icon: FileUp },
       { name: "Reports", href: "/governance/reports", icon: BarChart3 },
     ],
   },
@@ -105,7 +105,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // pathname example: "/lms/upload"
     const currentCategory = sidebarCategories.find(cat => pathname.startsWith(`/${cat.id}`))
     if (currentCategory) {
-      setOpenCategories((prev) => 
+      setOpenCategories((prev) =>
         prev.includes(currentCategory.id) ? prev : [...prev, currentCategory.id]
       )
     }
@@ -129,11 +129,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         )}
       >
         <div className="flex h-16 items-center justify-between px-4 border-b shrink-0">
-          <div className={cn("flex items-center gap-3 overflow-hidden transition-all", !isSidebarOpen && "w-0 opacity-0")}>
-            <div className="h-8 w-8 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800">
-              <span className="text-[#0046ab] font-bold text-xs capitalize">{username[0]}</span>
-            </div>
-            <span className="font-semibold text-zinc-900 truncate dark:text-zinc-100">{username}</span>
+          <div className={cn("flex items-center overflow-hidden transition-all", !isSidebarOpen && "w-0 opacity-0")}>
+            <span className="font-extrabold text-xl tracking-tight text-[#0046ab] truncate pl-3">TCDEX</span>
           </div>
           <Button
             variant="ghost"
@@ -231,17 +228,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </nav>
         </ScrollArea>
 
-        <div className="p-4 border-t shrink-0">
+        <div className={cn("p-4 border-t shrink-0 flex items-center", !isSidebarOpen ? "justify-center" : "justify-between")}>
+          <div className={cn("flex items-center gap-3 overflow-hidden transition-all", !isSidebarOpen && "w-0 opacity-0")}>
+            <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800">
+              <span className="text-[#0046ab] font-bold text-xs capitalize">{username[0]}</span>
+            </div>
+            <span className="font-semibold text-sm text-zinc-900 truncate dark:text-zinc-100">{username}</span>
+          </div>
           <Button
             variant="ghost"
+            size="icon"
             onClick={handleLogout}
-            className={cn(
-              "w-full justify-start text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-50",
-              !isSidebarOpen && "justify-center"
-            )}
+            className="shrink-0 text-zinc-500 hover:text-red-600 hover:bg-red-50 dark:hover:text-red-500 dark:hover:bg-red-950/30 rounded-full transition-colors"
+            title="Logout"
           >
-            <LogOut className="h-5 w-5 shrink-0" />
-            <span className={cn("ml-3 transition-all duration-300", !isSidebarOpen && "hidden opacity-0")}>Logout</span>
+            <LogOut className="h-5 w-5" />
           </Button>
         </div>
       </aside>

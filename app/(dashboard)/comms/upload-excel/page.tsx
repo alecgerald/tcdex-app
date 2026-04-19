@@ -15,6 +15,8 @@ import {
   ArrowRight
 } from "lucide-react"
 import { toast } from "sonner"
+import { createClient } from "@/utils/supabase/client"
+
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
@@ -39,7 +41,7 @@ interface ImportData {
   sheets?: Record<string, any[]>
 }
 
-export default function CommsImportExcelPage() {
+export default function CommsUploadExcelPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [data, setData] = useState<ImportData | null>(null)
   const [activeUploadType, setActiveUploadType] = useState<string>("facebook-visits")
@@ -193,13 +195,13 @@ export default function CommsImportExcelPage() {
         setIsLoading(false)
       }
     } catch (error) {
-      console.error("Import error:", error)
-      toast.error("Failed to load import engine")
+      console.error("Upload error:", error)
+      toast.error("Failed to load upload engine")
       setIsLoading(false)
     }
   }
 
-  const saveAndShowData = (importData: ImportData) => {
+  const saveAndShowData = async (importData: ImportData) => {
     if (importData.type === "facebook-visits" || importData.type === "instagram-views" || importData.type === "linkedin-analytics" || importData.type === "tiktok-overview") {
       importData.rows = importData.rows.map(row => {
         if (typeof row === 'object' && row !== null) {
@@ -216,27 +218,146 @@ export default function CommsImportExcelPage() {
       });
     }
 
-    const logs = JSON.parse(localStorage.getItem("comms_audit_logs") || "[]")
-    localStorage.setItem("comms_audit_logs", JSON.stringify([importData, ...logs]))
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    const batchId = crypto.randomUUID()
+    
+    const { error: batchError } = await supabase.from('comms_batches').insert({
+      batch_id: batchId,
+      filename: importData.fileName,
+      upload_type: importData.type,
+      uploaded_by: user?.email || 'system',
+      upload_timestamp: new Date().toISOString(),
+      records_parsed: importData.rows.length,
+      records_imported: importData.rows.length, // update this logically
+      records_rejected: 0,
+      status: 'completed'
+    })
 
-    if (importData.type === "facebook-visits") {
-      localStorage.setItem("comms_facebook_visits_data", JSON.stringify(importData))
-    } else if (importData.type === "instagram-views") {
-      localStorage.setItem("comms_instagram_views_data", JSON.stringify(importData))
-    } else if (importData.type === "linkedin-analytics") {
-      localStorage.setItem("comms_linkedin_analytics_data", JSON.stringify(importData))
-    } else if (importData.type === "tiktok-overview") {
-      localStorage.setItem("comms_tiktok_overview_data", JSON.stringify(importData))
+    if (batchError) {
+      console.error("Batch insert failed:", batchError)
+      toast.error("Error creating upload batch")
+      setIsLoading(false)
+      return
     }
 
-    setData(importData)
-    if (importData.sheets) {
-      setActiveSheet(Object.keys(importData.sheets)[0])
-    } else {
-      setActiveSheet(null)
+    try {
+      if (importData.type === "facebook-visits") {
+        const payload = importData.rows.map(row => ({
+          batch_id: batchId,
+          date: new Date(row.Date || row.date),
+          primary_visits: parseInt(row.Primary || row.primary || "0") || 0
+        })).filter(row => row.date && !isNaN(row.date.getTime()))
+        
+        for (let i = 0; i < payload.length; i += 500) {
+          await supabase.from('comms_facebook_visits').insert(payload.slice(i, i + 500))
+        }
+      } else if (importData.type === "instagram-views") {
+        const payload = importData.rows.map(row => ({
+          batch_id: batchId,
+          date: new Date(row.Date || row.date),
+          primary_views: parseInt(row.Primary || row.primary || row.Views || row.views || "0") || 0
+        })).filter(row => row.date && !isNaN(row.date.getTime()))
+
+        for (let i = 0; i < payload.length; i += 500) {
+          await supabase.from('comms_instagram_views').insert(payload.slice(i, i + 500))
+        }
+      } else if (importData.type === "tiktok-overview") {
+        const payload = importData.rows.map(row => ({
+            batch_id: batchId,
+            date: new Date(row.Date || row.date),
+            video_views: parseInt(row['Video views'] || row.Views || row.views || "0") || 0,
+            reached_audience: parseInt(row['Reached audience'] || "0") || 0,
+            profile_views: parseInt(row['Profile views'] || "0") || 0,
+            likes: parseInt(row.Likes || row.likes || "0") || 0,
+            shares: parseInt(row.Shares || row.shares || "0") || 0,
+            comments: parseInt(row.Comments || row.comments || "0") || 0,
+            website_clicks: parseInt(row['Website clicks'] || "0") || 0,
+            phone_clicks: parseInt(row['Phone clicks'] || "0") || 0,
+            leads_submission: parseInt(row['Leads submission'] || "0") || 0,
+            app_download_clicks: parseInt(row['App download clicks'] || "0") || 0,
+            net_growth: parseInt(row['Net growth'] || "0") || 0,
+            new_followers: parseInt(row['New followers'] || "0") || 0,
+            lost_followers: parseInt(row['Lost followers'] || "0") || 0
+        })).filter(row => row.date && !isNaN(row.date.getTime()))
+        for (let i = 0; i < payload.length; i += 500) {
+          await supabase.from('comms_tiktok_overview').insert(payload.slice(i, i + 500))
+        }
+      } else if (importData.type === "linkedin-analytics") {
+        if (importData.sheets) {
+          const sheetNames = Object.keys(importData.sheets);
+          const generalData = importData.sheets[sheetNames[0]] || [];
+          const postsData = importData.sheets[sheetNames[1]] || [];
+          
+          const generalPayload = generalData.map(row => ({
+            batch_id: batchId,
+            date: new Date(row.Date || row.date),
+            impressions_organic: parseInt(row['Impressions (organic)'] || "0") || 0,
+            impressions_sponsored: parseInt(row['Impressions (sponsored)'] || "0") || 0,
+            impressions_total: parseInt(row['Impressions (total)'] || "0") || 0,
+            unique_impressions_organic: parseInt(row['Unique impressions (organic)'] || "0") || 0,
+            clicks_organic: parseInt(row['Clicks (organic)'] || "0") || 0,
+            clicks_sponsored: parseInt(row['Clicks (sponsored)'] || "0") || 0,
+            clicks_total: parseInt(row['Clicks (total)'] || "0") || 0,
+            reactions_organic: parseInt(row['Reactions (organic)'] || "0") || 0,
+            reactions_sponsored: parseInt(row['Reactions (sponsored)'] || "0") || 0,
+            reactions_total: parseInt(row['Reactions (total)'] || "0") || 0,
+            comments_organic: parseInt(row['Comments (organic)'] || "0") || 0,
+            comments_total: parseInt(row['Comments (total)'] || "0") || 0,
+            reposts_organic: parseInt(row['Reposts (organic)'] || "0") || 0,
+            reposts_sponsored: parseInt(row['Reposts (sponsored)'] || "0") || 0,
+            reposts_total: parseInt(row['Reposts (total)'] || "0") || 0,
+            engagement_rate_organic: parseFloat(row['Engagement rate (organic)'] || "0") || 0,
+            engagement_rate_sponsored: parseFloat(row['Engagement rate (sponsored)'] || "0") || 0,
+            engagement_rate_total: parseFloat(row['Engagement rate (total)'] || "0") || 0,
+          })).filter(row => row.date && !isNaN(row.date.getTime()))
+          
+          for (let i = 0; i < generalPayload.length; i += 500) {
+            await supabase.from('comms_linkedin_general').insert(generalPayload.slice(i, i + 500))
+          }
+
+          const postsPayload = postsData.map(row => ({
+            batch_id: batchId,
+            post_title: row['Post title'] || row['Campaign name'] || row['Title'] || '',
+            post_link: row['Post link'] || '',
+            post_type: row['Post type'] || '',
+            campaign_name: row['Campaign name'] || '',
+            posted_by: row['Posted by'] || '',
+            created_date: new Date(row['Created date'] || row.Date),
+            campaign_start_date: new Date(row['Campaign start date'] || row.Date),
+            campaign_end_date: new Date(row['Campaign end date'] || row.Date),
+            audience: row['Audience'] || '',
+            impressions: parseInt(row['Impressions'] || row['Total impressions'] || "0") || 0,
+            views: parseInt(row['Views'] || "0") || 0,
+            offsite_views: parseInt(row['Offsite views'] || "0") || 0,
+            clicks: parseInt(row['Clicks'] || row['Clicks (total)'] || "0") || 0,
+            ctr: parseFloat(row['Click-through rate (CTR)'] || row['CTR'] || "0") || 0,
+            likes: parseInt(row['Likes'] || row['Reactions'] || "0") || 0,
+            comments: parseInt(row['Comments'] || "0") || 0,
+            reposts: parseInt(row['Reposts'] || row['Shares'] || "0") || 0,
+            engagement_rate: parseFloat(row['Engagement rate'] || "0") || 0,
+            content_type: row['Content type'] || ''
+          })).filter(row => row.created_date && !isNaN(row.created_date.getTime()))
+          
+          for (let i = 0; i < postsPayload.length; i += 500) {
+            await supabase.from('comms_linkedin_posts').insert(postsPayload.slice(i, i + 500))
+          }
+        }
+      }
+
+      setData(importData)
+      if (importData.sheets) {
+        setActiveSheet(Object.keys(importData.sheets)[0])
+      } else {
+        setActiveSheet(null)
+      }
+      toast.success(`${importData.fileName} imported and saved to database successfully`)
+    } catch (e) {
+      console.error(e)
+      toast.error("An error occurred during database insertion")
+    } finally {
+      setIsLoading(false)
     }
-    setIsLoading(false)
-    toast.success(`${importData.fileName} imported successfully`)
   }
 
   const handleFinish = () => {
@@ -255,7 +376,7 @@ export default function CommsImportExcelPage() {
       <div className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Import Summary</h1>
+            <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Upload Summary</h1>
             <p className="text-zinc-500 dark:text-zinc-400">Step 2: Review Results</p>
           </div>
           <div className="flex gap-2">
@@ -315,7 +436,7 @@ export default function CommsImportExcelPage() {
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Import Excel</h1>
+          <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Upload Excel</h1>
           <p className="text-zinc-500 dark:text-zinc-400">Step 1: Upload File</p>
         </div>
         <div className="flex gap-2">

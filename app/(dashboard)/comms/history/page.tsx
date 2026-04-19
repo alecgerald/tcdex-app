@@ -18,9 +18,12 @@ import {
   Linkedin
 } from "lucide-react"
 import { toast } from "sonner"
+import { createClient } from "@/utils/supabase/client"
+
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { AlertTriangle } from "lucide-react"
 import { 
   Table, 
   TableBody, 
@@ -65,77 +68,95 @@ export default function CommsAuditLogsPage() {
   const [selectedLog, setSelectedLog] = useState<CommsLog | null>(null)
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
+  const [logToDelete, setLogToDelete] = useState<string | null>(null)
 
   useEffect(() => {
-    const savedLogs = localStorage.getItem("comms_audit_logs")
-    if (savedLogs) {
-      try {
-        setLogs(JSON.parse(savedLogs))
-      } catch (e) {
-        console.error("Failed to parse logs", e)
+    async function loadBatches() {
+      const supabase = createClient()
+      const { data, error } = await supabase
+        .from('comms_batches')
+        .select('*')
+        .order('upload_timestamp', { ascending: false })
+      
+      if (data && !error) {
+        // Map to our generic format
+        const mappedLogs = data.map(dbBatch => ({
+           id: dbBatch.batch_id,
+           fileName: dbBatch.filename,
+           uploadedAt: dbBatch.upload_timestamp,
+           type: dbBatch.upload_type,
+           rows: Array.from({ length: dbBatch.records_imported }), // Placeholder for count
+           _dbRecord: dbBatch
+        }))
+        setLogs(mappedLogs)
+      } else if (error) {
+         console.error("Failed to load logs from Supabase:", error)
       }
     }
+    loadBatches()
   }, [])
 
-  const handleDelete = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    const updatedLogs = logs.filter(log => log.id !== id)
-    setLogs(updatedLogs)
-    localStorage.setItem("comms_audit_logs", JSON.stringify(updatedLogs))
-    
-    // Also update specific platform data if needed
-    const deletedLog = logs.find(l => l.id === id)
-    if (deletedLog) {
-      if (deletedLog.type === "facebook-visits") {
-        // Find most recent facebook log
-        const recentFb = updatedLogs.find(l => l.type === "facebook-visits")
-        if (recentFb) {
-          localStorage.setItem("comms_facebook_visits_data", JSON.stringify(recentFb))
-        } else {
-          localStorage.removeItem("comms_facebook_visits_data")
-        }
-      } else if (deletedLog.type === "instagram-views") {
-        const recentIg = updatedLogs.find(l => l.type === "instagram-views")
-        if (recentIg) {
-          localStorage.setItem("comms_instagram_views_data", JSON.stringify(recentIg))
-        } else {
-          localStorage.removeItem("comms_instagram_views_data")
-        }
-      }
+  const confirmDelete = async () => {
+    if (!logToDelete) return
+    const supabase = createClient()
+    const { error } = await supabase.from('comms_batches').delete().eq('batch_id', logToDelete)
+
+    if (error) {
+      toast.error("Failed to delete log");
+      return;
     }
+
+    const updatedLogs = logs.filter(log => log.id !== logToDelete)
+    setLogs(updatedLogs)
+    setLogToDelete(null)
     
-    toast.success("Log deleted successfully")
+    toast.success("Log and associated data deleted successfully")
   }
 
-  const openLogDetails = (log: CommsLog) => {
-    setSelectedLog(log)
-    setIsViewOpen(true)
+  const handleDeletePrompt = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    setLogToDelete(id)
+  }
+
+
+  const openLogDetails = async (log: CommsLog) => {
+    const supabase = createClient()
+    let data;
+    
+    if (log.type === "facebook-visits") {
+       const { data: qData } = await supabase.from('comms_facebook_visits').select('*').eq('batch_id', log.id)
+       data = { rows: qData }
+    } else if (log.type === "instagram-views") {
+       const { data: qData } = await supabase.from('comms_instagram_views').select('*').eq('batch_id', log.id)
+       data = { rows: qData }
+    } else if (log.type === "tiktok-overview") {
+       const { data: qData } = await supabase.from('comms_tiktok_overview').select('*').eq('batch_id', log.id)
+       data = { rows: qData }
+    } else if (log.type === "linkedin-analytics") {
+       const { data: genData } = await supabase.from('comms_linkedin_general').select('*').eq('batch_id', log.id)
+       const { data: postData } = await supabase.from('comms_linkedin_posts').select('*').eq('batch_id', log.id)
+       data = { sheets: { "General": genData || [], "Posts": postData || [] } }
+    }
+
+    if (data) {
+       setSelectedLog({ ...log, ...data })
+       setIsViewOpen(true)
+    } else {
+       toast.error("Failed to load details for this log.")
+    }
   }
 
   const filteredLogs = logs.filter(log => 
     log.fileName?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
-  const getDateRange = (log: CommsLog) => {
-    let dates: any[] = []
-    if (log.rows) {
-      dates = log.rows.map(r => r.Date).filter(Boolean)
-    } else if (log.type === 'content-posts') {
-      const dailyDates = log.contentDailyMetrics?.map(r => r.Date).filter(Boolean) || []
-      const postDates = log.contentPostMetrics?.map(r => r['Created date'] || r.Date).filter(Boolean) || []
-      dates = [...dailyDates, ...postDates]
-    } else {
-      dates = log.newFollowers?.map(r => r.Date).filter(Boolean) || []
-    }
-    
-    if (dates.length === 0) return "N/A"
-    
-    const sortedDates = [...new Set(dates)].sort()
-    return `${sortedDates[0]} - ${sortedDates[sortedDates.length - 1]}`
-  }
+
 
   const getRowCount = (log: CommsLog) => {
-    if (log.rows) return log.rows.length
+    if ((log as any)._dbRecord?.records_imported !== undefined) {
+      return (log as any)._dbRecord.records_imported;
+    }
+    if (log.rows && Array.isArray(log.rows)) return log.rows.length
     if (log.type === 'content-posts') {
       return (log.contentDailyMetrics?.length || 0) + (log.contentPostMetrics?.length || 0)
     }
@@ -196,38 +217,49 @@ export default function CommsAuditLogsPage() {
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">History</h1>
           <p className="text-zinc-500 dark:text-zinc-400">View and manage uploaded communication platform data</p>
         </div>
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-          <Input 
-            placeholder="Search files..." 
-            className="pl-9" 
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
       </div>
 
       <Card className="border-none shadow-sm overflow-hidden">
+        <CardHeader className="bg-white dark:bg-zinc-900 border-b pb-4">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <FileClock className="h-5 w-5 text-[#0046ab]" />
+                Upload History
+              </CardTitle>
+            </div>
+            <div className="relative w-full md:w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+              <Input 
+                placeholder="Search files..." 
+                className="pl-9" 
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
+        </CardHeader>
         <CardContent className="p-0">
-          <Table>
+          {filteredLogs.length === 0 ? (
+            <div className="py-20 text-center space-y-3">
+              <div className="h-12 w-12 rounded-full bg-zinc-50 flex items-center justify-center mx-auto">
+                <Calendar className="h-6 w-6 text-zinc-300" />
+              </div>
+              <p className="text-zinc-500">No upload logs found.</p>
+            </div>
+          ) : (
+            <Table>
             <TableHeader className="bg-zinc-50 dark:bg-zinc-800">
               <TableRow>
                 <TableHead>File Name / Type</TableHead>
                 <TableHead>Upload Date</TableHead>
-                <TableHead>Date Range</TableHead>
                 <TableHead className="text-right">Total Rows</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
+
             <TableBody>
-              {filteredLogs.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-40 text-center text-zinc-500">
-                    No history found. Upload a file to see it here.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredLogs.map((log) => (
+                {filteredLogs.map((log) => (
                   <TableRow 
                     key={log.id} 
                     className="cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
@@ -246,15 +278,16 @@ export default function CommsAuditLogsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="text-sm">{new Date(log.uploadedAt).toLocaleDateString()}</span>
+                        <span className="text-sm">
+                          {(() => {
+                            const d = new Date(log.uploadedAt)
+                            return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`
+                          })()}
+                        </span>
                         <span className="text-[10px] text-zinc-400 uppercase font-bold">{new Date(log.uploadedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </div>
                     </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-normal text-zinc-500">
-                        {getDateRange(log)}
-                      </Badge>
-                    </TableCell>
+
                     <TableCell className="text-right font-mono text-xs">
                       {getRowCount(log)}
                     </TableCell>
@@ -272,17 +305,17 @@ export default function CommsAuditLogsPage() {
                           variant="ghost" 
                           size="icon" 
                           className="h-8 w-8 text-red-500"
-                          onClick={(e) => handleDelete(log.id, e)}
+                          onClick={(e) => handleDeletePrompt(log.id, e)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
+                ))}
             </TableBody>
           </Table>
+          )}
         </CardContent>
       </Card>
 
@@ -298,7 +331,6 @@ export default function CommsAuditLogsPage() {
                 <DialogTitle className="text-xl font-bold">{selectedLog?.fileName}</DialogTitle>
                 <DialogDescription className="flex items-center gap-4 mt-1">
                   <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {selectedLog && new Date(selectedLog.uploadedAt).toLocaleString()}</span>
-                  <span className="flex items-center gap-1.5"><Database className="h-3 w-3" /> {selectedLog && getDateRange(selectedLog)}</span>
                   <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type?.replace('-', ' ') || 'followers'}</Badge>
                 </DialogDescription>
               </div>
@@ -350,6 +382,25 @@ export default function CommsAuditLogsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Modal */}
+      <Dialog open={!!logToDelete} onOpenChange={(open) => !open && setLogToDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-500" />
+              Confirm Deletion
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this record? This action will permanently remove it from the database and cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setLogToDelete(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -362,7 +413,7 @@ function SheetDataTable({ data }: { data: any[] }) {
     </div>
   )
 
-  const columns = Object.keys(data[0])
+  const columns = Object.keys(data[0]).filter(col => col !== 'id' && col !== 'batch_id')
 
   return (
     <div className="border rounded-lg bg-white dark:bg-zinc-950 min-w-max">
@@ -377,11 +428,20 @@ function SheetDataTable({ data }: { data: any[] }) {
         <TableBody>
           {data.map((row, idx) => (
             <TableRow key={idx}>
-              {columns.map(col => (
-                <TableCell key={`${idx}-${col}`} className="whitespace-nowrap px-4 py-3 border-r last:border-r-0">
-                  {String(row[col] ?? "-")}
-                </TableCell>
-              ))}
+              {columns.map(col => {
+                let value = row[col];
+                if (col.toLowerCase().includes('date') && value) {
+                   const d = new Date(value);
+                   if (!isNaN(d.getTime())) {
+                      value = `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
+                   }
+                }
+                return (
+                  <TableCell key={`${idx}-${col}`} className="whitespace-nowrap px-4 py-3 border-r last:border-r-0">
+                    {String(value ?? "-")}
+                  </TableCell>
+                )
+              })}
             </TableRow>
           ))}
         </TableBody>
@@ -389,3 +449,4 @@ function SheetDataTable({ data }: { data: any[] }) {
     </div>
   )
 }
+

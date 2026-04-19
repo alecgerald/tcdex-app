@@ -1026,7 +1026,7 @@ export default function LMSDashboard() {
         </div>
         <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">No Data Available</h1>
         <p className="text-zinc-500 max-sm">
-          Please upload an Academy LMS Excel file in the <strong>Import Excel</strong> section to generate the dashboard.
+          Please upload an Academy LMS Excel file in the <strong>Upload Excel</strong> section to generate the dashboard.
         </p>
       </div>
     )

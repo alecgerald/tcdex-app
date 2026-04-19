@@ -59,7 +59,7 @@ export default function LoginPage() {
       }
 
       toast.success("Login successful")
-      router.push("/lms")
+      router.push("/lms/dashboard")
     } catch {
       toast.error("An error occurred. Please try again.")
     } finally {

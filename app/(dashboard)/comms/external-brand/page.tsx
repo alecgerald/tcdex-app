@@ -13,6 +13,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table"
+import { createClient } from "@/utils/supabase/client"
 
 import {
   Chart as ChartJS,
@@ -68,63 +69,59 @@ export default function ExternalBrandPage() {
   })
 
   useEffect(() => {
-    // Load Facebook Visits
-    const fbDataStr = localStorage.getItem("comms_facebook_visits_data")
-    if (fbDataStr) {
-      try {
-        const fbData: ImportData = JSON.parse(fbDataStr)
-        if (fbData.rows && fbData.rows.length > 0) {
-          setFbRawData(fbData.rows)
-        }
-      } catch (e) {
-        console.error("Failed to parse Facebook data", e)
+    async function loadData() {
+      const supabase = createClient()
+      
+      const { data: fbData } = await supabase.from('comms_facebook_visits').select('*')
+      if (fbData) {
+        setFbRawData(fbData.map(r => ({ ...r, Date: r.date, Primary: r.primary_visits })))
       }
-    }
 
-    // Load Instagram Views
-    const igDataStr = localStorage.getItem("comms_instagram_views_data")
-    if (igDataStr) {
-      try {
-        const igData: ImportData = JSON.parse(igDataStr)
-        if (igData.rows && igData.rows.length > 0) {
-          setIgRawData(igData.rows)
-        }
-      } catch (e) {
-        console.error("Failed to parse Instagram data", e)
+      const { data: igData } = await supabase.from('comms_instagram_views').select('*')
+      if (igData) {
+        setIgRawData(igData.map(r => ({ ...r, Date: r.date, Primary: r.primary_views })))
       }
-    }
 
-    // Load LinkedIn Analytics
-    const liDataStr = localStorage.getItem("comms_linkedin_analytics_data")
-    if (liDataStr) {
-      try {
-        const liData: ImportData = JSON.parse(liDataStr)
-        if (liData.sheets && Object.keys(liData.sheets).length >= 2) {
-          const sheetNames = Object.keys(liData.sheets)
-          setLiRawData(liData.sheets[sheetNames[0]] || [])
-          setLiPostsRawData(liData.sheets[sheetNames[1]] || [])
-        } else if (liData.rows && liData.rows.length > 0) {
-          setLiRawData(liData.rows)
-          setLiPostsRawData(liData.rows)
-        }
-      } catch (e) {
-        console.error("Failed to parse LinkedIn data", e)
+      const { data: liGeneral } = await supabase.from('comms_linkedin_general').select('*')
+      if (liGeneral) {
+        setLiRawData(liGeneral.map(r => ({ 
+           ...r, 
+           Date: r.date, 
+           Impressions: r.impressions_total,
+           'Total impressions': r.impressions_total 
+        })))
       }
-    }
 
-    // Load TikTok Overview
-    const ttDataStr = localStorage.getItem("comms_tiktok_overview_data")
-    if (ttDataStr) {
-      try {
-        const ttData: ImportData = JSON.parse(ttDataStr)
-        if (ttData.rows && ttData.rows.length > 0) {
-          setTtRawData(ttData.rows)
-        }
-      } catch (e) {
-        console.error("Failed to parse TikTok data", e)
+      const { data: liPosts } = await supabase.from('comms_linkedin_posts').select('*')
+      if (liPosts) {
+         setLiPostsRawData(liPosts.map(r => ({
+           ...r,
+           'post title': r.post_title,
+           'post link': r.post_link,
+           'created date': r.created_date,
+           impressions: r.impressions,
+           clicks: r.clicks,
+           likes: r.likes,
+           comments: r.comments,
+           reposts: r.reposts,
+           'engagement rate': r.engagement_rate
+         })))
+      }
+
+      const { data: ttData } = await supabase.from('comms_tiktok_overview').select('*')
+      if (ttData) {
+         setTtRawData(ttData.map(r => ({
+            ...r,
+            Date: r.date,
+            'Video views': r.video_views,
+            Views: r.video_views
+         })))
       }
     }
+    
+    loadData()
   }, [])
+
 
   // Filter Data
   const getNormalizeDateString = (rawDate: any): string | null => {
@@ -353,6 +350,14 @@ export default function ExternalBrandPage() {
     },
   ]
 
+  const spansMultipleMonths = useMemo(() => {
+    if (!startDate || !endDate) return false;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return false;
+    return start.getFullYear() !== end.getFullYear() || start.getMonth() !== end.getMonth();
+  }, [startDate, endDate]);
+
   // Chart Data prep
   const formatLabelDate = (rawDate: any) => {
     if (!rawDate) return "";
@@ -360,37 +365,39 @@ export default function ExternalBrandPage() {
     // Clean string by removing time components
     let dateStr = String(rawDate).trim().split('T')[0].split(' ')[0];
 
+    let m = "";
+    let d = "";
+
     // Handle formats with '-'
     if (dateStr.includes('-')) {
       const parts = dateStr.split('-');
       if (parts.length >= 3) {
-        // YYYY-MM-DD -> MM-DD
-        if (parts[0].length === 4) return `${parts[1]}-${parts[2]}`;
-        // DD-MM-YYYY -> MM-DD
-        if (parts[2].length === 4) return `${parts[1]}-${parts[0]}`;
+        if (parts[0].length === 4) { m = parts[1]; d = parts[2]; } // YYYY-MM-DD
+        else if (parts[2].length === 4) { m = parts[1]; d = parts[0]; } // DD-MM-YYYY
+      } else if (parts.length === 2) {
+        m = parts[0]; d = parts[1];
       }
-      if (parts.length === 2) return dateStr; // Assume already MM-DD
     }
-
     // Handle formats with '/'
-    if (dateStr.includes('/')) {
+    else if (dateStr.includes('/')) {
       const parts = dateStr.split('/');
       if (parts.length >= 3) {
-        // YYYY/MM/DD -> MM-DD
-        if (parts[0].length === 4) {
-          return `${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        }
-        // Assume MM/DD/YYYY -> MM-DD
-        return `${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        if (parts[0].length === 4) { m = parts[1]; d = parts[2]; }
+        else { m = parts[0]; d = parts[1]; }
       }
     }
 
-    // Fallback for valid Date objects or timestamps
-    const dateObj = new Date(rawDate);
-    if (!isNaN(dateObj.getTime())) {
-      const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-      const dd = String(dateObj.getDate()).padStart(2, '0');
-      return `${mm}-${dd}`;
+    if (!m || !d) {
+      // Fallback for valid Date objects or timestamps
+      const dateObj = new Date(rawDate);
+      if (!isNaN(dateObj.getTime())) {
+        m = String(dateObj.getMonth() + 1);
+        d = String(dateObj.getDate());
+      }
+    }
+
+    if (m && d) {
+      return `${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
     }
 
     return dateStr;
@@ -517,11 +524,67 @@ export default function ExternalBrandPage() {
     scales: {
       x: {
         grid: {
-          display: false,
+          display: true,
+          drawOnChartArea: true,
+          color: (context: any) => {
+            if (!spansMultipleMonths || context.index === 0) return 'transparent';
+            try {
+              const currentLabel = context.scale.getLabelForValue(context.tick.value);
+              const prevLabel = context.scale.getLabelForValue(context.scale.ticks[context.index - 1].value);
+              
+              if (currentLabel && prevLabel && typeof currentLabel === 'string' && typeof prevLabel === 'string') {
+                if (currentLabel.includes('-') && prevLabel.includes('-')) {
+                  const currentMonth = parseInt(currentLabel.split('-')[0], 10);
+                  const prevMonth = parseInt(prevLabel.split('-')[0], 10);
+                  if (currentMonth !== prevMonth) {
+                    return 'rgba(161, 161, 170, 0.8)'; // Visible line (zinc-400)
+                  }
+                }
+              }
+            } catch(e) {}
+            return 'transparent';
+          },
         },
         ticks: {
           font: { size: 11 },
           color: "#71717a",
+          autoSkip: false,
+          maxRotation: 0,
+          callback: function(value: any, index: number, values: any[]) {
+            const label = this.getLabelForValue(value) as string;
+            
+            if (label.includes('-') && spansMultipleMonths) {
+               const parts = label.split('-');
+               const month = parseInt(parts[0], 10);
+               const day = parseInt(parts[1], 10);
+               
+               const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+               
+               // Find the center index of the current month
+               let startIdx = index;
+               while (startIdx > 0) {
+                 const prevLabel = this.getLabelForValue(values[startIdx - 1].value) as string;
+                 if (parseInt(prevLabel.split('-')[0], 10) === month) startIdx--;
+                 else break;
+               }
+               
+               let endIdx = index;
+               while (endIdx < values.length - 1) {
+                 const nextLabel = this.getLabelForValue(values[endIdx + 1].value) as string;
+                 if (parseInt(nextLabel.split('-')[0], 10) === month) endIdx++;
+                 else break;
+               }
+               
+               const midIdx = Math.floor((startIdx + endIdx) / 2);
+               
+               if (index === midIdx) {
+                 return [day.toString(), monthNames[month - 1]];
+               }
+               return day.toString();
+            }
+            
+            return label; // standard single month behavior
+          }
         }
       },
       y: {
@@ -665,7 +728,12 @@ export default function ExternalBrandPage() {
                             {post.title}
                           </div>
                           <div className="flex items-center mt-1">
-                            <span className="text-[10px] text-zinc-500">{post.createdDateValue || "N/A"}</span>
+                            <span className="text-[10px] text-zinc-500">
+                              {post.createdDateValue ? (() => {
+                                const [y, m, d] = post.createdDateValue.split('-');
+                                return `${m}/${d}/${y}`
+                              })() : "N/A"}
+                            </span>
                             {post.postLink && (
                               <a href={post.postLink.startsWith('http') ? post.postLink : `https://${post.postLink}`} target="_blank" rel="noopener noreferrer" className="ml-1.5 text-zinc-400 hover:text-blue-500 transition-colors" title="View Post on LinkedIn">
                                 <ExternalLink className="h-3 w-3" />
