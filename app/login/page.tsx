@@ -21,8 +21,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { createClient } from "@/utils/supabase/client"
 
 const formSchema = z.object({
-  username: z.string().min(2, {
-    message: "Username must be at least 2 characters.",
+  email: z.string().email({
+    message: "Must be a valid email address.",
   }),
   password: z.string().min(6, {
     message: "Password must be at least 6 characters.",
@@ -37,33 +37,17 @@ export default function LoginPage() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      username: "",
+      email: "",
       password: "",
     },
   })
 
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
-    
-    // Handling admin credentials separately as requested
-    if (values.username === "admin" && values.password === "admintcdex.123") {
-      toast.success("Admin login successful")
-      router.push("/admin")
-      return
-    }
-
-    // LMS Role login
-    if (values.username === "tcdexlms" && values.password === "tcdexlms123") {
-      toast.success("LMS login successful")
-      router.push("/lms")
-      return
-    }
 
     try {
-      // For Supabase Auth, we'll use an internal email format
-      const email = `${values.username}@internal.tcdex`
       const { error } = await supabase.auth.signInWithPassword({
-        email,
+        email: values.email,
         password: values.password,
       })
 
@@ -75,7 +59,7 @@ export default function LoginPage() {
       }
 
       toast.success("Login successful")
-      router.push("/")
+      router.push("/lms/dashboard")
     } catch {
       toast.error("An error occurred. Please try again.")
     } finally {
@@ -93,7 +77,7 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Internal Portal Login
+            TCDEX Login
           </CardTitle>
           <CardDescription className="text-zinc-500 dark:text-zinc-400">
             Enter your credentials to access your account
@@ -104,12 +88,12 @@ export default function LoginPage() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
                 control={form.control}
-                name="username"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Username</FormLabel>
+                    <FormLabel>Email</FormLabel>
                     <FormControl>
-                      <Input placeholder="j.doe" {...field} />
+                      <Input placeholder="your.email@example.com" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -128,8 +112,8 @@ export default function LoginPage() {
                   </FormItem>
                 )}
               />
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-[#0046ab] hover:bg-[#003a8f] text-white py-6"
                 disabled={isLoading}
               >
