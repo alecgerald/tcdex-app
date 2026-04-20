@@ -23,8 +23,11 @@ import {
   BarChart3,
   CheckCircle2,
   TrendingUp,
-  Award
+  Award,
+  Download
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 
 interface TrainingReport {
   employee_id: string;
@@ -40,35 +43,8 @@ const TrainingReportsDashboard: React.FC = () => {
   const [reports, setReports] = useState<TrainingReport[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
   
-  const supabase = createClient();
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      let query = supabase
-        .from('training_reports')
-        .select('employee_id, employee_name, course_name, status, hours, delivery_unit');
-
-      if (selectedYear !== "all") {
-        query = query.ilike('course_name', `%${selectedYear}%`);
-      }
-
-      const { data, error } = await query;
-      if (error) throw error;
-
-      setReports(data || []);
-    } catch (error) {
-      console.error('Error fetching Training Reports data:', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase, selectedYear]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData, refreshTrigger]);
-
   const metrics = useMemo(() => {
     if (reports.length === 0) return {
       totalParticipants: 0,
@@ -136,6 +112,96 @@ const TrainingReportsDashboard: React.FC = () => {
       .sort((a, b) => b.count - a.count);
   }, [reports]);
 
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+
+    const payload = {
+      title: "Training Reports Dashboard",
+      description: `VILT Training Performance for ${selectedYear === 'all' ? 'All Years' : selectedYear}.`,
+      date: new Date().toLocaleDateString(),
+      kpis: [
+        { title: "Total Participants", value: metrics.totalParticipants, description: "Unique employees in report." },
+        { title: "Completions", value: metrics.totalCompletions, description: "Total course finishes." },
+        { title: "Avg per User", value: metrics.avgPerUser, description: "Courses per active finisher." },
+        { title: "Participation Rate", value: `${metrics.participationRate}%`, description: "Users with ≥1 completion." }
+      ],
+      charts: [
+        {
+          title: "Department Distribution (%)",
+          data: departmentChartData.map(d => ({
+            label: d.name,
+            value: d.percentage,
+            max: 100,
+            color: d.percentage > 30 ? "#0046ab" : "#3b82f6"
+          }))
+        }
+      ],
+      tables: [
+        {
+          title: "Department Breakdown",
+          headers: ["Department", "Count", "Percentage"],
+          rows: departmentChartData.map(d => [d.name, d.count, `${d.percentage}%`])
+        }
+      ]
+    };
+
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Training_Reports_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate vector PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [metrics, departmentChartData, selectedYear]);
+
+  const supabase = createClient();
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      let query = supabase
+        .from('training_reports')
+        .select('employee_id, employee_name, course_name, status, hours, delivery_unit');
+
+      if (selectedYear !== "all") {
+        query = query.ilike('course_name', `%${selectedYear}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setReports(data || []);
+    } catch (error) {
+      console.error('Error fetching Training Reports data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, selectedYear]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData, refreshTrigger]);
+
   if (loading) {
     return (
       <div className="flex h-[400px] items-center justify-center w-full">
@@ -159,6 +225,15 @@ const TrainingReportsDashboard: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-4">
+          <Button 
+            onClick={handleExportPDF}
+            variant="outline"
+            disabled={isExporting}
+            className="flex items-center gap-2 h-10 px-4 text-xs font-bold uppercase tracking-wider border-zinc-200"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-[#0046ab]" />}
+            Export PDF
+          </Button>
           <div className="flex items-center gap-2 text-xs font-black text-muted-foreground uppercase tracking-wider">
             <Calendar className="h-4 w-4" /> Course Year:
           </div>
@@ -186,7 +261,7 @@ const TrainingReportsDashboard: React.FC = () => {
           </CardContent>
         </Card>
       ) : (
-        <>
+        <div id="pdf-content-training" className="space-y-8">
           {/* Metrics Row */}
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             <Card className="border-t-4 border-t-[#0046ab] shadow-sm rounded-2xl overflow-hidden">
@@ -281,7 +356,7 @@ const TrainingReportsDashboard: React.FC = () => {
               </div>
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </div>
   );

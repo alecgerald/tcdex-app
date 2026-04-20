@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { 
@@ -45,6 +45,7 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { toast } from 'sonner';
+import { Download } from 'lucide-react';
 
 interface LeadXSession {
   id: string;
@@ -62,6 +63,7 @@ const LeadXReportsDashboard: React.FC = () => {
   const [masterDepartments, setMasterDepartments] = useState<string[]>([]);
   const [sessionToDelete, setSessionToDelete] = useState<LeadXSession | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   
   // Selection & Filter State
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
@@ -73,7 +75,164 @@ const LeadXReportsDashboard: React.FC = () => {
   
   const supabase = createClient();
 
-  const fetchData = async () => {
+  const availableYears = useMemo(() => {
+    const years = new Set(sessions.map(s => new Date(s.scheduled_time).getFullYear().toString()));
+    return ['All', ...Array.from(years).sort().reverse()];
+  }, [sessions]);
+
+  const filteredSessions = useMemo(() => {
+    let result = sessions;
+
+    if (selectedYear !== 'All') {
+      result = result.filter(s => new Date(s.scheduled_time).getFullYear().toString() === selectedYear);
+    }
+
+    if (sessionSearch) {
+      result = result.filter(s => s.topic.toLowerCase().includes(sessionSearch.toLowerCase()));
+    }
+
+    return result;
+  }, [sessions, selectedYear, sessionSearch]);
+
+  const selectedSession = useMemo(() => 
+    sessions.find(s => s.id === selectedSessionId) || null
+  , [sessions, selectedSessionId]);
+
+  const kpiData = useMemo(() => {
+    if (!selectedSessionId) return null;
+    const session = sessions.find(s => s.id === selectedSessionId);
+    if (!session) return null;
+
+    return {
+      registered: session.registrants_count,
+      attended: session.attendees_count,
+      rate: session.registrants_count > 0 ? (session.attendees_count / session.registrants_count) * 100 : 0
+    };
+  }, [selectedSessionId, sessions]);
+
+  const deptAttendanceData = useMemo(() => {
+    if (!selectedSessionId || allRegistrants.length === 0) return [];
+    
+    const deptMap: Record<string, { registrants: number, attendees: number }> = {};
+    
+    // Initialize with Master Departments
+    masterDepartments.forEach(dept => {
+      deptMap[dept] = { registrants: 0, attendees: 0 };
+    });
+
+    // Count registrants and attendees for this session
+    const sessionRegistrants = allRegistrants.filter(r => r.session_id === selectedSessionId);
+    
+    sessionRegistrants.forEach(r => {
+      const dept = r.department || 'Other';
+      if (!deptMap[dept]) deptMap[dept] = { registrants: 0, attendees: 0 };
+      
+      deptMap[dept].registrants++;
+      if (r.attended) deptMap[dept].attendees++;
+    });
+
+    return Object.entries(deptMap)
+      .map(([department, stats]) => ({
+        department,
+        registrants: stats.registrants,
+        attendees: stats.attendees,
+        attendance_rate: stats.registrants > 0 ? (stats.attendees / stats.registrants) * 100 : 0
+      }))
+      .filter(d => d.registrants > 0)
+      .sort((a, b) => b.registrants - a.registrants);
+  }, [selectedSessionId, allRegistrants, masterDepartments]);
+
+  // Chart Data: Show ONLY the selected session if it matches the type
+  const leadxChartData = useMemo(() => {
+    if (selectedSession && (selectedSession.session_type === 'leadx' || selectedSession.topic.toLowerCase().includes('leadx'))) {
+      return [{
+        name: 'Selected Session',
+        reg: selectedSession.registrants_count,
+        att: selectedSession.attendees_count
+      }];
+    }
+    return [];
+  }, [selectedSession]);
+
+  const buildxChartData = useMemo(() => {
+    if (selectedSession && (selectedSession.session_type === 'buildx' || selectedSession.topic.toLowerCase().includes('buildx'))) {
+      return [{
+        name: 'Selected Session',
+        reg: selectedSession.registrants_count,
+        att: selectedSession.attendees_count
+      }];
+    }
+    return [];
+  }, [selectedSession]);
+
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+
+    const currentSession = sessions.find(s => s.id === selectedSessionId);
+    const sessionName = currentSession ? currentSession.topic : 'Dashboard';
+
+    const payload = {
+      title: `LeadX & BuildX Performance - ${sessionName}`,
+      description: "Session-level engagement and department-wise attendance metrics.",
+      date: new Date().toLocaleDateString(),
+      kpis: kpiData ? [
+        { title: "Registered", value: kpiData.registered, description: "Participants enrolled." },
+        { title: "Attended", value: kpiData.attended, description: "Verified attendance." },
+        { title: "Attendance Rate", value: `${kpiData.rate.toFixed(1)}%`, description: "Engagement efficiency." }
+      ] : [],
+      charts: [
+        {
+          title: "Engagement Overview",
+          data: [
+            { label: "Registered", value: kpiData?.registered || 0, max: kpiData?.registered || 1, color: "#0046ab" },
+            { label: "Attended", value: kpiData?.attended || 0, max: kpiData?.registered || 1, color: "#10b981" }
+          ]
+        }
+      ],
+      tables: [
+        {
+          title: "Department Breakdown",
+          headers: ["Department", "Registered", "Attended", "Rate"],
+          rows: deptAttendanceData.slice(0, 15).map(d => [
+            d.department,
+            d.registrants,
+            d.attendees,
+            `${d.attendance_rate.toFixed(1)}%`
+          ])
+        }
+      ]
+    };
+
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `LeadX_Performance_${sessionName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate vector PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [selectedSessionId, sessions, kpiData, deptAttendanceData]);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const { data: depts } = await supabase.from('departments').select('name');
@@ -112,7 +271,7 @@ const LeadXReportsDashboard: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [supabase]);
 
   const deleteSession = async () => {
     if (!sessionToDelete) return;
@@ -138,93 +297,6 @@ const LeadXReportsDashboard: React.FC = () => {
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
-
-  const availableYears = useMemo(() => {
-    const years = sessions.map(s => new Date(s.scheduled_time).getFullYear().toString());
-    return Array.from(new Set(years)).sort((a, b) => b.localeCompare(a));
-  }, [sessions]);
-
-  const filteredSessions = useMemo(() => {
-    return sessions.filter(s => {
-      const matchesSearch = s.topic.toLowerCase().includes(sessionSearch.toLowerCase());
-      const sessionFullDate = new Date(s.scheduled_time);
-      const sessionYear = sessionFullDate.getFullYear().toString();
-      const sessionDateStr = sessionFullDate.toISOString().split('T')[0];
-      const matchesYear = selectedYear === 'All' || sessionYear === selectedYear;
-      const matchesDateRange = (!fromDate || sessionDateStr >= fromDate) && 
-                              (!toDate || sessionDateStr <= toDate);
-      return matchesSearch && matchesYear && matchesDateRange;
-    });
-  }, [sessions, sessionSearch, selectedYear, fromDate, toDate]);
-
-  const selectedSession = useMemo(() => 
-    sessions.find(s => s.id === selectedSessionId),
-  [sessions, selectedSessionId]);
-
-  // KPI Data Calculation
-  const kpiData = useMemo(() => {
-    if (selectedSession) {
-      return {
-        registered: selectedSession.registrants_count,
-        attended: selectedSession.attendees_count,
-        rate: selectedSession.registrants_count > 0 ? (selectedSession.attendees_count / selectedSession.registrants_count) * 100 : 0,
-        label: selectedSession.topic
-      };
-    }
-    return null;
-  }, [selectedSession]);
-
-  // Chart Data: Show ONLY the selected session if it matches the type
-  const leadxChartData = useMemo(() => {
-    if (selectedSession && (selectedSession.session_type === 'leadx' || selectedSession.topic.toLowerCase().includes('leadx'))) {
-      return [{
-        name: 'Selected Session',
-        reg: selectedSession.registrants_count,
-        att: selectedSession.attendees_count
-      }];
-    }
-    return [];
-  }, [selectedSession]);
-
-  const buildxChartData = useMemo(() => {
-    if (selectedSession && (selectedSession.session_type === 'buildx' || selectedSession.topic.toLowerCase().includes('buildx'))) {
-      return [{
-        name: 'Selected Session',
-        reg: selectedSession.registrants_count,
-        att: selectedSession.attendees_count
-      }];
-    }
-    return [];
-  }, [selectedSession]);
-
-  const deptAttendanceData = useMemo(() => {
-    const deptGroups: Record<string, { reg: number, att: number }> = {};
-    masterDepartments.forEach(name => {
-      deptGroups[name] = { reg: 0, att: 0 };
-    });
-
-    allRegistrants.forEach(r => {
-      if (!selectedSessionId || r.session_id === selectedSessionId) {
-        const d = r.department || 'Unknown';
-        if (!deptGroups[d]) deptGroups[d] = { reg: 0, att: 0 };
-        if (r.approval_status !== 'Attended without registration') {
-          deptGroups[d].reg++;
-        }
-        if (r.attended) {
-          deptGroups[d].att++;
-        }
-      }
-    });
-
-    return Object.entries(deptGroups).map(([d, c]) => ({
-      department: d,
-      registrants: c.reg,
-      attendees: c.att,
-      attendance_rate: c.reg > 0 ? (c.att / c.reg) * 100 : 0
-    })).sort((a, b) => b.attendance_rate - a.attendance_rate || b.registrants - a.registrants);
-  }, [allRegistrants, masterDepartments, selectedSessionId]);
-
   const filteredDeptTable = useMemo(() => {
     return deptAttendanceData.filter(d => 
       d.department.toLowerCase().includes(searchTerm.toLowerCase())
@@ -239,7 +311,7 @@ const LeadXReportsDashboard: React.FC = () => {
   if (loading) return <div className="flex h-[400px] items-center justify-center w-full"><Loader2 className="animate-spin text-[#0046ab] h-8 w-8" /></div>;
 
   return (
-    <div className="w-full space-y-8 p-0 px-4">
+    <div className="w-full space-y-8 p-0 px-4 pb-12">
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 px-0">
         <div className="flex items-center gap-3">
@@ -251,199 +323,211 @@ const LeadXReportsDashboard: React.FC = () => {
             <p className="text-sm text-muted-foreground font-medium">Session-level engagement and department-wise attendance metrics.</p>
           </div>
         </div>
+
+        <Button 
+          onClick={handleExportPDF}
+          variant="outline"
+          disabled={isExporting}
+          className="h-11 px-6 rounded-xl border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all shadow-sm self-start md:self-center"
+        >
+          {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-[#0046ab]" />}
+          Export PDF
+        </Button>
       </div>
 
-      {/* Session Manager Card */}
-      <Card className="shadow-sm border-zinc-200">
-        <CardHeader className="bg-zinc-50/50 border-b p-4">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <History className="h-4 w-4 text-[#0046ab]" />
-              <CardTitle className="text-base font-bold uppercase tracking-wider text-zinc-700">Select Workshop Session</CardTitle>
-            </div>
-            
-            <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 w-full lg:w-auto">
-              <div className="relative w-full sm:w-[200px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
-                <Input 
-                  placeholder="Topic search..." 
-                  className="pl-9 h-9 text-[11px] font-bold uppercase border-zinc-200 focus-visible:ring-[#0046ab]"
-                  value={sessionSearch}
-                  onChange={(e) => setSessionSearch(e.target.value)}
-                />
+      <div id="pdf-content-leadx" className="space-y-8">
+        {/* Session Manager Card */}
+        <Card className="shadow-sm border-zinc-200">
+          <CardHeader className="bg-zinc-50/50 border-b p-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <History className="h-4 w-4 text-[#0046ab]" />
+                <CardTitle className="text-base font-bold uppercase tracking-wider text-zinc-700">Select Workshop Session</CardTitle>
               </div>
+              
+              <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 w-full lg:w-auto">
+                <div className="relative w-full sm:w-[200px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+                  <Input 
+                    placeholder="Topic search..." 
+                    className="pl-9 h-9 text-[11px] font-bold uppercase border-zinc-200 focus-visible:ring-[#0046ab]"
+                    value={sessionSearch}
+                    onChange={(e) => setSessionSearch(e.target.value)}
+                  />
+                </div>
 
-              <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-lg px-2 py-1">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black text-zinc-400 uppercase">From</span>
-                  <input 
-                    type="date" 
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="text-[10px] font-bold uppercase outline-none focus:text-[#0046ab] bg-transparent"
-                  />
+                <div className="flex items-center gap-2 bg-white border border-zinc-200 rounded-lg px-2 py-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase">From</span>
+                    <input 
+                      type="date" 
+                      value={fromDate}
+                      onChange={(e) => setFromDate(e.target.value)}
+                      className="text-[10px] font-bold uppercase outline-none focus:text-[#0046ab] bg-transparent"
+                    />
+                  </div>
+                  <div className="w-px h-4 bg-zinc-100" />
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] font-black text-zinc-400 uppercase">To</span>
+                    <input 
+                      type="date" 
+                      value={toDate}
+                      onChange={(e) => setToDate(e.target.value)}
+                      className="text-[10px] font-bold uppercase outline-none focus:text-[#0046ab] bg-transparent"
+                    />
+                  </div>
+                  {(fromDate || toDate) && (
+                    <Button variant="ghost" size="icon" onClick={clearDateFilters} className="h-5 w-5 rounded-full hover:bg-zinc-100 text-zinc-400">
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
                 </div>
-                <div className="w-px h-4 bg-zinc-100" />
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[9px] font-black text-zinc-400 uppercase">To</span>
-                  <input 
-                    type="date" 
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="text-[10px] font-bold uppercase outline-none focus:text-[#0046ab] bg-transparent"
-                  />
-                </div>
-                {(fromDate || toDate) && (
-                  <Button variant="ghost" size="icon" onClick={clearDateFilters} className="h-5 w-5 rounded-full hover:bg-zinc-100 text-zinc-400">
-                    <X className="h-3 w-3" />
+                
+                <Select value={selectedYear} onValueChange={setSelectedYear}>
+                  <SelectTrigger className="w-full sm:w-[100px] h-9 text-[11px] font-black uppercase border-zinc-200 focus:ring-0 bg-white">
+                    <SelectValue placeholder="Year" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="All" className="text-[11px] font-black uppercase">All Years</SelectItem>
+                    {availableYears.map(year => (
+                      <SelectItem key={year} value={year} className="text-[11px] font-black uppercase">{year}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {selectedSessionId && (
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedSessionId(null)} className="text-[10px] font-black uppercase text-zinc-400 h-7 shrink-0">
+                    Clear Selection
                   </Button>
                 )}
               </div>
-              
-              <Select value={selectedYear} onValueChange={setSelectedYear}>
-                <SelectTrigger className="w-full sm:w-[100px] h-9 text-[11px] font-black uppercase border-zinc-200 focus:ring-0 bg-white">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="All" className="text-[11px] font-black uppercase">All Years</SelectItem>
-                  {availableYears.map(year => (
-                    <SelectItem key={year} value={year} className="text-[11px] font-black uppercase">{year}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {selectedSessionId && (
-                <Button variant="ghost" size="sm" onClick={() => setSelectedSessionId(null)} className="text-[10px] font-black uppercase text-zinc-400 h-7 shrink-0">
-                  Clear Selection
-                </Button>
-              )}
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          <ScrollArea className="h-[250px]">
-            <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
-              {filteredSessions.length > 0 ? (
-                filteredSessions.map(s => (
-                  <div 
-                    key={s.id}
-                    onClick={() => setSelectedSessionId(s.id)}
-                    className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
-                      selectedSessionId === s.id 
-                        ? 'bg-[#0046ab]/10 border-[#0046ab] shadow-sm' 
-                        : 'hover:bg-zinc-50 border-zinc-100 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      <div className={`w-2 h-2 rounded-full shrink-0 ${s.session_type === 'leadx' || s.topic.toLowerCase().includes('leadx') ? 'bg-[#0046ab]' : 'bg-amber-500'}`} />
-                      <div className="overflow-hidden">
-                        <p className={`text-xs font-black truncate ${selectedSessionId === s.id ? 'text-[#0046ab]' : 'text-zinc-700'}`}>
-                          {s.topic}
-                        </p>
-                        <p className="text-[10px] font-bold text-zinc-400 uppercase">
-                          {new Date(s.scheduled_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {selectedSessionId === s.id && <Check className="h-3 w-3 text-[#0046ab]" />}
-                      <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-200 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors"
-                        onClick={(e) => { e.stopPropagation(); setSessionToDelete(s); }}>
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="col-span-full h-[200px] flex flex-col items-center justify-center text-center p-8">
-                  <div className="p-4 bg-zinc-50 rounded-full mb-4"><Search className="h-6 w-6 text-zinc-200" /></div>
-                  <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">No matching sessions</p>
-                </div>
-              )}
-            </div>
-          </ScrollArea>
-        </CardContent>
-      </Card>
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <KPICard title="Registered" value={kpiData ? kpiData.registered : "—"} icon={<Users className="h-4 w-4" />} color="text-[#0046ab]" description={kpiData ? "Participants enrolled" : "Select a session to view"} />
-        <KPICard title="Attended" value={kpiData ? kpiData.attended : "—"} icon={<CheckCircle2 className="h-4 w-4" />} color="text-emerald-600" description={kpiData ? "Verified attendance" : "Select a session to view"} />
-        <KPICard title="Attendance Rate" value={kpiData ? `${kpiData.rate.toFixed(1)}%` : "—"} icon={<TrendingUp className="h-4 w-4" />} color="text-indigo-600" isRate description={kpiData ? "Engagement efficiency" : "Select a session to view"} />
-      </div>
-
-      {/* Engagement Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <ChartCard 
-          title="LeadX Engagement" 
-          data={leadxChartData} 
-          color1="#0046ab" 
-          color2="#10b981" 
-          placeholder="Select a LeadX session to view engagement data."
-        />
-        <ChartCard 
-          title="BuildX Engagement" 
-          data={buildxChartData} 
-          color1="#3b82f6" 
-          color2="#f59e0b" 
-          placeholder="Select a BuildX session to view engagement data."
-        />
-      </div>
-
-      {/* Department Breakdown */}
-      <div className="pb-12">
-        <Card className="shadow-sm overflow-hidden border-zinc-100">
-          <CardHeader className="border-b bg-zinc-50/50 p-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div>
-                <CardTitle className="text-sm font-bold uppercase text-zinc-700 tracking-wider">Department Breakdown</CardTitle>
-                <CardDescription className="text-xs font-medium">
-                  {selectedSession ? `Data for ${selectedSession.topic}` : 'Global Aggregate Performance'}
-                </CardDescription>
-              </div>
-              <div className="relative w-full md:w-[300px]">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-                <Input placeholder="Search department..." className="pl-9 h-9 border-zinc-200" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              </div>
             </div>
           </CardHeader>
-          <Table>
-            <TableHeader className="bg-zinc-50">
-              <TableRow>
-                <TableHead className="font-bold py-4 text-sm text-zinc-800">Department</TableHead>
-                <TableHead className="text-right font-bold text-sm text-zinc-800">Registered</TableHead>
-                <TableHead className="text-right font-bold text-sm text-zinc-800">Attended</TableHead>
-                <TableHead className="w-[30%] font-bold text-sm text-zinc-800">Attendance Rate</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredDeptTable.length === 0 ? (
-                <TableRow><TableCell colSpan={4} className="text-center py-10 text-zinc-400 italic text-sm">No data available.</TableCell></TableRow>
-              ) : (
-                filteredDeptTable.map(d => (
-                  <TableRow key={d.department} className="hover:bg-zinc-50/50 transition-colors border-b">
-                    <TableCell className="text-sm font-bold text-zinc-700 py-4">{d.department}</TableCell>
-                    <TableCell className="text-right font-medium text-zinc-600">{d.registrants}</TableCell>
-                    <TableCell className="text-right font-bold text-zinc-900">{d.attendees}</TableCell>
-                    <TableCell className="py-4">
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between items-center px-0.5">
-                          <span className="text-[10px] font-black text-zinc-500">{d.attendance_rate.toFixed(1)}%</span>
-                        </div>
-                        <div className="h-2 w-full bg-zinc-100 rounded-full overflow-hidden border border-zinc-200/50">
-                          <div 
-                            className={`h-full transition-all duration-500 rounded-full ${d.attendance_rate >= 80 ? 'bg-emerald-500' : d.attendance_rate >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`}
-                            style={{ width: `${d.attendance_rate}%` }}
-                          />
+          <CardContent className="p-0">
+            <ScrollArea className="h-[250px]">
+              <div className="p-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-1.5">
+                {filteredSessions.length > 0 ? (
+                  filteredSessions.map(s => (
+                    <div 
+                      key={s.id}
+                      onClick={() => setSelectedSessionId(s.id)}
+                      className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all border ${
+                        selectedSessionId === s.id 
+                          ? 'bg-[#0046ab]/10 border-[#0046ab] shadow-sm' 
+                          : 'hover:bg-zinc-50 border-zinc-100 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className={`w-2 h-2 rounded-full shrink-0 ${s.session_type === 'leadx' || s.topic.toLowerCase().includes('leadx') ? 'bg-[#0046ab]' : 'bg-amber-500'}`} />
+                        <div className="overflow-hidden">
+                          <p className={`text-xs font-black truncate ${selectedSessionId === s.id ? 'text-[#0046ab]' : 'text-zinc-700'}`}>
+                            {s.topic}
+                          </p>
+                          <p className="text-[10px] font-bold text-zinc-400 uppercase">
+                            {new Date(s.scheduled_time).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
                         </div>
                       </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                      <div className="flex items-center gap-2">
+                        {selectedSessionId === s.id && <Check className="h-3 w-3 text-[#0046ab]" />}
+                        <Button variant="ghost" size="icon" className="h-6 w-6 text-zinc-200 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors"
+                          onClick={(e) => { e.stopPropagation(); setSessionToDelete(s); }}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="col-span-full h-[200px] flex flex-col items-center justify-center text-center p-8">
+                    <div className="p-4 bg-zinc-50 rounded-full mb-4"><Search className="h-6 w-6 text-zinc-200" /></div>
+                    <p className="text-sm font-black text-zinc-400 uppercase tracking-widest">No matching sessions</p>
+                  </div>
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
         </Card>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <KPICard title="Registered" value={kpiData ? kpiData.registered : "—"} icon={<Users className="h-4 w-4" />} color="text-[#0046ab]" description={kpiData ? "Participants enrolled" : "Select a session to view"} />
+          <KPICard title="Attended" value={kpiData ? kpiData.attended : "—"} icon={<CheckCircle2 className="h-4 w-4" />} color="text-emerald-600" description={kpiData ? "Verified attendance" : "Select a session to view"} />
+          <KPICard title="Attendance Rate" value={kpiData ? `${kpiData.rate.toFixed(1)}%` : "—"} icon={<TrendingUp className="h-4 w-4" />} color="text-indigo-600" isRate description={kpiData ? "Engagement efficiency" : "Select a session to view"} />
+        </div>
+
+        {/* Engagement Charts */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <ChartCard 
+            title="LeadX Engagement" 
+            data={leadxChartData} 
+            color1="#0046ab" 
+            color2="#10b981" 
+            placeholder="Select a LeadX session to view engagement data."
+          />
+          <ChartCard 
+            title="BuildX Engagement" 
+            data={buildxChartData} 
+            color1="#3b82f6" 
+            color2="#f59e0b" 
+            placeholder="Select a BuildX session to view engagement data."
+          />
+        </div>
+
+        {/* Department Breakdown */}
+        <div className="pb-12">
+          <Card className="shadow-sm overflow-hidden border-zinc-100">
+            <CardHeader className="border-b bg-zinc-50/50 p-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-sm font-bold uppercase text-zinc-700 tracking-wider">Department Breakdown</CardTitle>
+                  <CardDescription className="text-xs font-medium">
+                    {selectedSession ? `Data for ${selectedSession.topic}` : 'Global Aggregate Performance'}
+                  </CardDescription>
+                </div>
+                <div className="relative w-full md:w-[300px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+                  <Input placeholder="Search department..." className="pl-9 h-9 border-zinc-200" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+                </div>
+              </div>
+            </CardHeader>
+            <Table>
+              <TableHeader className="bg-zinc-50">
+                <TableRow>
+                  <TableHead className="font-bold py-4 text-sm text-zinc-800">Department</TableHead>
+                  <TableHead className="text-right font-bold text-sm text-zinc-800">Registered</TableHead>
+                  <TableHead className="text-right font-bold text-sm text-zinc-800">Attended</TableHead>
+                  <TableHead className="w-[30%] font-bold text-sm text-zinc-800">Attendance Rate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredDeptTable.length === 0 ? (
+                  <TableRow><TableCell colSpan={4} className="text-center py-10 text-zinc-400 italic text-sm">No data available.</TableCell></TableRow>
+                ) : (
+                  filteredDeptTable.map(d => (
+                    <TableRow key={d.department} className="hover:bg-zinc-50/50 transition-colors border-b">
+                      <TableCell className="text-sm font-bold text-zinc-700 py-4">{d.department}</TableCell>
+                      <TableCell className="text-right font-medium text-zinc-600">{d.registrants}</TableCell>
+                      <TableCell className="text-right font-bold text-zinc-900">{d.attendees}</TableCell>
+                      <TableCell className="py-4">
+                        <div className="space-y-1.5">
+                          <div className="flex justify-between items-center px-0.5">
+                            <span className="text-[10px] font-black text-zinc-500">{d.attendance_rate.toFixed(1)}%</span>
+                          </div>
+                          <div className="h-2 w-full bg-zinc-100 rounded-full overflow-hidden border border-zinc-200/50">
+                            <div 
+                              className={`h-full transition-all duration-500 rounded-full ${d.attendance_rate >= 80 ? 'bg-emerald-500' : d.attendance_rate >= 60 ? 'bg-blue-500' : 'bg-amber-500'}`}
+                              style={{ width: `${d.attendance_rate}%` }}
+                            />
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </Card>
+        </div>
       </div>
 
       {/* Deletion Dialog */}

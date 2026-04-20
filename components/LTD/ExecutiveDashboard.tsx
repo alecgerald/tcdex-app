@@ -28,7 +28,8 @@ import {
   LayoutDashboard,
   User,
   Check,
-  ChevronsUpDown
+  ChevronsUpDown,
+  Download
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -42,6 +43,7 @@ import {
 } from '@/components/ui/command';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 
 interface ExecutiveDashboardProps {
   refreshTrigger?: number | string;
@@ -105,17 +107,11 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
   const [loading, setLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [selectedCohortCompetency, setSelectedCohortCompetency] = useState<string>('Challenge Orientation');
+  const [isExporting, setIsExporting] = useState<boolean>(false);
   
   // Combobox state
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-
-  const filteredParticipants = useMemo(() => {
-    if (!searchQuery) return participants;
-    return participants.filter(p => 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  }, [participants, searchQuery]);
 
   const supabase = createClient();
   const competencies = ['Challenge Orientation', 'Relationship-Building', 'Self-Leadership', 'HR Partnership', 'Strategic & Inclusive'];
@@ -289,6 +285,94 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
     };
   }, [individualScores, viewMode, competencies]);
 
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+
+    // 1. Gather dashboard data for the vector PDF
+    const payload = {
+      title: dashboardType === 'cohort' ? 'Leadership Cohort Dashboard' : `Leadership Individual: ${selectedParticipant?.name || 'Dashboard'}`,
+      description: dashboardType === 'cohort' 
+        ? "Aggregated leadership readiness performance for the entire cohort." 
+        : `Detailed leadership competency profile for ${selectedParticipant?.name}.`,
+      date: new Date().toLocaleDateString(),
+      kpis: dashboardType === 'cohort' && cohortMetrics ? [
+        { title: "Cohort Readiness Score", value: cohortMetrics.readinessScore.toFixed(2), description: `Baseline average across ${cohortMetrics.totalParticipants} participants.` },
+        { title: "Top Strength", value: cohortMetrics.topStrengths[0]?.competency || "N/A", description: `Avg Score: ${cohortMetrics.topStrengths[0]?.average || 0}` },
+        { title: "Key Dev Area", value: cohortMetrics.developmentAreas[0]?.competency || "N/A", description: `Avg Score: ${cohortMetrics.developmentAreas[0]?.average || 0}` }
+      ] : [
+        { title: "Readiness Score", value: processedIndividual.readinessScore.toFixed(2), description: "Pre-assessment baseline score." },
+        { title: "Top Strength", value: processedIndividual.topStrengths[0]?.competency || "N/A", description: "Highest rated competency." },
+        { title: "Key Dev Area", value: processedIndividual.developmentAreas[0]?.competency || "N/A", description: "Primary area for growth." }
+      ],
+      charts: dashboardType === 'cohort' && cohortMetrics ? [
+        {
+          title: "Cohort Competency Averages",
+          data: cohortMetrics.competencyAverages.map(d => ({
+            label: d.competency,
+            value: d.average,
+            max: 5,
+            color: "#0046ab"
+          }))
+        }
+      ] : [
+        {
+          title: `Competency Profile (${viewMode.toUpperCase()})`,
+          data: processedIndividual.chartData.map(d => ({
+            label: d.competency,
+            value: viewMode === 'post' ? d.post : d.pre,
+            max: 5,
+            color: viewMode === 'post' ? "#22c55e" : "#0046ab"
+          }))
+        }
+      ],
+      tables: dashboardType === 'cohort' && cohortMetrics ? [
+        {
+          title: "Department Breakdown",
+          headers: ["Department", ...competencies],
+          rows: cohortMetrics.departmentAverages.map(d => [
+            d.department,
+            ...competencies.map(c => d[c])
+          ])
+        }
+      ] : []
+    };
+
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${payload.title.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate vector PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [dashboardType, selectedParticipant, cohortMetrics, processedIndividual, viewMode, competencies]);
+
+  const filteredParticipants = useMemo(() => {
+    if (!searchQuery) return participants;
+    return participants.filter(p => 
+      p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [participants, searchQuery]);
+
   if (loading) {
     return (
       <div className="flex h-[400px] items-center justify-center">
@@ -307,7 +391,7 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
   return (
     <div className="space-y-6">
       {/* 1. VIEW MODE TOGGLE */}
-      <div className="flex justify-center bg-white dark:bg-zinc-900 p-2 rounded-xl border shadow-sm w-fit mx-auto">
+      <div className="flex flex-col md:flex-row items-center justify-center gap-4 bg-white dark:bg-zinc-900 p-2 rounded-xl border shadow-sm w-fit mx-auto">
         <Tabs value={dashboardType} onValueChange={(v) => setDashboardType(v as DashboardType)}>
           <TabsList className="grid grid-cols-2 w-[300px]">
             <TabsTrigger value="individual" className="flex items-center gap-2">
@@ -318,6 +402,16 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
             </TabsTrigger>
           </TabsList>
         </Tabs>
+        
+        <Button 
+          variant="outline" 
+          onClick={handleExportPDF} 
+          disabled={isExporting}
+          className="flex items-center gap-2 h-10 px-4 text-xs font-bold uppercase tracking-wider"
+        >
+          {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-[#0046ab]" />}
+          Export PDF
+        </Button>
       </div>
 
       {/* 2. HEADER CONTROLS (CONDITIONAL) */}
@@ -404,7 +498,7 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
 
       {/* 3. COHORT VIEW CONTENT */}
       {dashboardType === 'cohort' && (
-        <div className="space-y-6 animate-in fade-in duration-500">
+        <div id="pdf-content-executive" className="space-y-6 animate-in fade-in duration-500">
           {!cohortMetrics ? (
             <Card className="border-dashed bg-muted/30 py-20 text-center">
               <CardContent>
@@ -543,7 +637,7 @@ const ExecutiveDashboard: React.FC<ExecutiveDashboardProps> = ({ refreshTrigger 
 
       {/* 4. INDIVIDUAL VIEW CONTENT */}
       {dashboardType === 'individual' && (
-        <div className="animate-in fade-in duration-500">
+        <div id="pdf-content-executive" className="animate-in fade-in duration-500">
           {!selectedParticipant ? (
             <Card className="border-dashed bg-muted/30 py-20 text-center">
               <CardContent>

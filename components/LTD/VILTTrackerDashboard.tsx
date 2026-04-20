@@ -24,7 +24,6 @@ import {
   ChevronRight,
   LayoutGrid,
   Trash2,
-  FileSpreadsheet,
   Download
 } from 'lucide-react';
 import { 
@@ -63,11 +62,95 @@ const VILTTrackerDashboard: React.FC = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
   const [records, setRecords] = useState<VILTRecord[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
   
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   
   const supabase = createClient();
+
+  // Attendance Metrics for selected session
+  const summary = useMemo(() => {
+    const total = records.length;
+    const completed = records.filter(r => r.overall_status === 'Completed').length;
+    const rate = total > 0 ? (completed / total) * 100 : 0;
+    
+    return {
+      total,
+      completed,
+      rate: rate.toFixed(1)
+    };
+  }, [records]);
+
+  const handleExportPDF = useCallback(async () => {
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+
+    const sessionName = selectedSession ? `${selectedSession.cohort}_${selectedSession.year}` : 'Dashboard';
+    
+    const payload = {
+      title: `VILT Tracker - ${sessionName}`,
+      description: `Attendance and module completion tracking for ${sessionName}.`,
+      date: new Date().toLocaleDateString(),
+      kpis: [
+        { title: "Attendance Rate", value: `${summary.rate}%`, description: "Completion efficiency." },
+        { title: "Completed", value: summary.completed, description: "Total finished all modules." },
+        { title: "Total Enrolled", value: summary.total, description: "Total participants in cohort." }
+      ],
+      charts: [
+        {
+          title: "Module Completion Breakdown",
+          data: MODULE_KEYS.map(key => {
+            const count = records.filter(r => r.modules[key]).length;
+            return {
+              label: key,
+              value: count,
+              max: records.length || 1,
+              color: "#0046ab"
+            };
+          })
+        }
+      ],
+      tables: [
+        {
+          title: "Participant Completion Status",
+          headers: ["Participant", "Department", "Status"],
+          rows: records.slice(0, 20).map(r => [
+            r.name,
+            r.department,
+            r.overall_status
+          ])
+        }
+      ]
+    };
+
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `VILT_Tracker_${sessionName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate vector PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [selectedSession, summary, records]);
 
   // 1. Fetch all distinct sessions (year + cohort)
   const fetchSessions = useCallback(async () => {
@@ -269,19 +352,6 @@ const VILTTrackerDashboard: React.FC = () => {
     }
   };
 
-  // Attendance Metrics for selected session
-  const summary = useMemo(() => {
-    const total = records.length;
-    const completed = records.filter(r => r.overall_status === 'Completed').length;
-    const rate = total > 0 ? (completed / total) * 100 : 0;
-    
-    return {
-      total,
-      completed,
-      rate: rate.toFixed(1)
-    };
-  }, [records]);
-
   if (loading && records.length === 0 && sessions.length > 0) {
     return (
       <div className="flex h-[400px] items-center justify-center w-full">
@@ -299,15 +369,26 @@ const VILTTrackerDashboard: React.FC = () => {
             <LayoutGrid className="h-5 w-5 text-[#0046ab]" />
             <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500">Select Session</h2>
           </div>
-          <Button 
-            onClick={exportToExcel}
-            variant="outline"
-            className="h-10 px-6 rounded-lg border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all"
-            disabled={filteredRecords.length === 0}
-          >
-            <Download className="h-5 w-5 text-[#0046ab]" />
-            Export to Excel
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              onClick={handleExportPDF}
+              variant="outline"
+              disabled={isExporting}
+              className="h-10 px-6 rounded-lg border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all shadow-sm"
+            >
+              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-[#0046ab]" />}
+              Export PDF
+            </Button>
+            <Button 
+              onClick={exportToExcel}
+              variant="outline"
+              className="h-10 px-6 rounded-lg border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all"
+              disabled={filteredRecords.length === 0}
+            >
+              <Download className="h-5 w-5 text-[#0046ab]" />
+              Export to Excel
+            </Button>
+          </div>
         </div>
         
         <div className="flex flex-nowrap overflow-x-auto gap-4 pb-4 -mx-1 px-1 scrollbar-hide">
@@ -383,7 +464,7 @@ const VILTTrackerDashboard: React.FC = () => {
           </div>
         </Card>
       ) : (
-        <>
+        <div id="pdf-content-vilt" className="space-y-8">
           {/* Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="shadow-sm border-zinc-100 rounded-2xl overflow-hidden group">
@@ -564,7 +645,7 @@ const VILTTrackerDashboard: React.FC = () => {
               )}
             </CardContent>
           </Card>
-        </>
+        </div>
       )}
     </div>
   );
