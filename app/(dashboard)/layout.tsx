@@ -61,8 +61,9 @@ const sidebarCategories = [
     icon: Users,
     items: [
       { name: "Dashboard", href: "/erg", icon: LayoutDashboard },
+      { name: "Membership Directory", href: "/erg/directory", icon: Users },
       { name: "Upload Excel", href: "/erg/upload", icon: FileUp },
-      { name: "Reports", href: "/erg/reports", icon: BarChart3 },
+      { name: "Audit Logs", href: "/erg/audit-logs", icon: FileClock },
     ],
   },
   {
