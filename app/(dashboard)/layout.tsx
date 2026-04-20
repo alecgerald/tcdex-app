@@ -154,8 +154,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         pathname.startsWith("/ltd") ||
         pathname.startsWith("/ex") ||
         pathname.startsWith("/erg") ||
-        pathname.startsWith("/governance") ||
-        pathname.startsWith("/admin")
+        pathname.startsWith("/governance")
       )
 
       if (isForbidden) {
