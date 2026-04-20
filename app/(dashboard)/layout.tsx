@@ -92,7 +92,29 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
-  const username = "tcdex.user"
+  const [username, setUsername] = useState("User")
+
+  useEffect(() => {
+    const fetchUser = async () => {
+      const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data } = await supabase
+          .from("profiles")
+          .select("first_name, last_name, email")
+          .eq("id", user.id)
+          .single()
+        
+        if (data) {
+          const fullName = `${data.first_name || ""} ${data.last_name || ""}`.trim()
+          setUsername(fullName || data.email?.split("@")[0] || user.email?.split("@")[0] || "User")
+        } else {
+          setUsername(user.email?.split("@")[0] || "User")
+        }
+      }
+    }
+    fetchUser()
+  }, [])
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -229,12 +251,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </ScrollArea>
 
         <div className={cn("p-4 border-t shrink-0 flex items-center", !isSidebarOpen ? "justify-center" : "justify-between")}>
-          <div className={cn("flex items-center gap-3 overflow-hidden transition-all", !isSidebarOpen && "w-0 opacity-0")}>
-            <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800">
+          <Link 
+            href="/profile"
+            className={cn(
+              "flex items-center gap-3 overflow-hidden transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2 rounded-lg cursor-pointer", 
+              !isSidebarOpen && "w-0 opacity-0"
+            )}
+          >
+            <div className="h-8 w-8 shrink-0 rounded-full bg-zinc-100 flex items-center justify-center dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
               <span className="text-[#0046ab] font-bold text-xs capitalize">{username[0]}</span>
             </div>
             <span className="font-semibold text-sm text-zinc-900 truncate dark:text-zinc-100">{username}</span>
-          </div>
+          </Link>
           <Button
             variant="ghost"
             size="icon"

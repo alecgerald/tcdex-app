@@ -77,7 +77,7 @@ export default function LoginPage() {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Internal Portal Login
+            TCDEX Login
           </CardTitle>
           <CardDescription className="text-zinc-500 dark:text-zinc-400">
             Enter your credentials to access your account
@@ -112,8 +112,8 @@ export default function LoginPage() {
                   </FormItem>
                 )}
               />
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-[#0046ab] hover:bg-[#003a8f] text-white py-6"
                 disabled={isLoading}
               >
