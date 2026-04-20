@@ -57,10 +57,28 @@ export default function AuditLogsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null)
   const [selectedLog, setSelectedLog] = useState<AuditLog | null>(null)
   const [isViewOpen, setIsViewOpen] = useState(false)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
-    const fetchLogs = async () => {
+    const fetchLogsAndRole = async () => {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        // Fetch Role
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("roles(name)")
+          .eq("user_id", user.id)
+          .single()
+
+        if (roleData && (roleData as any).roles) {
+          setUserRole((roleData as any).roles.name)
+        } else {
+          setUserRole("viewer")
+        }
+      }
+
       const { data, error } = await supabase.from('lms_batches').select('*').order('upload_timestamp', { ascending: false })
       if (data) {
         const parsed = data.map(b => {
@@ -78,11 +96,11 @@ export default function AuditLogsPage() {
         console.error("Failed to fetch history logs", error)
       }
     }
-    fetchLogs()
+    fetchLogsAndRole()
   }, [])
 
   const handleDelete = async () => {
-    if (!deleteId) return
+    if (!deleteId || userRole === "viewer") return
     const supabase = createClient()
 
     // Purge linked cascade constraints manually just in case
@@ -268,18 +286,20 @@ export default function AuditLogsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeleteId(log.id);
-                          }}
-                          title="Delete Log"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {userRole !== "viewer" && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-red-500 hover:bg-red-50 hover:text-red-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteId(log.id);
+                            }}
+                            title="Delete Log"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

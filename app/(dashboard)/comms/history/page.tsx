@@ -69,10 +69,28 @@ export default function CommsAuditLogsPage() {
   const [isViewOpen, setIsViewOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
   const [logToDelete, setLogToDelete] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
 
   useEffect(() => {
-    async function loadBatches() {
+    async function loadDataAndRole() {
       const supabase = createClient()
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        // Fetch Role
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("roles(name)")
+          .eq("user_id", user.id)
+          .single()
+
+        if (roleData && (roleData as any).roles) {
+          setUserRole((roleData as any).roles.name)
+        } else {
+          setUserRole("viewer")
+        }
+      }
+
       const { data, error } = await supabase
         .from('comms_batches')
         .select('*')
@@ -93,11 +111,11 @@ export default function CommsAuditLogsPage() {
          console.error("Failed to load logs from Supabase:", error)
       }
     }
-    loadBatches()
+    loadDataAndRole()
   }, [])
 
   const confirmDelete = async () => {
-    if (!logToDelete) return
+    if (!logToDelete || userRole === "viewer") return
     const supabase = createClient()
     const { error } = await supabase.from('comms_batches').delete().eq('batch_id', logToDelete)
 
@@ -115,6 +133,10 @@ export default function CommsAuditLogsPage() {
 
   const handleDeletePrompt = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    if (userRole === "viewer") {
+      toast.error("You do not have permission to delete history")
+      return
+    }
     setLogToDelete(id)
   }
 
@@ -301,14 +323,16 @@ export default function CommsAuditLogsPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="h-8 w-8 text-red-500"
-                          onClick={(e) => handleDeletePrompt(log.id, e)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {userRole !== "viewer" && (
+                          <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-red-500"
+                            onClick={(e) => handleDeletePrompt(log.id, e)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>

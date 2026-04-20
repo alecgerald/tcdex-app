@@ -93,28 +93,101 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
   const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
   const [username, setUsername] = useState("User")
+  const [userRole, setUserRole] = useState<string | null>(null)
+  const [isRoleLoading, setIsRoleLoading] = useState(true)
 
   useEffect(() => {
-    const fetchUser = async () => {
+    const fetchUserAndRole = async () => {
       const supabase = createClient()
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
-        const { data } = await supabase
+        // Fetch Profile
+        const { data: profileData } = await supabase
           .from("profiles")
           .select("first_name, last_name, email")
           .eq("id", user.id)
           .single()
         
-        if (data) {
-          const fullName = `${data.first_name || ""} ${data.last_name || ""}`.trim()
-          setUsername(fullName || data.email?.split("@")[0] || user.email?.split("@")[0] || "User")
+        if (profileData) {
+          const fullName = `${profileData.first_name || ""} ${profileData.last_name || ""}`.trim()
+          setUsername(fullName || profileData.email?.split("@")[0] || user.email?.split("@")[0] || "User")
         } else {
           setUsername(user.email?.split("@")[0] || "User")
         }
+
+        // Fetch Role
+        const { data: roleData } = await supabase
+          .from("user_roles")
+          .select("roles(name)")
+          .eq("user_id", user.id)
+          .single()
+
+        if (roleData && (roleData as any).roles) {
+          setUserRole((roleData as any).roles.name)
+        } else {
+          setUserRole("viewer") // Default to viewer if no role found
+        }
+      }
+      setIsRoleLoading(false)
+    }
+    fetchUserAndRole()
+  }, [])
+
+  // Access control check
+  useEffect(() => {
+    if (isRoleLoading || !userRole) return
+
+    const isViewer = userRole === "viewer"
+    if (isViewer) {
+      const allowedPaths = [
+        "/lms/dashboard",
+        "/lms/history",
+        "/comms/external-brand",
+        "/comms/history",
+        "/profile"
+      ]
+      
+      const isForbidden = (
+        pathname.startsWith("/lms/upload") || 
+        pathname.startsWith("/comms/upload") ||
+        pathname.startsWith("/ltd") ||
+        pathname.startsWith("/ex") ||
+        pathname.startsWith("/erg") ||
+        pathname.startsWith("/governance") ||
+        pathname.startsWith("/admin")
+      )
+
+      if (isForbidden) {
+        // Find first allowed dashboard
+        router.push("/lms/dashboard")
       }
     }
-    fetchUser()
-  }, [])
+  }, [userRole, isRoleLoading, pathname, router])
+
+  const filteredCategories = sidebarCategories.filter(category => {
+    if (isRoleLoading) return false
+    if (userRole === "owner" || userRole === "lead") return true
+    
+    // Viewer restrictions
+    if (category.id === "lms" || category.id === "comms") return true
+    return false
+  }).map(category => {
+    if (userRole !== "viewer") return category
+
+    // Filter items within category for viewer
+    return {
+      ...category,
+      items: category.items.filter(item => {
+        if (category.id === "lms") {
+          return item.href === "/lms/dashboard" || item.href === "/lms/history"
+        }
+        if (category.id === "comms") {
+          return item.href === "/comms/external-brand" || item.href === "/comms/history"
+        }
+        return false
+      })
+    }
+  })
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -166,7 +239,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
         <ScrollArea className="flex-1">
           <nav className="space-y-2 p-4">
-            {sidebarCategories.map((category) => {
+            {filteredCategories.map((category) => {
               const isOpen = openCategories.includes(category.id)
               const hasActiveChild = category.items.some(item => pathname === item.href)
 

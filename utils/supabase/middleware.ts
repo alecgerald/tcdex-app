@@ -35,9 +35,22 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser()
 
-  if (!user && request.nextUrl.pathname.startsWith('/lms')) {
+  // If there is no user and the current path is not the login page or an auth-related path, redirect to login
+  if (
+    !user && 
+    !request.nextUrl.pathname.startsWith('/login') && 
+    !request.nextUrl.pathname.startsWith('/auth') && 
+    request.nextUrl.pathname !== '/'
+  ) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  // If there is a user and they are at the login page or root, redirect them to a dashboard page
+  if (user && (request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname === '/')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/lms/dashboard'
     return NextResponse.redirect(url)
   }
 
