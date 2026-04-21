@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { toast } from "sonner"
 import { ProcessedProgramRow, LIFECYCLE_PHASES, lifecycleScore } from "./types"
-import { updateLifecycleStatus, updateProgramField } from "@/app/governance/actions"
+import { updateLifecycleStatus, updateProgramField } from "@/app/(dashboard)/governance/actions"
 
 interface Props {
   program: ProcessedProgramRow | null
@@ -22,10 +22,10 @@ const FEEDBACK_STATUS_OPTIONS = ["MISSING", "PARTIAL", "COMPLETE"]
 
 // Status badge display config
 const STATUS_CONFIG: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
-  COMPLETED:   { label: "Done",        cls: "bg-emerald-100 text-emerald-700 border-emerald-200",  icon: <CheckCircle2 className="h-3 w-3" /> },
-  IN_PROGRESS: { label: "In Progress", cls: "bg-amber-100 text-amber-700 border-amber-200",        icon: <Clock className="h-3 w-3" /> },
-  NOT_STARTED: { label: "Not Started", cls: "bg-red-100 text-red-600 border-red-200",              icon: <Circle className="h-3 w-3" /> },
-  N_A:         { label: "N/A",         cls: "bg-zinc-100 text-zinc-500 border-zinc-200",           icon: <Circle className="h-3 w-3" /> },
+  COMPLETED: { label: "Done", cls: "bg-emerald-100 text-emerald-700 border-emerald-200", icon: <CheckCircle2 className="h-3 w-3" /> },
+  IN_PROGRESS: { label: "In Progress", cls: "bg-amber-100 text-amber-700 border-amber-200", icon: <Clock className="h-3 w-3" /> },
+  NOT_STARTED: { label: "Not Started", cls: "bg-red-100 text-red-600 border-red-200", icon: <Circle className="h-3 w-3" /> },
+  N_A: { label: "N/A", cls: "bg-zinc-100 text-zinc-500 border-zinc-200", icon: <Circle className="h-3 w-3" /> },
 }
 
 function statusBadge(status: string) {
@@ -269,13 +269,13 @@ export default function ProgramDrawer({ program, onClose, onProgramUpdate }: Pro
             <div className="rounded-lg border divide-y text-sm">
               {/* Read-only rows */}
               {[
-                { label: "Program Year",    value: local.programYear },
-                { label: "Program Lead",    value: local.programLead || "—" },
-                { label: "Trainer(s)",      value: local.internalTrainerNames || "—" },
-                { label: "Vendor",          value: local.externalVendor || "—" },
-                { label: "Support Team",    value: local.supportTeam || "—" },
+                { label: "Program Year", value: local.programYear },
+                { label: "Program Lead", value: local.programLead || "—" },
+                { label: "Trainer(s)", value: local.internalTrainerNames || "—" },
+                { label: "Vendor", value: local.externalVendor || "—" },
+                { label: "Support Team", value: local.supportTeam || "—" },
                 { label: "Target Audience", value: local.targetAudience || "—" },
-                { label: "Business Unit",   value: local.businessUnit || "—" },
+                { label: "Business Unit", value: local.businessUnit || "—" },
               ].map(row => (
                 <div key={row.label} className="flex px-3 py-2 items-center gap-3">
                   <span className="text-zinc-500 w-32 shrink-0 text-xs">{row.label}</span>
@@ -285,11 +285,11 @@ export default function ProgramDrawer({ program, onClose, onProgramUpdate }: Pro
 
               {/* Editable rows */}
               {/* These fields live in the programs table */}
-              <EditableRow label="Delivery Status" fieldKey="deliveryStatus"      value={local.deliveryStatus || "Planned"}     options={DELIVERY_STATUS_OPTIONS} programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateProgramField} />
-              <EditableRow label="Report Status"   fieldKey="overallReportStatus" value={local.overallReportStatus || "PENDING"} options={REPORT_STATUS_OPTIONS}   programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateProgramField} />
+              <EditableRow label="Delivery Status" fieldKey="deliveryStatus" value={local.deliveryStatus || "Planned"} options={DELIVERY_STATUS_OPTIONS} programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateProgramField} />
+              <EditableRow label="Report Status" fieldKey="overallReportStatus" value={local.overallReportStatus || "PENDING"} options={REPORT_STATUS_OPTIONS} programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateProgramField} />
               {/* These fields live in program_lifecycle_status table */}
               <EditableRow label="Feedback Status" fieldKey="feedbackStatus" value={local.feedbackStatus || "MISSING"} options={FEEDBACK_STATUS_OPTIONS} programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateLifecycleStatus} />
-              <EditableRow label="Payment Status"  fieldKey="paymentStatus"  value={local.paymentStatus  || "N_A"}     options={PAYMENT_STATUS_OPTIONS}  programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateLifecycleStatus} />
+              <EditableRow label="Payment Status" fieldKey="paymentStatus" value={local.paymentStatus || "N_A"} options={PAYMENT_STATUS_OPTIONS} programId={local.id} onSaved={handleProgramFieldSaved} saveFn={updateLifecycleStatus} />
 
               {local.approvedBudgetPhp !== null && (
                 <div className="flex px-3 py-2 items-center gap-3">
