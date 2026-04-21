@@ -37,8 +37,8 @@ const formSchema = z.object({
   password: z.string().min(6, {
     message: "Password must be at least 6 characters.",
   }),
-  role: z.enum(roles, {
-    required_error: "Please select a role.",
+  role: z.enum(["TCDEXmanager", "LMS", "LTD", "ERG", "Comms"], {
+    message: "Please select a role.",
   }),
 })
 

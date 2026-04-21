@@ -1,0 +1,6 @@
+﻿.next/types/validator.ts(51,39): error TS2307: Cannot find module '../../app/debug/page.js' or its corresponding type declarations.
+components/governance/types.ts(81,33): error TS2769: No overload matches this call.
+  Overload 1 of 3, '(callbackfn: (previousValue: 0 | 1 | 0.5, currentValue: 0 | 1 | 0.5, currentIndex: number, array: (0 | 1 | 0.5)[]) => 0 | 1 | 0.5, initialValue: 0 | 1 | 0.5): 0 | 1 | 0.5', gave the following error.
+    Type 'number' is not assignable to type '0 | 1 | 0.5'.
+  Overload 2 of 3, '(callbackfn: (previousValue: 0 | 1 | 0.5, currentValue: 0 | 1 | 0.5, currentIndex: number, array: (0 | 1 | 0.5)[]) => 0 | 1 | 0.5, initialValue: 0 | 1 | 0.5): 0 | 1 | 0.5', gave the following error.
+    Type 'number' is not assignable to type '0 | 1 | 0.5'.
