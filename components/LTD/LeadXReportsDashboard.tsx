@@ -273,6 +273,10 @@ const LeadXReportsDashboard: React.FC = () => {
     }
   }, [supabase]);
 
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
   const deleteSession = async () => {
     if (!sessionToDelete) return;
     setIsDeleting(true);

@@ -17,10 +17,20 @@ import { toast } from 'sonner';
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+
 interface UploadSummary {
   processed: number;
   inserted: number;
   skipped: number;
+  year: string;
+  cohort: string;
 }
 
 interface PostLearningSurveyUploadProps {
@@ -54,15 +64,17 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
       const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
       
       let headerRowIndex = -1;
-      let colIndices = { 
+      let colIndices: any = { 
         moduleTitle: -1, 
         sessionRating: -1, 
         facilitatorRating: -1, 
         feedbackLikes: -1, 
-        feedbackSuggestions: -1 
+        feedbackSuggestions: -1,
+        year: -1,
+        cohort: -1
       };
 
-      for (let i = 0; i < Math.min(rows.length, 20); i++) {
+      for (let i = 0; i < Math.min(rows.length, 25); i++) {
         const row = rows[i];
         if (!row) continue;
         
@@ -73,6 +85,8 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
         const facilitatorIdx = rowStr.findIndex(c => c.includes('rate the overall effectiveness of the assigned learning experience facilitator'));
         const likesIdx = rowStr.findIndex(c => c.includes('what did you like best about the assigned learning experience facilitator/s'));
         const suggestionsIdx = rowStr.findIndex(c => c.includes('what suggestions do you have for improving the facilitation skills'));
+        const yearIdx = rowStr.findIndex(c => c === 'year');
+        const cohortIdx = rowStr.findIndex(c => c === 'cohort');
 
         if (moduleIdx !== -1) {
           headerRowIndex = i;
@@ -81,6 +95,8 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
           colIndices.facilitatorRating = facilitatorIdx;
           colIndices.feedbackLikes = likesIdx;
           colIndices.feedbackSuggestions = suggestionsIdx;
+          colIndices.year = yearIdx;
+          colIndices.cohort = cohortIdx;
           break;
         }
       }
@@ -89,17 +105,33 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
         throw new Error("Could not find required headers (Module Title).");
       }
 
+      if (colIndices.year === -1 || colIndices.cohort === -1) {
+        throw new Error("Missing 'Year' or 'Cohort' columns in the uploaded file.");
+      }
+
       const dataRows = rows.slice(headerRowIndex + 1);
       const finalRecords: any[] = [];
       let skipped = 0;
+      let detectedYear = "";
+      let detectedCohort = "";
 
       for (const row of dataRows) {
         const moduleTitle = String(row[colIndices.moduleTitle] || "").trim();
+        const year = String(row[colIndices.year] || "").trim();
+        const cohort = String(row[colIndices.cohort] || "").trim();
         
         if (!moduleTitle || moduleTitle.toLowerCase() === 'module title' || moduleTitle.toLowerCase().includes('total')) {
           skipped++;
           continue;
         }
+
+        if (!year || !cohort) {
+          skipped++;
+          continue;
+        }
+
+        if (!detectedYear) detectedYear = year;
+        if (!detectedCohort) detectedCohort = cohort;
 
         const parseRating = (val: any) => {
           const num = parseInt(val);
@@ -112,6 +144,8 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
           facilitator_rating: parseRating(row[colIndices.facilitatorRating]),
           feedback_likes: colIndices.feedbackLikes !== -1 ? String(row[colIndices.feedbackLikes] || "").trim() : "",
           feedback_suggestions: colIndices.feedbackSuggestions !== -1 ? String(row[colIndices.feedbackSuggestions] || "").trim() : "",
+          year: parseInt(year),
+          cohort: cohort,
           uploaded_at: new Date().toISOString()
         });
       }
@@ -131,9 +165,11 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
       setSummary({
         processed: finalRecords.length + skipped,
         inserted: finalRecords.length,
-        skipped: skipped
+        skipped: skipped,
+        year: detectedYear,
+        cohort: detectedCohort
       });
-      toast.success("Post-Learning Survey data imported successfully.");
+      toast.success(`Post-Learning Survey data imported successfully for ${detectedCohort} (${detectedYear}).`);
       setFile(null);
       if (onUploadSuccess) onUploadSuccess();
     } catch (err: any) {
@@ -151,8 +187,8 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
           <div className="flex items-center gap-3">
             <div className="p-2 bg-emerald-600 rounded-lg"><FileSpreadsheet className="h-4 w-4 text-white" /></div>
             <div>
-              <CardTitle className="text-xs font-black uppercase tracking-wider">Post-Learning Survey Import</CardTitle>
-              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Import Microsoft Forms responses (Excel/CSV)</CardDescription>
+              <CardTitle className="text-xs font-black uppercase tracking-wider">Post-Learning Survey Sync</CardTitle>
+              <CardDescription className="text-[10px] font-medium text-zinc-400 uppercase tracking-tight">Automated data detection & batch sync</CardDescription>
             </div>
           </div>
           <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded-md">
@@ -162,6 +198,7 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
         </div>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
+
         <div 
           className={cn(
             "border-2 border-dashed rounded-3xl p-10 flex flex-col items-center justify-center transition-all cursor-pointer",
@@ -236,7 +273,7 @@ const PostLearningSurveyUpload: React.FC<PostLearningSurveyUploadProps> = ({ onU
               <div>
                 <p className="text-xs font-black text-zinc-800 uppercase">Process Complete</p>
                 <p className="text-[10px] font-medium text-zinc-500 uppercase">
-                  {summary.inserted} Inserted / {summary.skipped} Skipped
+                  {summary.inserted} Inserted / {summary.skipped} Skipped for {summary.cohort} ({summary.year})
                 </p>
               </div>
             </div>

@@ -550,7 +550,7 @@ export default function ExternalBrandPage() {
           color: "#71717a",
           autoSkip: false,
           maxRotation: 0,
-          callback: function(value: any, index: number, values: any[]) {
+          callback: function(this: any, value: any, index: number, values: any[]) {
             const label = this.getLabelForValue(value) as string;
             
             if (label.includes('-') && spansMultipleMonths) {

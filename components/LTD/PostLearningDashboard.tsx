@@ -49,6 +49,8 @@ interface PostLearningRecord {
   facilitator_rating: number;
   feedback_likes: string;
   feedback_suggestions: string;
+  year: number;
+  cohort: string;
 }
 
 const RATING_COLORS = {
@@ -65,20 +67,81 @@ const PostLearningDashboard: React.FC = () => {
   const [isExporting, setIsExporting] = useState(false);
   const [selectedModule, setSelectedModule] = useState<string>("All Modules");
   
-  const metrics = useMemo(() => {
-    if (records.length === 0) return null;
+  // Year & Cohort Selection
+  const [availableSessions, setAvailableSessions] = useState<{year: number, cohort: string}[]>([]);
+  const [selectedSession, setSelectedSession] = useState<string>("All Sessions");
 
-    const totalResponses = records.length;
-    const avgSession = records.reduce((acc, curr) => acc + (curr.session_rating || 0), 0) / totalResponses;
-    const avgFacilitator = records.reduce((acc, curr) => acc + (curr.facilitator_rating || 0), 0) / totalResponses;
+  const supabase = createClient();
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('post_learning_survey')
+        .select('*');
+      
+      if (error) throw error;
+      const allRecords = data || [];
+      setRecords(allRecords);
+
+      // Extract unique year + cohort combinations
+      const sessions = allRecords.reduce((acc: {year: number, cohort: string}[], curr) => {
+        if (curr.year && curr.cohort) {
+          const exists = acc.find(s => s.year === curr.year && s.cohort === curr.cohort);
+          if (!exists) acc.push({ year: curr.year, cohort: curr.cohort });
+        }
+        return acc;
+      }, []);
+      
+      // Sort by year desc, then cohort
+      sessions.sort((a, b) => {
+        if (b.year !== a.year) return b.year - a.year;
+        return a.cohort.localeCompare(b.cohort);
+      });
+
+      setAvailableSessions(sessions);
+      
+      if (sessions.length > 0 && selectedSession === "All Sessions") {
+        // Default to the most recent session
+        setSelectedSession(`${sessions[0].year}|${sessions[0].cohort}`);
+      }
+
+    } catch (err) {
+      console.error('Error fetching survey data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, selectedSession]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const filteredRecords = useMemo(() => {
+    let result = records;
+
+    if (selectedSession !== "All Sessions") {
+      const [y, c] = selectedSession.split('|');
+      result = result.filter(r => r.year === parseInt(y) && r.cohort === c);
+    }
+
+    return result;
+  }, [records, selectedSession]);
+
+  const metrics = useMemo(() => {
+    if (filteredRecords.length === 0) return null;
+
+    const totalResponses = filteredRecords.length;
+    const avgSession = filteredRecords.reduce((acc, curr) => acc + (curr.session_rating || 0), 0) / totalResponses;
+    const avgFacilitator = filteredRecords.reduce((acc, curr) => acc + (curr.facilitator_rating || 0), 0) / totalResponses;
 
     const sessionDist = [5, 4, 3, 2, 1].map(r => ({
       rating: r,
-      count: records.filter(d => d.session_rating === r).length
+      count: filteredRecords.filter(d => d.session_rating === r).length
     }));
 
     const moduleStats: Record<string, { total: number, count: number }> = {};
-    records.forEach(d => {
+    filteredRecords.forEach(d => {
       if (!moduleStats[d.module_title]) moduleStats[d.module_title] = { total: 0, count: 0 };
       moduleStats[d.module_title].total += d.session_rating || 0;
       moduleStats[d.module_title].count += 1;
@@ -91,7 +154,7 @@ const PostLearningDashboard: React.FC = () => {
 
     const topModules = moduleAverages.filter(m => m.average >= 4.9);
     const improvementModules = moduleAverages.filter(m => m.average < 4.7);
-    const uniqueModules = Array.from(new Set(records.map(d => d.module_title))).sort();
+    const uniqueModules = Array.from(new Set(filteredRecords.map(d => d.module_title))).sort();
 
     return {
       totalResponses,
@@ -103,7 +166,7 @@ const PostLearningDashboard: React.FC = () => {
       improvementModules,
       uniqueModules
     };
-  }, [records]);
+  }, [filteredRecords]);
 
   const handleExportPDF = useCallback(async () => {
     if (!metrics) return;
@@ -112,7 +175,7 @@ const PostLearningDashboard: React.FC = () => {
 
     const payload = {
       title: "Post-Learning Survey Dashboard",
-      description: "Analysis of learner feedback and facilitator performance.",
+      description: `Analysis of learner feedback and facilitator performance for ${selectedSession === 'All Sessions' ? 'All Sessions' : selectedSession.replace('|', ' ')}.`,
       date: new Date().toLocaleDateString(),
       kpis: [
         { title: "Total Responses", value: metrics.totalResponses, description: "Total surveys collected." },
@@ -135,7 +198,7 @@ const PostLearningDashboard: React.FC = () => {
         {
           title: "Recent Learner Feedback",
           headers: ["Module Title", "Key Strengths", "Suggestions"],
-          rows: records.slice(0, 15).map(r => [
+          rows: filteredRecords.slice(0, 15).map(r => [
             r.module_title,
             r.feedback_likes?.substring(0, 50) + "...",
             r.feedback_suggestions?.substring(0, 50) + "..."
@@ -170,36 +233,14 @@ const PostLearningDashboard: React.FC = () => {
     } finally {
       setIsExporting(false);
     }
-  }, [metrics, records]);
-
-  const supabase = createClient();
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('post_learning_survey')
-        .select('*');
-      
-      if (error) throw error;
-      setRecords(data || []);
-    } catch (err) {
-      console.error('Error fetching survey data:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  }, [metrics, filteredRecords, selectedSession]);
 
   const filteredFeedback = useMemo(() => {
     const dataToFilter = selectedModule === "All Modules" 
-      ? records 
-      : records.filter(d => d.module_title === selectedModule);
+      ? filteredRecords 
+      : filteredRecords.filter(d => d.module_title === selectedModule);
     return [...dataToFilter].reverse();
-  }, [records, selectedModule]);
+  }, [filteredRecords, selectedModule]);
 
   const getBarColor = (avg: number) => {
     if (avg >= 4.8) return '#10b981'; // Green
@@ -229,8 +270,27 @@ const PostLearningDashboard: React.FC = () => {
 
   return (
     <div className="space-y-10 animate-in fade-in duration-700 pb-12 px-4">
-      {/* Export Header */}
-      <div className="flex justify-end">
+      {/* Selection & Export Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex items-center gap-4 bg-white p-2 rounded-2xl border shadow-sm">
+          <div className="flex items-center gap-2 text-xs font-black uppercase text-zinc-400 px-3">
+            <TrendingUp className="h-4 w-4 text-[#0046ab]" /> Session:
+          </div>
+          <Select value={selectedSession} onValueChange={setSelectedSession}>
+            <SelectTrigger className="w-[280px] text-xs font-black uppercase h-10 border-none bg-zinc-50 shadow-none focus:ring-0">
+              <SelectValue placeholder="All Sessions" />
+            </SelectTrigger>
+            <SelectContent className="border-zinc-200 shadow-xl">
+              <SelectItem value="All Sessions" className="text-xs font-black uppercase py-2.5">All Sessions</SelectItem>
+              {availableSessions.map((s) => (
+                <SelectItem key={`${s.year}|${s.cohort}`} value={`${s.year}|${s.cohort}`} className="text-xs font-black uppercase py-2.5">
+                  {s.cohort} ({s.year})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <Button 
           onClick={handleExportPDF}
           variant="outline"

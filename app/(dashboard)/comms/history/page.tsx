@@ -147,13 +147,13 @@ export default function CommsAuditLogsPage() {
     
     if (log.type === "facebook-visits") {
        const { data: qData } = await supabase.from('comms_facebook_visits').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
+       data = { rows: qData || [] }
     } else if (log.type === "instagram-views") {
        const { data: qData } = await supabase.from('comms_instagram_views').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
+       data = { rows: qData || [] }
     } else if (log.type === "tiktok-overview") {
        const { data: qData } = await supabase.from('comms_tiktok_overview').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
+       data = { rows: qData || [] }
     } else if (log.type === "linkedin-analytics") {
        const { data: genData } = await supabase.from('comms_linkedin_general').select('*').eq('batch_id', log.id)
        const { data: postData } = await supabase.from('comms_linkedin_posts').select('*').eq('batch_id', log.id)
@@ -161,7 +161,7 @@ export default function CommsAuditLogsPage() {
     }
 
     if (data) {
-       setSelectedLog({ ...log, ...data })
+       setSelectedLog({ ...log, ...data } as CommsLog)
        setIsViewOpen(true)
     } else {
        toast.error("Failed to load details for this log.")
