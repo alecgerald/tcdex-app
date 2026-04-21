@@ -97,7 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
+  const [openCategories, setOpenCategories] = useState<string[]>(["lms"])
   const [username, setUsername] = useState("User")
   const [userRole, setUserRole] = useState<string | null>(null)
   const [isRoleLoading, setIsRoleLoading] = useState(true)
@@ -154,13 +154,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ]
       
       const isForbidden = (
-        pathname.startsWith("/lms/upload") || 
-        pathname.startsWith("/comms/upload") ||
-        pathname.startsWith("/ltd") ||
-        pathname.startsWith("/lt") ||
-        pathname.startsWith("/ex") ||
-        pathname.startsWith("/erg") ||
-        pathname.startsWith("/governance")
+        pathname.includes("/upload") || 
+        pathname.includes("/import")
       )
 
       if (isForbidden) {
@@ -175,8 +170,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (userRole === "owner" || userRole === "lead") return true
     
     // Viewer restrictions
-    if (category.id === "lms" || category.id === "comms") return true
-    return false
+    return true // All categories visible for now, items filtered below
   }).map(category => {
     if (userRole !== "viewer") return category
 
@@ -184,13 +178,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return {
       ...category,
       items: category.items.filter(item => {
-        if (category.id === "lms") {
-          return item.href === "/lms/dashboard" || item.href === "/lms/history"
-        }
-        if (category.id === "comms") {
-          return item.href === "/comms/external-brand" || item.href === "/comms/history"
-        }
-        return false
+        // Viewer cannot access upload/import pages
+        return !item.href.includes("/upload") && !item.href.includes("/import")
       })
     }
   })
