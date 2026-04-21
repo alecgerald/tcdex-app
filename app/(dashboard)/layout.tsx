@@ -57,7 +57,6 @@ const sidebarCategories = [
     icon: Heart,
     items: [
       { name: "Dashboard", href: "/ex", icon: LayoutDashboard },
-      { name: "Upload Excel", href: "/ex/upload", icon: FileUp },
       { name: "Reports", href: "/ex/reports", icon: BarChart3 },
     ],
   },
