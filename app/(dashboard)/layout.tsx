@@ -18,7 +18,9 @@ import {
   Megaphone,
   Shield,
   FileClock,
-  Heart
+  Heart,
+  Presentation,
+  ClipboardCheck
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -37,12 +39,16 @@ const sidebarCategories = [
   },
   {
     name: "L&TD",
-    id: "ltd",
+    id: "lt",
     icon: Briefcase,
     items: [
-      { name: "Dashboard", href: "/ltd", icon: LayoutDashboard },
-      { name: "Upload Excel", href: "/ltd/upload", icon: FileUp },
-      { name: "Reports", href: "/ltd/reports", icon: BarChart3 },
+      { name: "Leadership Dashboard", href: "/lt/dashboard", icon: LayoutDashboard },
+      { name: "Training Reports", href: "/lt/training-reports", icon: BarChart3 },
+      { name: "Self-Paced", href: "/lt/self-paced", icon: GraduationCap },
+      { name: "VILT Tracker", href: "/lt/vilt-tracker", icon: Presentation },
+      { name: "Post-Learning Survey", href: "/lt/post-learning", icon: ClipboardCheck },
+      { name: "LeadX & BuildX Reports", href: "/lt/leadx-reports", icon: Presentation },
+      { name: "Import Excel", href: "/lt/import", icon: FileUp },
     ],
   },
   {
@@ -152,6 +158,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         pathname.startsWith("/lms/upload") || 
         pathname.startsWith("/comms/upload") ||
         pathname.startsWith("/ltd") ||
+        pathname.startsWith("/lt") ||
         pathname.startsWith("/ex") ||
         pathname.startsWith("/erg") ||
         pathname.startsWith("/governance")
