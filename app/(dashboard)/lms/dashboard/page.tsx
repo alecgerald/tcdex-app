@@ -400,10 +400,11 @@ export default function LMSDashboard() {
 
   const activeCoursesData = useMemo(() => {
     if (!selectedLog?.cleanedData) return []
-    return selectedLog.cleanedData.filter((row: any) => {
+    const cleaned = selectedLog.cleanedData;
+    return cleaned.filter((row: any) => {
       const loc = row['Location'] || "Unknown"
       const type = row['User type'] || row['Role'] || "Unknown"
-      const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+      const k = Object.keys(cleaned[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
       const du = row[k] || "Unknown"
       
       const locMatch = selectedCourseLocations.length === 0 || selectedCourseLocations.includes(loc)

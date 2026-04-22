@@ -550,8 +550,9 @@ export default function ExternalBrandPage() {
           color: "#71717a",
           autoSkip: false,
           maxRotation: 0,
-          callback: function(value: any, index: number, values: any[]) {
-            const label = this.getLabelForValue(value) as string;
+          callback: function(this: any, value: any, index: number, values: any[]) {
+            const label = this.getLabelForValue(value);
+            if (typeof label !== 'string') return label;
             
             if (label.includes('-') && spansMultipleMonths) {
                const parts = label.split('-');
@@ -563,8 +564,8 @@ export default function ExternalBrandPage() {
                // Find the center index of the current month
                let startIdx = index;
                while (startIdx > 0) {
-                 const prevLabel = this.getLabelForValue(values[startIdx - 1].value) as string;
-                 if (parseInt(prevLabel.split('-')[0], 10) === month) startIdx--;
+                 const prevLabel = this.getLabelForValue(values[startIdx - 1].value);
+                 if (typeof prevLabel === 'string' && parseInt(prevLabel.split('-')[0], 10) === month) startIdx--;
                  else break;
                }
                

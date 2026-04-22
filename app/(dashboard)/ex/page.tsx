@@ -334,11 +334,11 @@ export default function EXDashboard() {
       if (ext < 0 || acc < 0)                             { alert(`Row ${i+2}: cannot be negative`); return }
       if (acc > ext)                                       { alert(`Row ${i+2}: accepted > extended`); return }
     }
-    const normalizedRows = rows.map(r => ({ ...r, period: (r["reporting period"] as string|undefined) ?? "" }))
+    const normalizedRows: RowObject[] = rows.map(r => ({ ...r, period: (r["reporting period"] as string|undefined) ?? "" }))
     const existing: RowObject[] = JSON.parse(localStorage.getItem("oarRawRows") || "[]")
     const makeKey  = (r: RowObject) => `${r["period"]??""}|${(r["hiring bu"]??r["hiringbu"]??"").toString().trim()}|${r["location"]??""}|${r["job family"]??""}|${r["level"]??""}`
     const existingKeys = new Set(existing.map(makeKey))
-    const merged   = [...existing, ...normalizedRows.filter(r => !existingKeys.has(makeKey(r)))]
+    const merged: RowObject[]   = [...existing, ...normalizedRows.filter(r => !existingKeys.has(makeKey(r)))]
     const totalExt = merged.reduce((s,r) => s + Number(r["total number of offers extended"]||0), 0)
     const totalAcc = merged.reduce((s,r) => s + Number(r["number of offers accepted"]||0), 0)
     const oar      = totalExt ? Number(((totalAcc/totalExt)*100).toFixed(2)) : 0
