@@ -109,11 +109,20 @@ const SelfPacedDashboard: React.FC = () => {
         .from('lms_completions')
         .select('id, email, name, course_name, status, completed_at')
         .order('completed_at', { ascending: false });
-      if (error) throw error;
+      
+      if (error) {
+        console.error('Database error details:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code
+        });
+        throw error;
+      }
       setRecords(lmsData || []);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching LMS data:', error);
-      toast.error("Failed to sync records.");
+      toast.error(`Failed to sync records: ${error.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
