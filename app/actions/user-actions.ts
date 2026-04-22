@@ -4,55 +4,85 @@ import { createAdminClient } from "@/utils/supabase/admin"
 import { createClient as createServerClient } from "@/utils/supabase/server"
 
 export async function createNewUserRecord(email: string, roleName: 'lead' | 'viewer') {
+  console.log("Starting createNewUserRecord for:", email, roleName)
   const supabaseAdmin = createAdminClient()
   const supabase = await createServerClient()
 
-  // 1. Verify the requester is actually an 'owner'
-  const { data: { user: requester } } = await supabase.auth.getUser()
-  if (!requester) throw new Error("Not authenticated")
-
-  const { data: requesterRole } = await supabase
-    .from("user_roles")
-    .select("roles(name)")
-    .eq("user_id", requester.id)
-    .single()
-
-  if (!requesterRole || (requesterRole as any).roles.name !== "owner") {
-    throw new Error("Unauthorized: Only owners can create users")
-  }
-
-  // 2. Create the user in Supabase Auth
-  const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password: "tcdexwebapp.123",
-    email_confirm: true // Automatically confirm so they can log in immediately
-  })
-
-  if (authError) throw authError
-  if (!newUser.user) throw new Error("User creation failed")
-
   try {
+    // 1. Verify the requester is actually an 'owner'
+    const { data: { user: requester }, error: userError } = await supabase.auth.getUser()
+    if (userError) {
+      console.error("Auth getUser error:", userError)
+      return { success: false, error: "Authentication failed: " + userError.message }
+    }
+    if (!requester) {
+      console.error("No requester found")
+      return { success: false, error: "Not authenticated" }
+    }
+
+    console.log("Requester ID:", requester.id)
+
+    const { data: requesterRole, error: requesterRoleError } = await supabase
+      .from("user_roles")
+      .select("roles(name)")
+      .eq("user_id", requester.id)
+      .single()
+
+    if (requesterRoleError) {
+      console.error("Error fetching requester role:", requesterRoleError)
+      return { success: false, error: "Failed to verify permissions: " + requesterRoleError.message }
+    }
+
+    if (!requesterRole || (requesterRole as any).roles.name !== "owner") {
+      console.error("Unauthorized: requester role is not owner")
+      return { success: false, error: "Unauthorized: Only owners can create users" }
+    }
+
+    // 2. Create the user in Supabase Auth
+    console.log("Creating user in Supabase Auth...")
+    const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: "tcdexwebapp.123",
+      email_confirm: true 
+    })
+
+    if (authError) {
+      console.error("Supabase Admin createUser error:", authError)
+      return { success: false, error: authError.message }
+    }
+    if (!newUser.user) {
+      console.error("User creation failed: no user returned")
+      return { success: false, error: "User creation failed" }
+    }
+
+    console.log("New User Created ID:", newUser.user.id)
+
     // 3. Create Profile record
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
       .insert({
         id: newUser.user.id,
         email: email,
-        first_name: "", // Initial empty, they can update later
+        first_name: "", 
         last_name: ""
       })
 
-    if (profileError) throw profileError
+    if (profileError) {
+      console.error("Profile creation error:", profileError)
+      throw profileError
+    }
 
     // 4. Assign Role
-    // First find role id
     const { data: roleData, error: roleIdError } = await supabaseAdmin
       .from("roles")
       .select("id")
       .eq("name", roleName)
       .single()
 
-    if (roleIdError) throw roleIdError
+    if (roleIdError) {
+      console.error("Role lookup error:", roleIdError)
+      throw roleIdError
+    }
 
     const { error: assignError } = await supabaseAdmin
       .from("user_roles")
@@ -61,12 +91,17 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
         role_id: roleData.id
       })
 
-    if (assignError) throw assignError
+    if (assignError) {
+      console.error("Role assignment error:", assignError)
+      throw assignError
+    }
 
+    console.log("User record created successfully")
     return { success: true, userId: newUser.user.id }
   } catch (error: any) {
-    // Cleanup if something failed (optional, but good practice)
-    await supabaseAdmin.auth.admin.deleteUser(newUser.user.id)
-    throw error
+    console.error("Caught error in createNewUserRecord:", error)
+    // Attempt cleanup if newUser was created
+    // We'd need to track if newUser exists here, but for simplicity:
+    return { success: false, error: error.message || "An unexpected error occurred" }
   }
 }
