@@ -161,7 +161,7 @@ export default function CommsAuditLogsPage() {
     }
 
     if (data) {
-       setSelectedLog({ ...log, ...data })
+       setSelectedLog({ ...log, ...data } as CommsLog)
        setIsViewOpen(true)
     } else {
        toast.error("Failed to load details for this log.")

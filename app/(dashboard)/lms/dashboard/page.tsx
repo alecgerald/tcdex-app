@@ -362,39 +362,43 @@ export default function LMSDashboard() {
   }, [selectedLog, dashboardType])
 
   const activeStatusData = useMemo(() => {
-    if (!selectedLog?.cleanedData) return []
-    return selectedLog.cleanedData.filter((row: any) => {
+    if (!selectedLog || !selectedLog.cleanedData) return []
+    const data = selectedLog.cleanedData
+    return data.filter((row: any) => {
       const loc = row['Location'] || "Unknown"
       const role = row['Role'] || "Unknown"
       const du = row['Delivery Unit'] || "Unknown"
-      
+
       const locMatch = selectedStatusLocations.length === 0 || selectedStatusLocations.includes(loc)
       const roleMatch = selectedStatusRoles.length === 0 || selectedStatusRoles.includes(role)
       const duMatch = selectedStatusDUs.length === 0 || selectedStatusDUs.includes(du)
-      
+
       return locMatch && roleMatch && duMatch
     })
   }, [selectedLog, selectedStatusLocations, selectedStatusRoles, selectedStatusDUs])
 
   const uniqueCourseLocations = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const locs = new Set<string>()
-    selectedLog.cleanedData.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
+    data.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
     return Array.from(locs).sort()
   }, [selectedLog, dashboardType])
 
   const uniqueCourseUserTypes = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const types = new Set<string>()
-    selectedLog.cleanedData.forEach((r: any) => types.add(r['User type'] || r['Role'] || "Unknown"))
+    data.forEach((r: any) => types.add(r['User type'] || r['Role'] || "Unknown"))
     return Array.from(types).sort()
   }, [selectedLog, dashboardType])
 
   const uniqueCourseDUs = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const dus = new Set<string>()
-    const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
-    selectedLog.cleanedData.forEach((r: any) => dus.add(r[k] || "Unknown"))
+    const k = Object.keys(data[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+    data.forEach((r: any) => dus.add(r[k] || "Unknown"))
     return Array.from(dus).sort()
   }, [selectedLog, dashboardType])
 
@@ -406,11 +410,11 @@ export default function LMSDashboard() {
       const type = row['User type'] || row['Role'] || "Unknown"
       const k = Object.keys(cleaned[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
       const du = row[k] || "Unknown"
-      
+
       const locMatch = selectedCourseLocations.length === 0 || selectedCourseLocations.includes(loc)
       const typeMatch = selectedCourseUserTypes.length === 0 || selectedCourseUserTypes.includes(type)
       const duMatch = selectedCourseDUs.length === 0 || selectedCourseDUs.includes(du)
-      
+
       return locMatch && typeMatch && duMatch
     })
   }, [selectedLog, selectedCourseLocations, selectedCourseUserTypes, selectedCourseDUs])

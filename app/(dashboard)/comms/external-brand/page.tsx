@@ -571,8 +571,8 @@ export default function ExternalBrandPage() {
                
                let endIdx = index;
                while (endIdx < values.length - 1) {
-                 const nextLabel = this.getLabelForValue(values[endIdx + 1].value) as string;
-                 if (parseInt(nextLabel.split('-')[0], 10) === month) endIdx++;
+                 const nextLabel = this.getLabelForValue(values[endIdx + 1].value);
+                 if (typeof nextLabel === 'string' && parseInt(nextLabel.split('-')[0], 10) === month) endIdx++;
                  else break;
                }
                
