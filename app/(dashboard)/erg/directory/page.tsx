@@ -26,6 +26,8 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { utils, writeFile } from "xlsx"
 
+import { fetchERGDashboardData } from "../actions"
+
 interface Member {
   id: string
   "Employee ID": string | number
@@ -43,13 +45,22 @@ export default function ERGDirectoryPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedERG, setSelectedERG] = useState<string>("All")
   const [currentPage, setCurrentPage] = useState(1)
+  const [isLoading, setIsLoading] = useState(true)
   const itemsPerPage = 50
 
   useEffect(() => {
-    const data = localStorage.getItem("erg_membership_registry")
-    if (data) {
-      setMembers(JSON.parse(data))
+    async function loadMembers() {
+      setIsLoading(true)
+      try {
+        const data = await fetchERGDashboardData()
+        setMembers(data.membershipData)
+      } catch (error) {
+        console.error("Failed to load members:", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
+    loadMembers()
   }, [])
 
   // Reset to first page when filters change
@@ -187,7 +198,7 @@ export default function ERGDirectoryPage() {
                 </TableHeader>
                 <TableBody>
                   {paginatedMembers.map((member) => (
-                    <TableRow key={member.id}>
+                    <TableRow key={member["Employee ID"]}>
                       <TableCell className="font-mono text-xs">{member["Employee ID"]}</TableCell>
                       <TableCell>
                         <div className="flex flex-col">

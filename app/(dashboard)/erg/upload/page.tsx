@@ -35,6 +35,8 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
+import { saveERGData, resetERGData } from "./actions"
+
 interface RowData {
   id: string
   [key: string]: any
@@ -85,11 +87,11 @@ export default function ERGUploadPage() {
   const [columns, setColumns] = useState<string[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  
+
   // Test mode states
   const [isTestMode, setIsTestMode] = useState(false)
   const [customUploadDate, setCustomUploadDate] = useState("")
-  
+
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const getLocalDatetimeString = () => {
@@ -130,18 +132,18 @@ export default function ERGUploadPage() {
   const standardizeData = (data: any[], type: TemplateType, uploadDate?: string) => {
     return data.map(row => {
       const newRow = { ...row }
-      
+
       // Helper to convert Excel serial date or various string formats to ISO date string (YYYY-MM-DD)
       const convertExcelDate = (val: any) => {
         if (!val) return val
-        
+
         // Handle Excel serial numbers
         if (typeof val === 'number') {
           // Excel dates start from Dec 30, 1899
           const date = new Date((val - 25569) * 86400 * 1000)
           return date.toISOString().split('T')[0]
         }
-        
+
         if (typeof val === 'string') {
           const trimmed = val.trim()
 
@@ -158,13 +160,13 @@ export default function ERGUploadPage() {
             const [_, y, m, d] = ymdMatch
             return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
           }
-          
+
           // 3. If it's an ISO string with time, strip it
           if (trimmed.includes('T')) {
             return trimmed.split('T')[0]
           }
         }
-        
+
         return val
       }
 
@@ -201,7 +203,7 @@ export default function ERGUploadPage() {
     if (!file) return
     setIsLoading(true)
     setFileName(file.name)
-    
+
     const reader = new FileReader()
     reader.onload = (event) => {
       try {
@@ -209,7 +211,7 @@ export default function ERGUploadPage() {
         const workbook = read(data, { type: "binary" })
         const sheetName = workbook.SheetNames[0]
         const sheet = workbook.Sheets[sheetName]
-        
+
         let detectedType: TemplateType | null = null
         let jsonData: any[] = []
         let headers: string[] = []
@@ -266,109 +268,41 @@ export default function ERGUploadPage() {
     reader.readAsBinaryString(file)
   }
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     if (!templateType) return
     setIsLoading(true)
-    
-    const logId = `log-${Date.now()}`
-    
+
     // Use custom date if in test mode, otherwise use current time
     let uploadTime = new Date().toISOString()
     if (isTestMode && customUploadDate) {
       uploadTime = new Date(customUploadDate).toISOString()
     }
-    
-    const existingLogs = JSON.parse(localStorage.getItem("erg_audit_logs") || "[]")
-    
-    const newLog = { 
-      id: logId,
-      templateType,
-      templateName: templateConfigs[templateType].name,
-      fileName, 
-      date: uploadTime, 
-      count: processedData.length
-    }
-    
-    localStorage.setItem("erg_audit_logs", JSON.stringify([newLog, ...existingLogs]))
 
-    // SMART MERGE LOGIC:
-    // 1. Authoritative (Registry) -> Overwrite
-    // 2. Trend/Historical (Snapshots, Events, etc.) -> Merge & Update
-    const storageKey = templateConfigs[templateType].localStorageKey
-    
-    // Attach upload time to each row to enable upload-date-based filtering later
-    const dataWithUploadTime = processedData.map(row => ({ ...row, uploadDate: uploadTime }))
-    let finalData = dataWithUploadTime
+    try {
+      const result = await saveERGData(
+        templateType,
+        fileName,
+        processedData,
+        uploadTime
+      )
 
-    if (templateType !== 'membership_registry') {
-      const existingData = JSON.parse(localStorage.getItem(storageKey) || "[]")
-      
-      // Define unique keys for each historical template to prevent duplicates
-      const getUniqueKey = (row: any) => {
-        switch (templateType) {
-          case 'membership_snapshot':
-            // Merge by ERG name + Year (updates existing ERG stats for that specific year)
-            return `${row["ERG"]}-${row["Year"]}`.trim().toLowerCase()
-          case 'event_activity':
-            // Merge by Date + Title + ERG
-            return `${row["ERG"]}-${row["Event Date"]}-${row["Activity Title"]}`.toLowerCase()
-          case 'event_feedback':
-            // Merge by DEIB Event Code + Title + ERG
-            return `${row["ERG"]}-${row["DEIB event"]}-${row["Activity Title"]}`.toLowerCase()
-          case 'participation_detail':
-            // Merge by Employee + Event
-            return `${row["Employee ID"]}-${row["Activity Title"]}`.toLowerCase()
-          default:
-            return row.id
-        }
+      if (result.success) {
+        toast.success(`${templateConfigs[templateType].name} imported successfully to database`)
+        setStep('upload')
+        setProcessedData([])
+        setTemplateType(null)
+        setIsTestMode(false)
+        setCustomUploadDate("")
+        if (fileInputRef.current) fileInputRef.current.value = ""
+      } else {
+        toast.error(result.error || "Failed to save data")
       }
-
-      // Create a map of existing data for efficient lookup/update
-      const dataMap = new Map(existingData.map((row: any) => [getUniqueKey(row), row]))
-      
-      // Merge new data into the map (new records added, existing records updated)
-      dataWithUploadTime.forEach(row => {
-        const key = getUniqueKey(row)
-        if (templateType === 'membership_snapshot' && dataMap.has(key)) {
-          // DEEP MERGE for snapshots: keep Jan-Apr while adding May-Jun
-          dataMap.set(key, { ...(dataMap.get(key) as any), ...row })
-        } else {
-          dataMap.set(key, row)
-        }
-      })
-
-      finalData = Array.from(dataMap.values()) as any[]
-
-      // Update columns state to include any new monthly columns found in existing data
-      if (finalData.length > 0) {
-        const allPossibleColumns = new Set<string>()
-        finalData.forEach(row => {
-          Object.keys(row).forEach(k => {
-            if (k !== 'id') allPossibleColumns.add(k)
-          })
-        })
-        // Filter out internal 'id' and ensure the stable columns are present
-        setColumns(Array.from(allPossibleColumns))
-      }
+    } catch (error) {
+      console.error("Upload error:", error)
+      toast.error("An unexpected error occurred during upload")
+    } finally {
+      setIsLoading(false)
     }
-
-    localStorage.setItem(storageKey, JSON.stringify(finalData))
-    localStorage.setItem(`erg_data_${logId}`, JSON.stringify(processedData))
-
-    const isMerged = templateType !== 'membership_registry'
-    toast.success(
-      isMerged 
-        ? `${templateConfigs[templateType].name} merged with existing data`
-        : `${templateConfigs[templateType].name} updated (Authoritative Overwrite)`
-    )
-    
-    setStep('upload')
-    setProcessedData([])
-    setTemplateType(null)
-    setIsTestMode(false)
-    setCustomUploadDate("")
-    if (fileInputRef.current) fileInputRef.current.value = ""
-    setIsLoading(false)
   }
 
   return (
@@ -424,28 +358,42 @@ export default function ERGUploadPage() {
                   variant="destructive" 
                   size="sm" 
                   className="w-full text-[10px] h-8"
-                  onClick={() => {
-                    if (confirm("Are you sure? This will wipe ALL uploaded Excel data for ERG and LMS.")) {
-                      const keys = [
-                        "erg_membership_registry", "erg_membership_snapshots", 
-                        "erg_event_logs", "erg_feedback_summaries", 
-                        "erg_participation_details", "erg_audit_logs", "lms_audit_logs"
-                      ];
-                      keys.forEach(k => localStorage.removeItem(k));
-                      Object.keys(localStorage).forEach(k => {
-                        if (k.startsWith("erg_data_")) localStorage.removeItem(k);
-                      });
-                      toast.success("Dashboard data reset successfully");
-                      setTimeout(() => window.location.reload(), 1000);
+                  onClick={async () => {
+                    if (confirm("Are you sure? This will wipe ALL ERG data from the database and local storage.")) {
+                      setIsLoading(true)
+                      try {
+                        // Clear local storage legacy data
+                        const keys = [
+                          "erg_membership_registry", "erg_membership_snapshots", 
+                          "erg_event_logs", "erg_feedback_summaries", 
+                          "erg_participation_details", "erg_audit_logs"
+                        ];
+                        keys.forEach(k => localStorage.removeItem(k));
+
+                        // Clear database
+                        const result = await resetERGData()
+                        if (result.success) {
+                          toast.success("Database and local storage cleared successfully")
+                          setTimeout(() => window.location.reload(), 1000)
+                        } else {
+                          toast.error(result.error)
+                        }
+                      } catch (error) {
+                        toast.error("Failed to reset data")
+                      } finally {
+                        setIsLoading(false)
+                      }
                     }
                   }}
+                  disabled={isLoading}
                 >
                   <Trash2 className="h-3 w-3 mr-2" />
-                  Reset All Data (Fresh Start)
+                  {isLoading ? "Resetting..." : "Reset All Data (Database + Local)"}
                 </Button>
               </div>
             </CardContent>
           </Card>
+
 
           <Card className="lg:col-span-2 border-dashed border-2 bg-transparent flex flex-col items-center justify-center py-24 text-center relative">
             <div className="h-20 w-20 rounded-full bg-zinc-100 flex items-center justify-center mb-6 dark:bg-zinc-800">

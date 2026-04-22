@@ -232,7 +232,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Button>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <nav className="space-y-2 p-4">
             {filteredCategories.map((category) => {
               const isOpen = openCategories.includes(category.id)

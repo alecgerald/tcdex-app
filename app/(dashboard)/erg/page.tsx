@@ -19,7 +19,8 @@ import {
   Layers,
   ThumbsUp,
   ThumbsDown,
-  MessageSquare
+  MessageSquare,
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +31,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { toast } from "sonner"
+
+import { fetchERGDashboardData } from "./actions"
 
 const parseEventDate = (val: any) => {
   if (!val) return new Date(NaN)
@@ -48,6 +52,8 @@ export default function ERGDashboard() {
   const [feedback, setFeedback] = useState<any[]>([])
   const [participation, setParticipation] = useState<any[]>([])
   const [auditLogs, setAuditLogs] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [isExporting, setIsExporting] = useState(false)
   
   // Filter States
   const [selectedERG, setSelectedERG] = useState("All")
@@ -78,6 +84,33 @@ export default function ERGDashboard() {
   const [heatmapStartMonth, setHeatmapStartMonth] = useState(0)
   const [heatmapEndMonth, setHeatmapEndMonth] = useState(11)
   const [heatmapYear, setHeatmapYear] = useState(new Date().getFullYear())
+  const [kpiYear, setKpiYear] = useState(new Date().getFullYear())
+
+  // Load Data from Supabase
+  useEffect(() => {
+    async function loadData() {
+      setIsLoading(true)
+      try {
+        const data = await fetchERGDashboardData()
+        setMembershipData(data.membershipData)
+        setSnapshots(data.snapshots)
+        setEventLogs(data.eventLogs)
+        setFeedback(data.feedback)
+        setParticipation(data.participation)
+        setAuditLogs(data.auditLogs)
+      } catch (error) {
+        console.error("Failed to load ERG data:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    loadData()
+  }, [])
+
+  const latestRegistryUpdate = useMemo(() => {
+    const regLog = auditLogs.find(log => log.templateType === 'membership_registry')
+    return regLog ? regLog.date : null
+  }, [auditLogs])
 
   // Available Month Detectors
   const growthAvailableMonths = useMemo(() => {
@@ -190,39 +223,23 @@ export default function ERGDashboard() {
   // Auto-adjust selections when year changes or data is loaded
   useEffect(() => {
     if (!kpiAvailableYears.includes(kpiYear)) setKpiYear(kpiAvailableYears[kpiAvailableYears.length - 1])
-  }, [kpiAvailableYears])
+  }, [kpiAvailableYears, kpiYear])
 
   useEffect(() => {
     if (!growthAvailableYears.includes(growthYear)) setGrowthYear(growthAvailableYears[growthAvailableYears.length - 1])
-  }, [growthAvailableYears])
+  }, [growthAvailableYears, growthYear])
 
   useEffect(() => {
     if (!attendanceAvailableYears.includes(attendanceYear)) setAttendanceYear(attendanceAvailableYears[attendanceAvailableYears.length - 1])
-  }, [attendanceAvailableYears])
+  }, [attendanceAvailableYears, attendanceYear])
 
   useEffect(() => {
     if (!feedbackAvailableYears.includes(feedbackYear)) setFeedbackYear(feedbackAvailableYears[feedbackAvailableYears.length - 1])
-  }, [feedbackAvailableYears])
+  }, [feedbackAvailableYears, feedbackYear])
 
   useEffect(() => {
     if (!heatmapAvailableYears.includes(heatmapYear)) setHeatmapYear(heatmapAvailableYears[heatmapAvailableYears.length - 1])
-  }, [heatmapAvailableYears])
-
-  // Auto-adjust selections when months are filtered
-
-  useEffect(() => {
-    setMembershipData(JSON.parse(localStorage.getItem("erg_membership_registry") || "[]"))
-    setSnapshots(JSON.parse(localStorage.getItem("erg_membership_snapshots") || "[]"))
-    setEventLogs(JSON.parse(localStorage.getItem("erg_event_logs") || "[]"))
-    setFeedback(JSON.parse(localStorage.getItem("erg_feedback_summaries") || "[]"))
-    setParticipation(JSON.parse(localStorage.getItem("erg_participation_details") || "[]"))
-    setAuditLogs(JSON.parse(localStorage.getItem("erg_audit_logs") || "[]"))
-  }, [])
-
-  const latestRegistryUpdate = useMemo(() => {
-    const regLog = auditLogs.find(log => log.templateType === 'membership_registry')
-    return regLog ? regLog.date : null
-  }, [auditLogs])
+  }, [heatmapAvailableYears, heatmapYear])
 
   // Centralized Color Mapping for ERGs
   const ergColors = useMemo(() => {
@@ -422,9 +439,6 @@ export default function ERGDashboard() {
     return { rows, columns: busInData }
   }, [participation, selectedERG, heatmapStartMonth, heatmapEndMonth, heatmapYear])
 
-  // KPI Section Year Filter
-  const [kpiYear, setKpiYear] = useState(new Date().getFullYear())
-
   const kpis = useMemo(() => {
     // 1. Active Members (Authoritative / Live)
     const active = filteredMembership.filter(m => m.Status === "Active").length
@@ -488,6 +502,88 @@ export default function ERGDashboard() {
     ]
   }, [filteredMembership, snapshots, eventLogs, feedback, selectedERG, kpiYear])
 
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+    
+    try {
+      const payload = {
+        title: "ERG Performance Dashboard",
+        description: `Comprehensive analysis for ${selectedERG === "All" ? "All Groups" : selectedERG}${selectedBU !== "All" ? ` in ${selectedBU}` : ""}.`,
+        date: new Date().toLocaleDateString(),
+        kpis: kpis.map(k => ({
+          title: k.title,
+          value: k.value,
+          description: k.description
+        })),
+        charts: [
+          {
+            title: "Active Members by ERG",
+            data: ergsDist.slice(0, 10).map(d => ({
+              label: d.label,
+              value: d.count,
+              max: Math.max(...ergsDist.map(x => x.count), 1),
+              color: ergColors[d.label] || "#0046ab"
+            }))
+          },
+          {
+            title: "Event Participation by Group",
+            data: attendanceByType.data.slice(0, 10).map(d => ({
+              label: d.erg,
+              value: d.total,
+              max: attendanceByType.maxVal,
+              color: "#3b82f6"
+            }))
+          }
+        ],
+        tables: [
+          {
+            title: "Monthly Membership Growth Trends",
+            headers: ["ERG Name", "Rate %", ...growthTrendInfo.months],
+            rows: growthTrendInfo.trends.map(t => [
+              t.name,
+              `${t.growth.toFixed(1)}%`,
+              ...t.data
+            ])
+          },
+          {
+            title: "Cross-BU Participation Matrix",
+            headers: ["ERG", ...heatmapData.columns.slice(0, 8)],
+            rows: heatmapData.rows.map(r => [
+              r.erg,
+              ...heatmapData.columns.slice(0, 8).map(col => r[col] || 0)
+            ])
+          }
+        ]
+      };
+
+      const res = await fetch('/api/pdf', { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify(payload) 
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ERG_Dashboard_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (membershipData.length === 0) {
     return (
       <div className="space-y-6">
@@ -517,10 +613,6 @@ export default function ERGDashboard() {
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className="text-3xl font-bold">ERG Dashboard</h1>
-            <Badge className="bg-green-500/10 text-green-600 hover:bg-green-500/10 border-green-200 flex items-center gap-1.5 py-0.5">
-              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              System Healthy
-            </Badge>
           </div>
           <div className="flex items-center gap-2 text-zinc-500">
             <p>Holistic Performance & Impact Monitor</p>
@@ -540,7 +632,15 @@ export default function ERGDashboard() {
             <SelectTrigger className="w-[180px] print-keep"><SelectValue placeholder="All Business Units" /></SelectTrigger>
             <SelectContent>{bus.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent>
           </Select>
-          <Button variant="outline" onClick={() => window.print()}><Download className="h-4 w-4 mr-2" /> PDF</Button>
+          <Button 
+            variant="outline" 
+            onClick={handleExportPDF} 
+            disabled={isExporting}
+            className="gap-2"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            PDF
+          </Button>
         </div>
       </div>
 
