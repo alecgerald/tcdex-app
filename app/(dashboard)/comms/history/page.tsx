@@ -15,7 +15,8 @@ import {
   Facebook,
   Instagram,
   Play,
-  Linkedin
+  Linkedin,
+  Loader2
 } from "lucide-react"
 import { toast } from "sonner"
 import { createClient } from "@/utils/supabase/client"
