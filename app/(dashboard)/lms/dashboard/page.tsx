@@ -294,6 +294,7 @@ export default function LMSDashboard() {
       const log = logs.find(l => l.id === selectedLogId)
       if (log && !log.cleanedData) {
         const fetchData = async () => {
+          setIsLoading(true)
           try {
             const supabase = createClient()
             if (dashboardType === 'courses') {
@@ -345,6 +346,8 @@ export default function LMSDashboard() {
             }
           } catch (e) {
             console.error("Failed fetching detailed table data", e)
+          } finally {
+            setIsLoading(false)
           }
         }
         fetchData()
@@ -1043,11 +1046,7 @@ export default function LMSDashboard() {
   }
 
   if (isLoading) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" />
-      </div>
-    )
+    return <DashboardSkeleton />
   }
 
   if (logs.length === 0) {
