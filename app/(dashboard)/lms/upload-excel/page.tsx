@@ -42,6 +42,7 @@ interface RowData {
   [key: string]: any
 }
 
+type Step = 'upload' | 'preview'
 type ImportType = 'status' | 'courses' | 'detailed_report'
 
 function LoadingOverlay() {
