@@ -129,7 +129,7 @@ export async function fetchBatchData(batchId: string, templateType: string) {
   }
 
   // Normalization logic (same as in fetchERGDashboardData but for a single batch)
-  let normalized = []
+  let normalized: any[] = []
   if (templateType === 'membership_registry') {
     normalized = data.map(r => ({
       "Employee ID": r.employee_id,
