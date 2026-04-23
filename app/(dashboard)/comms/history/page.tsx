@@ -232,6 +232,16 @@ export default function CommsAuditLogsPage() {
     }
   }
 
+  const getDisplayName = (type: string) => {
+    switch (type) {
+      case 'facebook-visits': return 'Facebook'
+      case 'instagram-views': return 'Instagram'
+      case 'tiktok-overview': return 'Tiktok'
+      case 'linkedin-analytics': return 'LinkedIn'
+      default: return type?.replace('-', ' ') || 'followers'
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -273,7 +283,8 @@ export default function CommsAuditLogsPage() {
             <Table>
             <TableHeader className="bg-zinc-50 dark:bg-zinc-800">
               <TableRow>
-                <TableHead>File Name / Type</TableHead>
+                <TableHead>File Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Upload Date</TableHead>
                 <TableHead className="text-right">Total Rows</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -293,10 +304,14 @@ export default function CommsAuditLogsPage() {
                           {getTypeIcon(log.type)}
                         </div>
                         <div className="flex flex-col truncate">
-                          <span className="truncate max-w-[250px]">{log.fileName}</span>
-                          <span className="text-[10px] uppercase font-bold text-zinc-400">{log.type?.replace('-', ' ') || 'followers'}</span>
+                          <span className="truncate max-w-[250px] font-semibold">{log.fileName}</span>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={`text-[10px] uppercase font-bold ${getTypeColor(log.type)} border-none shadow-none`}>
+                        {getDisplayName(log.type)}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
@@ -355,7 +370,9 @@ export default function CommsAuditLogsPage() {
                 <DialogTitle className="text-xl font-bold">{selectedLog?.fileName}</DialogTitle>
                 <DialogDescription className="flex items-center gap-4 mt-1">
                   <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {selectedLog && new Date(selectedLog.uploadedAt).toLocaleString()}</span>
-                  <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type?.replace('-', ' ') || 'followers'}</Badge>
+                  <Badge variant="secondary" className={`text-[10px] uppercase font-bold ${getTypeColor(selectedLog?.type || '')} border-none shadow-none`}>
+                    {getDisplayName(selectedLog?.type || '')}
+                  </Badge>
                 </DialogDescription>
               </div>
             </div>

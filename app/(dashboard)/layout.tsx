@@ -319,8 +319,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </ScrollArea>
 
         <div className={cn("p-4 border-t shrink-0 flex items-center", !isSidebarOpen ? "justify-center" : "justify-between")}>
-          <Link 
-            href="/profile"
+          <div 
+            onClick={() => router.push("/profile")}
             className={cn(
               "flex items-center gap-3 overflow-hidden transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2 rounded-lg cursor-pointer", 
               !isSidebarOpen && "w-0 opacity-0"
@@ -330,7 +330,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="text-[#0046ab] font-bold text-xs capitalize">{username[0]}</span>
             </div>
             <span className="font-semibold text-sm text-zinc-900 truncate dark:text-zinc-100">{username}</span>
-          </Link>
+          </div>
           <Button
             variant="ghost"
             size="icon"
