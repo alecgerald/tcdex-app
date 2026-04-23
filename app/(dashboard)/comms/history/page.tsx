@@ -63,6 +63,23 @@ interface CommsLog {
   companySize?: any[]
 }
 
+function LoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+      <div className="relative h-24 w-24">
+        <Loader2 className="h-24 w-24 animate-spin text-[#0046ab] opacity-20" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-[#0046ab]" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-2 text-center">
+        <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Accessing records...</p>
+        <p className="text-sm text-zinc-500">Please wait while we secure your information.</p>
+      </div>
+    </div>
+  )
+}
+
 export default function CommsAuditLogsPage() {
   const [logs, setLogs] = useState<CommsLog[]>([])
   const [selectedLog, setSelectedLog] = useState<CommsLog | null>(null)
@@ -108,7 +125,7 @@ export default function CommsAuditLogsPage() {
         }))
         setLogs(mappedLogs)
       } else if (error) {
-         console.error("Failed to load logs from Supabase:", error)
+         console.error("Failed to load logs from database:", error)
       }
     }
     loadDataAndRole()
@@ -141,30 +158,40 @@ export default function CommsAuditLogsPage() {
   }
 
 
+  const [isProcessing, setIsProcessing] = useState(false)
+
   const openLogDetails = async (log: CommsLog) => {
     const supabase = createClient()
     let data;
     
-    if (log.type === "facebook-visits") {
-       const { data: qData } = await supabase.from('comms_facebook_visits').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
-    } else if (log.type === "instagram-views") {
-       const { data: qData } = await supabase.from('comms_instagram_views').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
-    } else if (log.type === "tiktok-overview") {
-       const { data: qData } = await supabase.from('comms_tiktok_overview').select('*').eq('batch_id', log.id)
-       data = { rows: qData }
-    } else if (log.type === "linkedin-analytics") {
-       const { data: genData } = await supabase.from('comms_linkedin_general').select('*').eq('batch_id', log.id)
-       const { data: postData } = await supabase.from('comms_linkedin_posts').select('*').eq('batch_id', log.id)
-       data = { sheets: { "General": genData || [], "Posts": postData || [] } }
-    }
+    setIsProcessing(true)
+    try {
+      if (log.type === "facebook-visits") {
+         const { data: qData } = await supabase.from('comms_facebook_visits').select('*').eq('batch_id', log.id)
+         data = { rows: qData || [] }
+      } else if (log.type === "instagram-views") {
+         const { data: qData } = await supabase.from('comms_instagram_views').select('*').eq('batch_id', log.id)
+         data = { rows: qData || [] }
+      } else if (log.type === "tiktok-overview") {
+         const { data: qData } = await supabase.from('comms_tiktok_overview').select('*').eq('batch_id', log.id)
+         data = { rows: qData || [] }
+      } else if (log.type === "linkedin-analytics") {
+         const { data: genData } = await supabase.from('comms_linkedin_general').select('*').eq('batch_id', log.id)
+         const { data: postData } = await supabase.from('comms_linkedin_posts').select('*').eq('batch_id', log.id)
+         data = { sheets: { "General": genData || [], "Posts": postData || [] } }
+      }
 
-    if (data) {
-       setSelectedLog({ ...log, ...data })
-       setIsViewOpen(true)
-    } else {
-       toast.error("Failed to load details for this log.")
+      if (data) {
+         setSelectedLog({ ...log, ...data } as CommsLog)
+         setIsViewOpen(true)
+      } else {
+         toast.error("Failed to load details for this log.")
+      }
+    } catch (e) {
+      console.error("Error loading log details:", e)
+      toast.error("Error fetching records")
+    } finally {
+      setIsProcessing(false)
     }
   }
 
@@ -232,8 +259,20 @@ export default function CommsAuditLogsPage() {
     }
   }
 
+  const getDisplayName = (type: string) => {
+    switch (type) {
+      case 'facebook-visits': return 'Facebook'
+      case 'instagram-views': return 'Instagram'
+      case 'tiktok-overview': return 'Tiktok'
+      case 'linkedin-analytics': return 'LinkedIn'
+      default: return type?.replace('-', ' ') || 'followers'
+    }
+  }
+
   return (
-    <div className="space-y-6">
+    <>
+      {isProcessing && <LoadingOverlay />}
+      <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">History</h1>
@@ -273,7 +312,8 @@ export default function CommsAuditLogsPage() {
             <Table>
             <TableHeader className="bg-zinc-50 dark:bg-zinc-800">
               <TableRow>
-                <TableHead>File Name / Type</TableHead>
+                <TableHead>File Name</TableHead>
+                <TableHead>Type</TableHead>
                 <TableHead>Upload Date</TableHead>
                 <TableHead className="text-right">Total Rows</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -293,10 +333,14 @@ export default function CommsAuditLogsPage() {
                           {getTypeIcon(log.type)}
                         </div>
                         <div className="flex flex-col truncate">
-                          <span className="truncate max-w-[250px]">{log.fileName}</span>
-                          <span className="text-[10px] uppercase font-bold text-zinc-400">{log.type?.replace('-', ' ') || 'followers'}</span>
+                          <span className="truncate max-w-[250px] font-semibold">{log.fileName}</span>
                         </div>
                       </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="secondary" className={`text-[10px] uppercase font-bold ${getTypeColor(log.type)} border-none shadow-none`}>
+                        {getDisplayName(log.type)}
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col">
@@ -355,7 +399,9 @@ export default function CommsAuditLogsPage() {
                 <DialogTitle className="text-xl font-bold">{selectedLog?.fileName}</DialogTitle>
                 <DialogDescription className="flex items-center gap-4 mt-1">
                   <span className="flex items-center gap-1.5"><Calendar className="h-3 w-3" /> {selectedLog && new Date(selectedLog.uploadedAt).toLocaleString()}</span>
-                  <Badge variant="secondary" className="text-[10px] uppercase font-bold">{selectedLog?.type?.replace('-', ' ') || 'followers'}</Badge>
+                  <Badge variant="secondary" className={`text-[10px] uppercase font-bold ${getTypeColor(selectedLog?.type || '')} border-none shadow-none`}>
+                    {getDisplayName(selectedLog?.type || '')}
+                  </Badge>
                 </DialogDescription>
               </div>
             </div>
@@ -426,6 +472,7 @@ export default function CommsAuditLogsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   )
 }
 

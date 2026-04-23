@@ -125,6 +125,33 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
   )
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+          <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-md" />
+        </div>
+        <div className="h-10 w-32 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-32 bg-white dark:bg-zinc-900 rounded-xl border" />
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
+        <div className="lg:col-span-2 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      </div>
+      
+      <div className="h-[300px] bg-white dark:bg-zinc-900 rounded-xl border" />
+    </div>
+  )
+}
+
 export default function LMSDashboard() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [selectedLogId, setSelectedLogId] = useState<string>("")
@@ -234,7 +261,7 @@ export default function LMSDashboard() {
           parsedLogs = parsedLogs.map(l => ({ ...l, cleanedData: undefined, detailedSummary: undefined }))
         }
       } catch (err) {
-        console.error("Failed to load supabase batches:", err)
+        console.error("Failed to load database batches:", err)
       }
 
       setLogs(parsedLogs)
@@ -362,54 +389,59 @@ export default function LMSDashboard() {
   }, [selectedLog, dashboardType])
 
   const activeStatusData = useMemo(() => {
-    if (!selectedLog?.cleanedData) return []
-    return selectedLog.cleanedData.filter((row: any) => {
+    if (!selectedLog || !selectedLog.cleanedData) return []
+    const data = selectedLog.cleanedData
+    return data.filter((row: any) => {
       const loc = row['Location'] || "Unknown"
       const role = row['Role'] || "Unknown"
       const du = row['Delivery Unit'] || "Unknown"
-      
+
       const locMatch = selectedStatusLocations.length === 0 || selectedStatusLocations.includes(loc)
       const roleMatch = selectedStatusRoles.length === 0 || selectedStatusRoles.includes(role)
       const duMatch = selectedStatusDUs.length === 0 || selectedStatusDUs.includes(du)
-      
+
       return locMatch && roleMatch && duMatch
     })
   }, [selectedLog, selectedStatusLocations, selectedStatusRoles, selectedStatusDUs])
 
   const uniqueCourseLocations = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const locs = new Set<string>()
-    selectedLog.cleanedData.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
+    data.forEach((r: any) => locs.add(r['Location'] || "Unknown"))
     return Array.from(locs).sort()
   }, [selectedLog, dashboardType])
 
   const uniqueCourseUserTypes = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const types = new Set<string>()
-    selectedLog.cleanedData.forEach((r: any) => types.add(r['User type'] || r['Role'] || "Unknown"))
+    data.forEach((r: any) => types.add(r['User type'] || r['Role'] || "Unknown"))
     return Array.from(types).sort()
   }, [selectedLog, dashboardType])
 
   const uniqueCourseDUs = useMemo(() => {
-    if (!selectedLog?.cleanedData || dashboardType !== 'courses') return []
+    if (!selectedLog || !selectedLog.cleanedData || dashboardType !== 'courses') return []
+    const data = selectedLog.cleanedData
     const dus = new Set<string>()
-    const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
-    selectedLog.cleanedData.forEach((r: any) => dus.add(r[k] || "Unknown"))
+    const k = Object.keys(data[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+    data.forEach((r: any) => dus.add(r[k] || "Unknown"))
     return Array.from(dus).sort()
   }, [selectedLog, dashboardType])
 
   const activeCoursesData = useMemo(() => {
     if (!selectedLog?.cleanedData) return []
-    return selectedLog.cleanedData.filter((row: any) => {
+    const cleaned = selectedLog.cleanedData;
+    return cleaned.filter((row: any) => {
       const loc = row['Location'] || "Unknown"
       const type = row['User type'] || row['Role'] || "Unknown"
-      const k = Object.keys(selectedLog.cleanedData[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
+      const k = Object.keys(cleaned[0] || {}).find((k: string) => /delivery unit|department|dept/i.test(k)) || "Delivery Unit"
       const du = row[k] || "Unknown"
-      
+
       const locMatch = selectedCourseLocations.length === 0 || selectedCourseLocations.includes(loc)
       const typeMatch = selectedCourseUserTypes.length === 0 || selectedCourseUserTypes.includes(type)
       const duMatch = selectedCourseDUs.length === 0 || selectedCourseDUs.includes(du)
-      
+
       return locMatch && typeMatch && duMatch
     })
   }, [selectedLog, selectedCourseLocations, selectedCourseUserTypes, selectedCourseDUs])

@@ -157,11 +157,17 @@ export default function ProfilePage() {
 
     try {
       setIsCreatingUser(true)
-      await createNewUserRecord(newUser.email, newUser.role)
-      toast.success("User created successfully!")
-      setIsCreateModalOpen(false)
-      setNewUser({ email: "", role: "viewer" })
+      const result = await createNewUserRecord(newUser.email, newUser.role)
+      
+      if (result.success) {
+        toast.success("User created successfully!")
+        setIsCreateModalOpen(false)
+        setNewUser({ email: "", role: "viewer" })
+      } else {
+        toast.error(result.error || "Failed to create user")
+      }
     } catch (error: any) {
+      console.error("handleCreateUser error:", error)
       toast.error(error.message || "Failed to create user")
     } finally {
       setIsCreatingUser(false)

@@ -1,6 +1,11 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: {
+    serverActions: {
+      allowedOrigins: ["4srgqbg9-3000.asse.devtunnels.ms", "localhost:3000"],
+    },
+  },
   async redirects() {
     return [
       {

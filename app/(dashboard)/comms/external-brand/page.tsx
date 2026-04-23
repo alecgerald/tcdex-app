@@ -52,6 +52,7 @@ export default function ExternalBrandPage() {
   const [liRawData, setLiRawData] = useState<any[]>([])
   const [liPostsRawData, setLiPostsRawData] = useState<any[]>([])
   const [ttRawData, setTtRawData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -117,10 +118,35 @@ export default function ExternalBrandPage() {
             Views: r.video_views
          })))
       }
+      setIsLoading(false)
     }
     
     loadData()
   }, [])
+
+  function DashboardSkeleton() {
+    return (
+      <div className="space-y-8 animate-pulse">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+            <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-md" />
+          </div>
+          <div className="h-10 w-64 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-32 bg-white dark:bg-zinc-900 rounded-xl border" />
+          ))}
+        </div>
+
+        <div className="h-[450px] bg-white dark:bg-zinc-900 rounded-xl border" />
+        <div className="h-[300px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      </div>
+    )
+  }
+
 
 
   // Filter Data
@@ -550,8 +576,9 @@ export default function ExternalBrandPage() {
           color: "#71717a",
           autoSkip: false,
           maxRotation: 0,
-          callback: function(value: any, index: number, values: any[]) {
-            const label = this.getLabelForValue(value) as string;
+          callback: function(this: any, value: any, index: number, values: any[]) {
+            const label = this.getLabelForValue(value);
+            if (typeof label !== 'string') return label;
             
             if (label.includes('-') && spansMultipleMonths) {
                const parts = label.split('-');
@@ -563,15 +590,15 @@ export default function ExternalBrandPage() {
                // Find the center index of the current month
                let startIdx = index;
                while (startIdx > 0) {
-                 const prevLabel = this.getLabelForValue(values[startIdx - 1].value) as string;
-                 if (parseInt(prevLabel.split('-')[0], 10) === month) startIdx--;
+                 const prevLabel = this.getLabelForValue(values[startIdx - 1].value);
+                 if (typeof prevLabel === 'string' && parseInt(prevLabel.split('-')[0], 10) === month) startIdx--;
                  else break;
                }
                
                let endIdx = index;
                while (endIdx < values.length - 1) {
-                 const nextLabel = this.getLabelForValue(values[endIdx + 1].value) as string;
-                 if (parseInt(nextLabel.split('-')[0], 10) === month) endIdx++;
+                 const nextLabel = this.getLabelForValue(values[endIdx + 1].value);
+                 if (typeof nextLabel === 'string' && parseInt(nextLabel.split('-')[0], 10) === month) endIdx++;
                  else break;
                }
                
@@ -608,6 +635,8 @@ export default function ExternalBrandPage() {
       mode: 'index' as const,
     },
   }
+
+  if (isLoading) return <DashboardSkeleton />
 
   return (
     <div className="space-y-8">

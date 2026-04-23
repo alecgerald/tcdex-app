@@ -45,6 +45,8 @@ export default function LoginPage() {
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
 
+
+
     try {
       const { error } = await supabase.auth.signInWithPassword({
         email: values.email,

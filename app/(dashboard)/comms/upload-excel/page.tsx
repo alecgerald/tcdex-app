@@ -41,6 +41,23 @@ interface ImportData {
   sheets?: Record<string, any[]>
 }
 
+function LoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+      <div className="relative h-24 w-24">
+        <Loader2 className="h-24 w-24 animate-spin text-[#0046ab] opacity-20" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-[#0046ab]" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-2 text-center">
+        <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Processing data...</p>
+        <p className="text-sm text-zinc-500">Please wait while we secure your information.</p>
+      </div>
+    </div>
+  )
+}
+
 export default function CommsUploadExcelPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [data, setData] = useState<ImportData | null>(null)
@@ -433,7 +450,9 @@ export default function CommsUploadExcelPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      {isLoading && <LoadingOverlay />}
+      <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Upload Excel</h1>
@@ -473,5 +492,6 @@ export default function CommsUploadExcelPage() {
         </Card>
       </div>
     </div>
+    </>
   )
 }

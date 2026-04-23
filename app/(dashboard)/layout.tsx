@@ -18,7 +18,9 @@ import {
   Megaphone,
   Shield,
   FileClock,
-  Heart
+  Heart,
+  Presentation,
+  ClipboardCheck
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -37,12 +39,16 @@ const sidebarCategories = [
   },
   {
     name: "L&TD",
-    id: "ltd",
+    id: "lt",
     icon: Briefcase,
     items: [
-      { name: "Dashboard", href: "/ltd", icon: LayoutDashboard },
-      { name: "Upload Excel", href: "/ltd/upload", icon: FileUp },
-      { name: "Reports", href: "/ltd/reports", icon: BarChart3 },
+      { name: "Leadership Dashboard", href: "/lt/dashboard", icon: LayoutDashboard },
+      { name: "Training Reports", href: "/lt/training-reports", icon: BarChart3 },
+      { name: "Self-Paced", href: "/lt/self-paced", icon: GraduationCap },
+      { name: "VILT Tracker", href: "/lt/vilt-tracker", icon: Presentation },
+      { name: "Post-Learning Survey", href: "/lt/post-learning", icon: ClipboardCheck },
+      { name: "LeadX & BuildX Reports", href: "/lt/leadx-reports", icon: Presentation },
+      { name: "Import Excel", href: "/lt/import", icon: FileUp },
     ],
   },
   {
@@ -51,7 +57,6 @@ const sidebarCategories = [
     icon: Heart,
     items: [
       { name: "Dashboard", href: "/ex", icon: LayoutDashboard },
-      { name: "Upload Excel", href: "/ex/upload", icon: FileUp },
       { name: "Reports", href: "/ex/reports", icon: BarChart3 },
     ],
   },
@@ -61,8 +66,9 @@ const sidebarCategories = [
     icon: Users,
     items: [
       { name: "Dashboard", href: "/erg", icon: LayoutDashboard },
+      { name: "Membership Directory", href: "/erg/directory", icon: Users },
       { name: "Upload Excel", href: "/erg/upload", icon: FileUp },
-      { name: "Reports", href: "/erg/reports", icon: BarChart3 },
+      { name: "Audit Logs", href: "/erg/audit-logs", icon: FileClock },
     ],
   },
   {
@@ -91,7 +97,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const pathname = usePathname()
   const router = useRouter()
   const [isSidebarOpen, setIsSidebarOpen] = useState(true)
-  const [openCategories, setOpenCategories] = useState<string[]>(["comms"])
+  const [openCategories, setOpenCategories] = useState<string[]>(["lms"])
   const [username, setUsername] = useState("User")
   const [userRole, setUserRole] = useState<string | null>(null)
   const [isRoleLoading, setIsRoleLoading] = useState(true)
@@ -148,13 +154,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ]
       
       const isForbidden = (
-        pathname.startsWith("/lms/upload") || 
-        pathname.startsWith("/comms/upload") ||
-        pathname.startsWith("/ltd") ||
-        pathname.startsWith("/ex") ||
-        pathname.startsWith("/erg") ||
-        pathname.startsWith("/governance") ||
-        pathname.startsWith("/admin")
+        pathname.includes("/upload") || 
+        pathname.includes("/import")
       )
 
       if (isForbidden) {
@@ -169,8 +170,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (userRole === "owner" || userRole === "lead") return true
     
     // Viewer restrictions
-    if (category.id === "lms" || category.id === "comms") return true
-    return false
+    return true // All categories visible for now, items filtered below
   }).map(category => {
     if (userRole !== "viewer") return category
 
@@ -178,13 +178,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return {
       ...category,
       items: category.items.filter(item => {
-        if (category.id === "lms") {
-          return item.href === "/lms/dashboard" || item.href === "/lms/history"
-        }
-        if (category.id === "comms") {
-          return item.href === "/comms/external-brand" || item.href === "/comms/history"
-        }
-        return false
+        // Viewer cannot access upload/import pages
+        return !item.href.includes("/upload") && !item.href.includes("/import")
       })
     }
   })
@@ -237,7 +232,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </Button>
         </div>
 
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <nav className="space-y-2 p-4">
             {filteredCategories.map((category) => {
               const isOpen = openCategories.includes(category.id)
@@ -324,8 +319,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </ScrollArea>
 
         <div className={cn("p-4 border-t shrink-0 flex items-center", !isSidebarOpen ? "justify-center" : "justify-between")}>
-          <Link 
-            href="/profile"
+          <div 
+            onClick={() => router.push("/profile")}
             className={cn(
               "flex items-center gap-3 overflow-hidden transition-all hover:bg-zinc-100 dark:hover:bg-zinc-800 p-2 rounded-lg cursor-pointer", 
               !isSidebarOpen && "w-0 opacity-0"
@@ -335,7 +330,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <span className="text-[#0046ab] font-bold text-xs capitalize">{username[0]}</span>
             </div>
             <span className="font-semibold text-sm text-zinc-900 truncate dark:text-zinc-100">{username}</span>
-          </Link>
+          </div>
           <Button
             variant="ghost"
             size="icon"
