@@ -225,7 +225,12 @@ export default function ExcelUploadPage() {
             const keys = Object.keys(row)
             const cleanRow: any = {}
             required.forEach(req => {
-              const matchedKey = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+              // Be lenient: check for exact match or lowercase match with trimmed whitespace
+              const matchedKey = keys.find(k => {
+                const cleanK = k.trim().toLowerCase()
+                const cleanR = req.trim().toLowerCase()
+                return cleanK === cleanR || cleanK.includes(cleanR) || cleanR.includes(cleanK)
+              })
               if (matchedKey && row[matchedKey] !== undefined) {
                 cleanRow[req] = row[matchedKey]
               }
@@ -495,7 +500,10 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_detailed_report').insert(detailedData.slice(i, i + 500))
             if (insertError) {
                console.error("Detailed Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Database Error (Detailed DB): " + (insertError?.message || "Failed to insert records"))
+               const errorMsg = insertError.code === '42501' 
+                 ? "Permission Denied: Please check your Supabase RLS policies for 'lms_detailed_report'." 
+                 : (insertError?.message || "Failed to insert records")
+               toast.error("Database Error (Detailed DB): " + errorMsg)
             }
           }
         }
