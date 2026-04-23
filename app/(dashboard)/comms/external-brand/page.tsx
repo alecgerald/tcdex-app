@@ -52,6 +52,7 @@ export default function ExternalBrandPage() {
   const [liRawData, setLiRawData] = useState<any[]>([])
   const [liPostsRawData, setLiPostsRawData] = useState<any[]>([])
   const [ttRawData, setTtRawData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
 
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>(null)
   const [currentPage, setCurrentPage] = useState<number>(1)
@@ -117,10 +118,35 @@ export default function ExternalBrandPage() {
             Views: r.video_views
          })))
       }
+      setIsLoading(false)
     }
     
     loadData()
   }, [])
+
+  function DashboardSkeleton() {
+    return (
+      <div className="space-y-8 animate-pulse">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+            <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-md" />
+          </div>
+          <div className="h-10 w-64 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-32 bg-white dark:bg-zinc-900 rounded-xl border" />
+          ))}
+        </div>
+
+        <div className="h-[450px] bg-white dark:bg-zinc-900 rounded-xl border" />
+        <div className="h-[300px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      </div>
+    )
+  }
+
 
 
   // Filter Data
@@ -609,6 +635,8 @@ export default function ExternalBrandPage() {
       mode: 'index' as const,
     },
   }
+
+  if (isLoading) return <DashboardSkeleton />
 
   return (
     <div className="space-y-8">

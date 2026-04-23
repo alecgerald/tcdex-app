@@ -51,6 +51,23 @@ interface AuditLog {
   employeeSummary?: any[]
 }
 
+function LoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+      <div className="relative h-24 w-24">
+        <Loader2 className="h-24 w-24 animate-spin text-[#0046ab] opacity-20" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-[#0046ab]" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-2 text-center">
+        <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Accessing records...</p>
+        <p className="text-sm text-zinc-500">Please wait while we secure your information.</p>
+      </div>
+    </div>
+  )
+}
+
 export default function AuditLogsPage() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -196,7 +213,9 @@ export default function AuditLogsPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <>
+      {isLoadingData && <LoadingOverlay />}
+      <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">History</h1>
@@ -358,7 +377,7 @@ export default function AuditLogsPage() {
                   {isLoadingData ? (
                     <div className="flex flex-col items-center justify-center h-full text-zinc-500 py-20">
                       <Loader2 className="h-10 w-10 animate-spin mb-4 text-[#0046ab]" />
-                      <p className="font-medium animate-pulse text-[#0046ab]">Querying Supabase Records...</p>
+                      <p className="font-medium animate-pulse text-[#0046ab]">Querying Database Records...</p>
                       <p className="text-sm mt-2 opacity-70">Please hold on while we securely fetch the batch data from your database.</p>
                     </div>
                   ) : selectedLog?.cleanedData ? (
@@ -394,6 +413,7 @@ export default function AuditLogsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   )
 }
 

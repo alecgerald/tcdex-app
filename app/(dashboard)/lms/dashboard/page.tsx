@@ -125,6 +125,33 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
   )
 }
 
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-6 animate-pulse">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-2">
+          <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+          <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-md" />
+        </div>
+        <div className="h-10 w-32 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-32 bg-white dark:bg-zinc-900 rounded-xl border" />
+        ))}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-1 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
+        <div className="lg:col-span-2 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      </div>
+      
+      <div className="h-[300px] bg-white dark:bg-zinc-900 rounded-xl border" />
+    </div>
+  )
+}
+
 export default function LMSDashboard() {
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [selectedLogId, setSelectedLogId] = useState<string>("")
@@ -234,7 +261,7 @@ export default function LMSDashboard() {
           parsedLogs = parsedLogs.map(l => ({ ...l, cleanedData: undefined, detailedSummary: undefined }))
         }
       } catch (err) {
-        console.error("Failed to load supabase batches:", err)
+        console.error("Failed to load database batches:", err)
       }
 
       setLogs(parsedLogs)

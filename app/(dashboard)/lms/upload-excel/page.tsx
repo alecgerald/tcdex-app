@@ -42,8 +42,24 @@ interface RowData {
   [key: string]: any
 }
 
-type Step = 'upload' | 'filter' | 'preview'
 type ImportType = 'status' | 'courses' | 'detailed_report'
+
+function LoadingOverlay() {
+  return (
+    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+      <div className="relative h-24 w-24">
+        <Loader2 className="h-24 w-24 animate-spin text-[#0046ab] opacity-20" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <Loader2 className="h-12 w-12 animate-spin text-[#0046ab]" />
+        </div>
+      </div>
+      <div className="mt-6 space-y-2 text-center">
+        <p className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Processing data...</p>
+        <p className="text-sm text-zinc-500">Please wait while we secure your information.</p>
+      </div>
+    </div>
+  )
+}
 
 export default function ExcelUploadPage() {
   const [step, setStep] = useState<Step>('upload')
@@ -411,7 +427,7 @@ export default function ExcelUploadPage() {
 
       if (batchError) {
         console.error("Batch insert failed:", JSON.stringify(batchError, null, 2))
-        toast.error("Supabase Error (History Log): " + (batchError?.message || JSON.stringify(batchError)))
+        toast.error("Database Error (History Log): " + (batchError?.message || "Failed to create batch"))
       }
 
       if (!batchError) {
@@ -439,7 +455,7 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_assigned_courses').insert(coursesData.slice(i, i + 500))
             if (insertError) {
                console.error("Course Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Supabase Error (Courses DB): " + (insertError?.message || JSON.stringify(insertError)))
+               toast.error("Database Error (Courses DB): " + (insertError?.message || "Failed to insert records"))
             }
           }
         } else if (importType === 'status') {
@@ -457,7 +473,7 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_status_completion').insert(statusData.slice(i, i + 500))
             if (insertError) {
                console.error("Status Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Supabase Error (Status DB): " + (insertError?.message || JSON.stringify(insertError)))
+               toast.error("Database Error (Status DB): " + (insertError?.message || "Failed to insert records"))
             }
           }
         } else if (importType === 'detailed_report') {
@@ -478,7 +494,7 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_detailed_report').insert(detailedData.slice(i, i + 500))
             if (insertError) {
                console.error("Detailed Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Supabase Error (Detailed DB): " + (insertError?.message || JSON.stringify(insertError)))
+               toast.error("Database Error (Detailed DB): " + (insertError?.message || "Failed to insert records"))
             }
           }
         }
@@ -522,7 +538,9 @@ export default function ExcelUploadPage() {
   )
 
   return (
-    <div className="space-y-6">
+    <>
+      {isLoading && <LoadingOverlay />}
+      <div className="space-y-6">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-zinc-50">Upload Excel</h1>
@@ -760,5 +778,6 @@ export default function ExcelUploadPage() {
         </Card>
       )}
     </div>
+    </>
   )
 }
