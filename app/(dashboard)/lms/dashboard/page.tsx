@@ -127,27 +127,35 @@ const PieChart = ({ data }: { data: SummaryItem[] }) => {
 
 function DashboardSkeleton() {
   return (
-    <div className="space-y-6 animate-pulse">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 animate-pulse p-2">
+      {/* Header Skeleton */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
         <div className="space-y-2">
-          <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
-          <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-md" />
+          <div className="h-10 w-48 bg-zinc-200 dark:bg-zinc-800 rounded-lg" />
+          <div className="h-4 w-64 bg-zinc-100 dark:bg-zinc-900 rounded-lg" />
         </div>
-        <div className="h-10 w-32 bg-zinc-200 dark:bg-zinc-800 rounded-md" />
+        <div className="flex gap-3">
+           <div className="h-10 w-32 bg-zinc-200 dark:bg-zinc-800 rounded-lg" />
+           <div className="h-10 w-32 bg-zinc-200 dark:bg-zinc-800 rounded-lg" />
+        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="h-32 bg-white dark:bg-zinc-900 rounded-xl border" />
+      {/* Tabs Skeleton */}
+      <div className="h-12 w-full max-w-3xl bg-zinc-100 dark:bg-zinc-800/50 rounded-lg mb-8" />
+
+      {/* Main Content Grid */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <Card key={i} className="border-none shadow-sm h-32 bg-white/50 dark:bg-zinc-900/50" />
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
-        <div className="lg:col-span-2 h-[400px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      <div className="grid gap-6 lg:grid-cols-3 mt-6">
+        <Card className="lg:col-span-1 h-[450px] border-none shadow-sm bg-white/50 dark:bg-zinc-900/50" />
+        <Card className="lg:col-span-2 h-[450px] border-none shadow-sm bg-white/50 dark:bg-zinc-900/50" />
       </div>
       
-      <div className="h-[300px] bg-white dark:bg-zinc-900 rounded-xl border" />
+      <Card className="h-[400px] border-none shadow-sm bg-white/50 dark:bg-zinc-900/50 mt-6" />
     </div>
   )
 }
