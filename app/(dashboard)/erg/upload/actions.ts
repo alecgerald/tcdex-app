@@ -77,7 +77,8 @@ export async function saveERGData(
         
         const merge = (key: string) => {
           const newVal = parseInt(row[key])
-          return (newVal > 0) ? newVal : (existing ? existing[key.toLowerCase().replace(' ', '_')] : 0)
+          const dbKey = key.toLowerCase().replace(' ', '_')
+          return (newVal > 0) ? newVal : (existing ? (existing as any)[dbKey] : 0)
         }
 
         return {
