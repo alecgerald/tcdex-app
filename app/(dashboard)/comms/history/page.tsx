@@ -121,7 +121,7 @@ export default function CommsAuditLogsPage() {
            fileName: dbBatch.filename,
            uploadedAt: dbBatch.upload_timestamp,
            type: dbBatch.upload_type,
-           rows: Array.from({ length: dbBatch.records_imported }), // Placeholder for count
+           rows: Array.from({ length: dbBatch.records_imported || 0 }), // Placeholder for count
            _dbRecord: dbBatch
         }))
         setLogs(mappedLogs)

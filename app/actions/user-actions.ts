@@ -98,10 +98,9 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
 
     console.log("User record created successfully")
     return { success: true, userId: newUser.user.id }
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
     console.error("Caught error in createNewUserRecord:", error)
-    // Attempt cleanup if newUser was created
-    // We'd need to track if newUser exists here, but for simplicity:
-    return { success: false, error: error.message || "An unexpected error occurred" }
+    return { success: false, error: errorMessage }
   }
 }
