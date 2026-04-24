@@ -2,8 +2,12 @@
 
 import { useState, useRef, useEffect } from "react"
 import * as XLSX from "xlsx"
+import { createClient } from "@/utils/supabase/client"
 
-interface RowObject { [key: string]: string | number }
+const supabase = createClient()
+
+// ─── Types ───────────────────────────────────────────────
+interface RowObject { [key: string]: string | number | null }
 interface UploadZoneProps { onFile: (file: File) => void; loaded: boolean }
 interface MetricCardProps {
   icon: string; title: string; subtitle: string
@@ -11,24 +15,55 @@ interface MetricCardProps {
   onFile: (file: File) => void; loaded: boolean; detail?: string
 }
 
-const normalizeKey = (k: string) => k.trim().toLowerCase()
+// ─── Helpers ─────────────────────────────────────────────
+const nk = (k: string) => k.trim().toLowerCase().replace(/\s+/g, " ")
+
 const parseSheet = (file: File): Promise<RowObject[]> =>
   new Promise(resolve => {
     const reader = new FileReader()
     reader.onload = evt => {
       const arrayBuffer = evt.target?.result
       if (!arrayBuffer) return resolve([])
-      const wb = XLSX.read(arrayBuffer, { type: "array" })
-      const rows = XLSX.utils.sheet_to_json<RowObject>(wb.Sheets[wb.SheetNames[0]])
+      const wb = XLSX.read(arrayBuffer, { type: "array", cellDates: true, dateNF: "yyyy-mm-dd" })
+      const rows = XLSX.utils.sheet_to_json<RowObject>(wb.Sheets[wb.SheetNames[0]], { defval: null })
       resolve(rows.map(row => {
         const obj: RowObject = {}
-        Object.keys(row).forEach(k => { obj[normalizeKey(k)] = row[k] })
+        Object.keys(row).forEach(k => { 
+          const v = row[k] as any
+          obj[nk(k)] = v instanceof Date ? v.toISOString().slice(0, 10) : v
+        })
         return obj
       }))
     }
     reader.readAsArrayBuffer(file)
   })
 
+const safeNum = (v: any): number | null => {
+  if (v === null || v === undefined || v === "" || v === "#DIV/0!") return null
+  const n = Number(v)
+  return isNaN(n) ? null : n
+}
+
+function findVal(r: RowObject, ...candidates: string[]): string {
+  for (const c of candidates) {
+    const norm = nk(c)
+    if (r[norm] !== null && r[norm] !== undefined) return r[norm]!.toString()
+    const words = norm.split(/\s+/).filter(w => w.length > 2)
+    const hit = Object.entries(r).find(([k]) => words.every(w => k.includes(w)))
+    if (hit) return hit[1]?.toString() || ""
+  }
+  return ''
+}
+
+// ─── LIKERT helpers ───────────────────────────────────────
+const LIKERT: Record<string, number> = { "strongly agree": 5, "agree": 4, "neutral": 3, "disagree": 2, "strongly disagree": 1 }
+const toLikert = (v: any): number | null => {
+  if (typeof v === "number") return v
+  const s = (v || "").toString().trim().toLowerCase()
+  return LIKERT[s] ?? safeNum(v)
+}
+
+// ─── Components ──────────────────────────────────────────
 function UploadZone({ onFile, loaded }: UploadZoneProps) {
   const ref = useRef<HTMLInputElement>(null)
   const [drag, setDrag] = useState(false)
@@ -65,21 +100,11 @@ function MetricCard({ icon, title, subtitle, value, unit, accent, onFile, loaded
       <div style={{ padding: "20px 22px 22px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
-            background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            fontWeight: 800,
-            color: accent,
-            letterSpacing: "0.5px"
+            width: 42, height: 42, borderRadius: 12, background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: accent, letterSpacing: "0.5px"
           }}>
             {icon}
           </div>
-          
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", lineHeight: 1.2 }}>{title}</div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
@@ -91,7 +116,7 @@ function MetricCard({ icon, title, subtitle, value, unit, accent, onFile, loaded
             <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", letterSpacing: ".04em", textTransform: "uppercase", marginBottom: 4 }}>Result</div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
               <span style={{ fontSize: 32, fontWeight: 800, color: accent, lineHeight: 1 }}>{value ?? "—"}</span>
-              {unit && <span style={{ fontSize: 14, fontWeight: 600, color: accent + "aa" }}>{unit}</span>}
+              {unit && value !== null && <span style={{ fontSize: 14, fontWeight: 600, color: accent + "aa" }}>{unit}</span>}
             </div>
           </div>
           {detail && <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right", maxWidth: 90, lineHeight: 1.4 }}>{detail}</div>}
@@ -116,178 +141,159 @@ function BenchmarkRow({ label, value, target, accent, unit = "%" }: { label: str
   )
 }
 
-// ─── LIKERT helpers ───────────────────────────────────────
-const LIKERT: Record<string, number> = { "strongly agree": 5, "agree": 4, "neutral": 3, "disagree": 2, "strongly disagree": 1 }
-const toLikert = (v: string | number | undefined): number | null => {
-  if (typeof v === "number") return v
-  return LIKERT[(v as string || "").trim().toLowerCase()] ?? null
-}
-
+// ─── PerfDashboard ─────────────────────────────────────────
 export default function PerfDashboard() {
-  const [uploadOrder, setUploadOrder] = useState<string[]>([])
+  const [rehydrating, setRehydrating] = useState(true)
+  const [uploading, setUploading] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  const [perfMetrics, setPerfMetrics] = useState(() => {
-    try {
-      const s = localStorage.getItem("perfMetricsData")
-      return s ? JSON.parse(s) : {
-        mei:  { value: null, responses: 0, favorability: null, loaded: false },
-        epii: { value: null, reviewed: 0, improved: 0, loaded: false },
-      }
-    } catch {
-      return {
-        mei:  { value: null, responses: 0, favorability: null, loaded: false },
-        epii: { value: null, reviewed: 0, improved: 0, loaded: false },
-      }
-    }
+  const [perfMetrics, setPerfMetrics] = useState({
+    mei:  { value: null as number | null, responses: 0, favorability: null as number | null, loaded: false },
+    epii: { value: null as number | null, reviewed: 0, improved: 0, loaded: false },
   })
 
-  useEffect(() => { localStorage.setItem("perfMetricsData", JSON.stringify(perfMetrics)) }, [perfMetrics])
+  useEffect(() => {
+    const run = async () => {
+      setRehydrating(true)
+      await Promise.all([fetchMei(), fetchEpii()])
+      setRehydrating(false)
+    }
+    run()
+  }, [])
 
-  // ─── MEI Handler ─────────────────────────────────────────
-  // Columns: survey date, function, role level, location, manager tenure,
-  //          q1 clarity, q2 support, q3 fairness, q4 feedback,
-  //          q5 psychological safety, q6 inclusion, q7 improvement comment
-  const handleMei = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
-
-    const keys = Object.keys(rows[0])
-    const qKeys = ["q1 clarity", "q2 support", "q3 fairness", "q4 feedback", "q5 psychological safety", "q6 inclusion"]
-    const resolvedQKeys = qKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
-
-    // Merge with existing
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("meiRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["survey date"] ?? ""}|${r["function"] ?? ""}|${r["role level"] ?? ""}|${r["location"] ?? ""}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("meiRawRows", JSON.stringify(merged))
-
-    // Calculate MEI: avg of all Likert responses, converted to 0-100 favorability
+  // ─── Fetchers ─────────────────────────────────────────────
+  const fetchMei = async () => {
+    const { data } = await supabase.from("manager_effectiveness_index").select("*")
+    if (!data?.length) return
+    const qKeys = ["q1_clarity", "q2_support", "q3_fairness", "q4_feedback", "q5_psychological_safety", "q6_inclusion"]
     let totalScore = 0; let totalItems = 0
-    merged.forEach(r => {
-      resolvedQKeys.forEach(k => {
-        const score = toLikert(r[k])
-        if (score !== null) { totalScore += score; totalItems++ }
-      })
+    data.forEach(r => {
+        qKeys.forEach(k => {
+            const score = toLikert(r[k])
+            if (score !== null) { totalScore += score; totalItems++ }
+        })
     })
-    const avgLikert   = totalItems ? totalScore / totalItems : 0          // 1–5
-    const favorability = totalItems ? Number(((avgLikert - 1) / 4 * 100).toFixed(1)) : null // map 1-5 → 0-100%
-
-    setPerfMetrics((prev: typeof perfMetrics) => ({
-      ...prev,
-      mei: { value: favorability, responses: merged.length, favorability, loaded: true }
-    }))
-    setUploadOrder(prev => [...prev.filter(k => k !== "mei"), "mei"])
+    const avgLikert = totalItems ? totalScore / totalItems : 0
+    const favorability = totalItems ? Number(((avgLikert - 1) / 4 * 100).toFixed(1)) : null
+    setPerfMetrics(p => ({ ...p, mei: { value: favorability, responses: data.length, favorability, loaded: true } }))
   }
 
-  // ─── EPII Handler ─────────────────────────────────────────
-  // Columns: review cycle, delivery unit, job family,
-  //          total number of employees reviewed,
-  //          number of employees showing performance improvement,
-  //          performance improvement rate (%), linked training intervention
+  const fetchEpii = async () => {
+    const { data } = await supabase.from("performance_improvement_rate").select("*")
+    if (!data?.length) return
+    const reviewed = data.reduce((s, r) => s + (r.employees_reviewed || 0), 0)
+    const improved = data.reduce((s, r) => s + (r.employees_improved || 0), 0)
+    setPerfMetrics(p => ({ ...p, epii: { value: reviewed ? Number(((improved / reviewed) * 100).toFixed(1)) : 0, reviewed, improved, loaded: true } }))
+  }
+
+  // ─── Batch Helper ──────────────────────────────────────────
+  const createBatch = async (filename: string, uploadType: string, count: number) => {
+    const { data, error } = await supabase
+      .from("ex_batches")
+      .insert({ filename, upload_type: uploadType, uploaded_by: "system", records_parsed: count, records_imported: count })
+      .select().single()
+    if (error) throw new Error("Batch tracking failed: " + error.message)
+    return data.batch_id
+  }
+
+  // ─── Handlers ─────────────────────────────────────────────
+  const handleMei = async (file: File) => {
+    setUploading("mei"); setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+      const batchId = await createBatch(file.name, "manager_effectiveness_index", rows.length)
+      const { error: insErr } = await supabase.from("manager_effectiveness_index").insert(
+        rows.map(r => ({
+          batch_id: batchId,
+          survey_date: findVal(r, "date"),
+          function: findVal(r, "function"),
+          role_level: findVal(r, "role level", "level"),
+          location: findVal(r, "location"),
+          manager_tenure: findVal(r, "manager tenure"),
+          q1_clarity: toLikert(findVal(r, "q1", "clarity")),
+          q2_support: toLikert(findVal(r, "q2", "support")),
+          q3_fairness: toLikert(findVal(r, "q3", "fairness")),
+          q4_feedback: toLikert(findVal(r, "q4", "feedback")),
+          q5_psychological_safety: toLikert(findVal(r, "q5", "psychological")),
+          q6_inclusion: toLikert(findVal(r, "q6", "inclusion")),
+          improvement_comment: findVal(r, "q7", "comment"),
+        }))
+      )
+      if (insErr) throw insErr
+      await fetchMei()
+    } catch (e: any) { setError(e.message) } finally { setUploading(null) }
+  }
+
   const handleEpii = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
-
-    const keys = Object.keys(rows[0])
-    const reviewedKey  = keys.find(k => k.includes("total number of employees reviewed"))    ?? ""
-    const improvedKey  = keys.find(k => k.includes("number of employees showing performance")) ?? ""
-
-    if (!reviewedKey || !improvedKey) {
-      alert("Missing columns: Total Number of Employees Reviewed / Number of Employees Showing Performance Improvement")
-      return
-    }
-
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("epiiRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["review cycle"] ?? ""}|${(r["delivery unit"] ?? "").toString().trim()}|${(r["job family"] ?? "").toString().trim()}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("epiiRawRows", JSON.stringify(merged))
-
-    const totalReviewed = merged.reduce((s, r) => s + Number(r[reviewedKey] || 0), 0)
-    const totalImproved = merged.reduce((s, r) => s + Number(r[improvedKey] || 0), 0)
-    const rate = totalReviewed ? Number(((totalImproved / totalReviewed) * 100).toFixed(1)) : null
-
-    setPerfMetrics((prev: typeof perfMetrics) => ({
-      ...prev,
-      epii: { value: rate, reviewed: totalReviewed, improved: totalImproved, loaded: true }
-    }))
-    setUploadOrder(prev => [...prev.filter(k => k !== "epii"), "epii"])
+    setUploading("epii"); setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+      const batchId = await createBatch(file.name, "performance_improvement_rate", rows.length)
+      const { error: insErr } = await supabase.from("performance_improvement_rate").insert(
+        rows.map(r => ({
+          batch_id: batchId,
+          review_cycle: findVal(r, "review cycle", "cycle"),
+          delivery_unit: findVal(r, "delivery unit", "bu"),
+          job_family: findVal(r, "job family"),
+          employees_reviewed: safeNum(findVal(r, "reviewed")),
+          employees_improved: safeNum(findVal(r, "improved")),
+          linked_training: findVal(r, "training", "intervention"),
+        }))
+      )
+      if (insErr) throw insErr
+      await fetchEpii()
+    } catch (e: any) { setError(e.message) } finally { setUploading(null) }
   }
 
-  // ─── Clear metric ─────────────────────────────────────────
-  const clearMetric = (key: string) => {
-    const defaults: Record<string, object> = {
-      mei:  { value: null, responses: 0, favorability: null, loaded: false },
-      epii: { value: null, reviewed: 0, improved: 0, loaded: false },
+  const clearMetric = async (key: string) => {
+    const tableMap: Record<string, string> = { mei: "manager_effectiveness_index", epii: "performance_improvement_rate" }
+    const { data: batches } = await supabase.from("ex_batches").select("batch_id").eq("upload_type", tableMap[key])
+    if (batches?.length) {
+      const ids = batches.map(b => b.batch_id)
+      await supabase.from(tableMap[key]).delete().in("batch_id", ids)
+      await supabase.from("ex_batches").delete().in("batch_id", ids)
     }
-    setPerfMetrics((prev: typeof perfMetrics) => {
-      const updated = { ...prev, [key]: defaults[key] }
-      localStorage.setItem("perfMetricsData", JSON.stringify(updated))
-      return updated
-    })
-    const lsKeys: Record<string, string[]> = {
-      mei:  ["meiRawRows"],
-      epii: ["epiiRawRows"],
-    }
-    lsKeys[key]?.forEach(k => localStorage.removeItem(k))
-    setUploadOrder(prev => prev.filter(k => k !== key))
+    setPerfMetrics(p => ({ ...p, [key]: { loaded: false, value: null, responses: 0, favorability: null, reviewed: 0, improved: 0 } } as any))
   }
 
   const anyLoaded = perfMetrics.mei.loaded || perfMetrics.epii.loaded
 
   const perfMetricCards = [
-    {
-      key: "mei", icon: "MEI",
-      title: "Manager Effectiveness Index",
-      subtitle: "Aggregate favorability across 6 effectiveness dimensions",
-      value: perfMetrics.mei.value,
-      unit: perfMetrics.mei.value != null ? "%" : "",
-      accent: "#f59e0b",
-      onFile: handleMei, loaded: perfMetrics.mei.loaded,
-      detail: "Survey-based favorability",
-    },
-    {
-      key: "epii", icon: "PIR",
-      title: "Performance Improvement Rate",
-      subtitle: "Employees showing improvement across review cycles",
-      value: perfMetrics.epii.value,
-      unit: perfMetrics.epii.value != null ? "%" : "",
-      accent: "#10b981",
-      onFile: handleEpii, loaded: perfMetrics.epii.loaded,
-      detail: "Improved ÷ Reviewed",
-    },
+    { key: "mei", icon: "MEI", title: "Manager Effectiveness Index", subtitle: "Aggregate favorability across 6 dimensions", value: perfMetrics.mei.value, unit: "%", accent: "#f59e0b", onFile: handleMei, loaded: perfMetrics.mei.loaded, detail: "Survey-based favorability" },
+    { key: "epii", icon: "PIR", title: "Performance Improvement Rate", subtitle: "Employees showing improvement across cycles", value: perfMetrics.epii.value, unit: "%", accent: "#10b981", onFile: handleEpii, loaded: perfMetrics.epii.loaded, detail: "Improved ÷ Reviewed" },
   ]
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+      {error && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "10px 14px", fontSize: 12, color: "#dc2626", marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+          <span>⚠ {error}</span>
+          <button onClick={() => setError(null)} style={{ background: "none", border: "none", color: "#dc2626", cursor: "pointer", fontWeight: 700 }}>×</button>
+        </div>
+      )}
 
-      {/* Status pills */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
         {perfMetricCards.map(m => (
           <div key={m.key} style={{
             fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
-            background: m.loaded ? m.accent + "18" : "#f1f5f9",
-            color: m.loaded ? m.accent : "#94a3b8",
-            border: `1px solid ${m.loaded ? m.accent + "30" : "#e2e8f0"}`,
-            display: "flex", alignItems: "center", gap: 5,
+            background: m.loaded ? m.accent + "18" : "#f1f5f9", color: m.loaded ? m.accent : "#94a3b8",
+            border: `1px solid ${m.loaded ? m.accent + "30" : "#e2e8f0"}`, display: "flex", alignItems: "center", gap: 5,
           }}>
             <span style={{ fontSize: 13 }}>{m.loaded ? "●" : "○"}</span> {m.title}
           </div>
         ))}
       </div>
 
-      {/* Metric cards */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20, marginBottom: 36 }}>
         {perfMetricCards.map(({ key: _k, ...m }) => <MetricCard key={m.title} {...m} />)}
       </div>
 
-      {/* Summary snapshot */}
       {anyLoaded && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 14 }}>📊 Summary Snapshot</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
             {perfMetrics.mei.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Manager Effectiveness Index</div>
@@ -296,18 +302,14 @@ export default function PerfDashboard() {
                 <button onClick={() => clearMetric("mei")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
               </div>
             )}
-
             {perfMetrics.epii.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Performance Improvement Rate</div>
                 <BenchmarkRow label="Performance Improvement Rate" value={perfMetrics.epii.value ?? 0} target={100} accent="#10b981" unit="%" />
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                  {perfMetrics.epii.improved} of {perfMetrics.epii.reviewed} employees showed improvement
-                </div>
+                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{perfMetrics.epii.improved} of {perfMetrics.epii.reviewed} employees showed improvement</div>
                 <button onClick={() => clearMetric("epii")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
               </div>
             )}
-
           </div>
         </>
       )}
