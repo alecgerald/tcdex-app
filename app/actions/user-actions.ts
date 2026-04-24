@@ -40,9 +40,16 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
 
     // 2. Create the user in Supabase Auth
     console.log("Creating user in Supabase Auth...")
+    const defaultPassword = process.env.NEXT_PUBLIC_DEFAULT_USER_PASSWORD;
+    
+    if (!defaultPassword) {
+      console.error("Missing NEXT_PUBLIC_DEFAULT_USER_PASSWORD environment variable")
+      return { success: false, error: "System configuration error: Default password not set." }
+    }
+    
     const { data: newUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password: "tcdexwebapp.123",
+      password: defaultPassword,
       email_confirm: true 
     })
 
@@ -57,19 +64,22 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
 
     console.log("New User Created ID:", newUser.user.id)
 
-    // 3. Create Profile record
+    // 3. Create/Update Profile record
+    // Using upsert in case a database trigger already created a profile
     const { error: profileError } = await supabaseAdmin
       .from("profiles")
-      .insert({
+      .upsert({
         id: newUser.user.id,
         email: email,
         first_name: "", 
         last_name: ""
-      })
+      }, { onConflict: 'id' })
 
     if (profileError) {
-      console.error("Profile creation error:", profileError)
-      throw profileError
+      console.error("Profile creation/upsert error:", profileError)
+      // We don't necessarily want to fail the whole process if only profile fails, 
+      // but usually this indicates a database issue.
+      return { success: false, error: "Account created but profile setup failed: " + profileError.message }
     }
 
     // 4. Assign Role
@@ -81,19 +91,20 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
 
     if (roleIdError) {
       console.error("Role lookup error:", roleIdError)
-      throw roleIdError
+      return { success: false, error: "Account created but role lookup failed: " + roleIdError.message }
     }
 
+    // Using upsert for roles as well for robustness
     const { error: assignError } = await supabaseAdmin
       .from("user_roles")
-      .insert({
+      .upsert({
         user_id: newUser.user.id,
         role_id: roleData.id
-      })
+      }, { onConflict: 'user_id' })
 
     if (assignError) {
       console.error("Role assignment error:", assignError)
-      throw assignError
+      return { success: false, error: "Account created but role assignment failed: " + assignError.message }
     }
 
     console.log("User record created successfully")

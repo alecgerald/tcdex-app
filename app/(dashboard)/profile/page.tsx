@@ -230,7 +230,7 @@ export default function ProfilePage() {
                   <Label htmlFor="new-password">Initial Password</Label>
                   <Input 
                     id="new-password" 
-                    value="tcdexwebapp.123" 
+                    value={process.env.NEXT_PUBLIC_DEFAULT_USER_PASSWORD || ""} 
                     readOnly 
                     className="bg-zinc-50 dark:bg-zinc-900 text-zinc-500 cursor-default"
                   />
