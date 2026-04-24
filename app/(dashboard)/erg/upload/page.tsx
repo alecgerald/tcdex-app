@@ -3,7 +3,6 @@
 import { useState, useRef } from "react"
 import { 
   FileUp, 
-  Trash2, 
   AlertTriangle, 
   CheckCircle2,
   FileSpreadsheet,
@@ -13,10 +12,8 @@ import {
   Filter,
   Check,
   ChevronRight,
-  Info,
-  Layers,
-  Download,
-  Clock
+  Info, 
+  Layers
 } from "lucide-react"
 import { toast } from "sonner"
 import { read, utils } from "xlsx"
@@ -35,7 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-import { saveERGData, resetERGData } from "./actions"
+import { saveERGData } from "./actions"
 
 interface RowData {
   id: string
@@ -88,17 +85,7 @@ export default function ERGUploadPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
 
-  // Test mode states
-  const [isTestMode, setIsTestMode] = useState(false)
-  const [customUploadDate, setCustomUploadDate] = useState("")
-
   const fileInputRef = useRef<HTMLInputElement>(null)
-
-  const getLocalDatetimeString = () => {
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    return now.toISOString().slice(0, 16);
-  };
 
   const detectTemplateType = (headers: string[]): TemplateType | null => {
     for (const [key, config] of Object.entries(templateConfigs)) {
@@ -246,8 +233,7 @@ export default function ERGUploadPage() {
 
         const standardized = standardizeData(
           jsonData, 
-          detectedType, 
-          isTestMode ? customUploadDate : undefined
+          detectedType
         )
         const processed = standardized.map((row, index) => ({
           ...row,
@@ -272,11 +258,7 @@ export default function ERGUploadPage() {
     if (!templateType) return
     setIsLoading(true)
 
-    // Use custom date if in test mode, otherwise use current time
     let uploadTime = new Date().toISOString()
-    if (isTestMode && customUploadDate) {
-      uploadTime = new Date(customUploadDate).toISOString()
-    }
 
     try {
       const result = await saveERGData(
@@ -291,8 +273,6 @@ export default function ERGUploadPage() {
         setStep('upload')
         setProcessedData([])
         setTemplateType(null)
-        setIsTestMode(false)
-        setCustomUploadDate("")
         if (fileInputRef.current) fileInputRef.current.value = ""
       } else {
         toast.error(result.error || "Failed to save data")
@@ -322,25 +302,6 @@ export default function ERGUploadPage() {
               <CardDescription>Ensuring 100% data accuracy</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg dark:bg-blue-950/20 dark:border-blue-900">
-                <div className="flex gap-2 text-blue-800 dark:text-blue-300 mb-2">
-                  <FileSpreadsheet className="h-4 w-4 shrink-0" />
-                  <span className="text-xs font-bold uppercase">Sample Templates</span>
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(templateConfigs).map(([key, config]: [string, any]) => (
-                    <button 
-                      key={key}
-                      onClick={() => toast.info(`Downloading ${config.name} template...`)}
-                      className="flex items-center justify-between w-full text-[10px] p-2 bg-white border rounded hover:bg-zinc-50 transition-colors dark:bg-zinc-900 dark:border-zinc-800"
-                    >
-                      <span className="font-medium truncate mr-2">{config.name}</span>
-                      <Download className="h-3 w-3 text-blue-600 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
               <div className="space-y-2">
                 <span className="text-[10px] font-bold uppercase text-zinc-400">Supported Formats</span>
                 {Object.values(templateConfigs).map((c: any) => (
@@ -349,47 +310,6 @@ export default function ERGUploadPage() {
                     {c.name}
                   </div>
                 ))}
-              </div>
-
-              {/* TEMPORARY TESTING TOOL */}
-              <div className="pt-4 border-t mt-4">
-                <span className="text-[10px] font-bold uppercase text-red-500 block mb-2">Testing Tools</span>
-                <Button 
-                  variant="destructive" 
-                  size="sm" 
-                  className="w-full text-[10px] h-8"
-                  onClick={async () => {
-                    if (confirm("Are you sure? This will wipe ALL ERG data from the database and local storage.")) {
-                      setIsLoading(true)
-                      try {
-                        // Clear local storage legacy data
-                        const keys = [
-                          "erg_membership_registry", "erg_membership_snapshots", 
-                          "erg_event_logs", "erg_feedback_summaries", 
-                          "erg_participation_details", "erg_audit_logs"
-                        ];
-                        keys.forEach(k => localStorage.removeItem(k));
-
-                        // Clear database
-                        const result = await resetERGData()
-                        if (result.success) {
-                          toast.success("Database and local storage cleared successfully")
-                          setTimeout(() => window.location.reload(), 1000)
-                        } else {
-                          toast.error(result.error)
-                        }
-                      } catch (error) {
-                        toast.error("Failed to reset data")
-                      } finally {
-                        setIsLoading(false)
-                      }
-                    }
-                  }}
-                  disabled={isLoading}
-                >
-                  <Trash2 className="h-3 w-3 mr-2" />
-                  {isLoading ? "Resetting..." : "Reset All Data (Database + Local)"}
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -404,25 +324,10 @@ export default function ERGUploadPage() {
             
             <input type="file" accept=".xlsx, .xls, .csv" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
             <Button className="bg-[#0046ab] hover:bg-[#003a8f] text-white px-10 py-6 h-auto text-lg rounded-xl" onClick={() => {
-              setIsTestMode(false)
               fileInputRef.current?.click()
             }} disabled={isLoading}>
               {isLoading ? <Loader2 className="h-5 w-5 mr-2 animate-spin" /> : <FileUp className="h-5 w-5 mr-2" />}
               Upload Excel or CSV
-            </Button>
-
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="absolute bottom-4 right-4 text-[10px] text-zinc-400 hover:text-amber-600 hover:bg-amber-50"
-              onClick={() => {
-                setIsTestMode(true)
-                setCustomUploadDate(getLocalDatetimeString())
-                fileInputRef.current?.click()
-              }}
-            >
-              <Clock className="h-3 w-3 mr-1" />
-              Test: Backdate Upload
             </Button>
           </Card>
         </div>
@@ -445,24 +350,6 @@ export default function ERGUploadPage() {
             </div>
           </CardHeader>
           
-          {isTestMode && (
-            <div className="flex items-center gap-3 p-3 bg-amber-50 border-b border-amber-100 dark:bg-amber-950/20 dark:border-amber-900/50">
-              <div className="bg-amber-100 p-2 rounded-full dark:bg-amber-900/50">
-                <Clock className="h-4 w-4 text-amber-600" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-bold text-amber-800 dark:text-amber-300 uppercase">Test Mode: Manual Upload Date</p>
-                <p className="text-[10px] text-amber-600 dark:text-amber-400">Specify the date and time this file should be recorded as uploaded.</p>
-              </div>
-              <Input 
-                type="datetime-local" 
-                className="w-auto h-9 text-xs border-amber-200 focus:ring-amber-500" 
-                value={customUploadDate} 
-                max={getLocalDatetimeString()}
-                onChange={(e) => setCustomUploadDate(e.target.value)}
-              />
-            </div>
-          )}
 
           <CardContent className="p-0">
             <ScrollArea className="h-[450px]">

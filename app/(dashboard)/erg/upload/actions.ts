@@ -181,19 +181,3 @@ export async function saveERGData(
     return { success: false, error: err.message || "Failed to import data" }
   }
 }
-
-export async function resetERGData() {
-  const supabase = await createClient()
-  const { error } = await supabase
-    .from("erg_batches")
-    .delete()
-    .neq("batch_id", "00000000-0000-0000-0000-000000000000") 
-
-  if (error) {
-    console.error("Reset Error:", error)
-    return { success: false, error: "Failed to reset database tables" }
-  }
-
-  revalidatePath("/erg")
-  return { success: true }
-}
