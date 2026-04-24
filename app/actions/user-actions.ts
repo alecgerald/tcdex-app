@@ -11,37 +11,25 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
   try {
     // 1. Verify the requester is actually an 'owner'
     const { data: { user: requester }, error: userError } = await supabase.auth.getUser()
-    if (userError) {
-      console.error("Auth getUser error:", userError)
-      return { success: false, error: "Authentication failed: " + userError.message }
-    }
-    if (!requester) {
-      console.error("No requester found")
-      return { success: false, error: "Not authenticated" }
+    if (userError || !requester) {
+      return { success: false, error: "Authentication failed." }
     }
 
-    console.log("Requester ID:", requester.id)
-
-    const { data: requesterRole, error: requesterRoleError } = await supabase
+    // Checking if requester has the 'owner' role using inner join
+    const { data: requesterRole, error: roleCheckError } = await supabaseAdmin
       .from("user_roles")
-      .select("roles(name)")
+      .select("roles!inner(name)")
       .eq("user_id", requester.id)
-      .single()
+      .eq("roles.name", "owner")
+      .maybeSingle()
 
-    if (requesterRoleError) {
-      console.error("Error fetching requester role:", requesterRoleError)
-      return { success: false, error: "Failed to verify permissions: " + requesterRoleError.message }
+    if (roleCheckError || !requesterRole) {
+      console.error("Owner verification failed:", roleCheckError)
+      return { success: false, error: "Unauthorized: Only owners can create users." }
     }
 
-    if (!requesterRole || (requesterRole as any).roles.name !== "owner") {
-      console.error("Unauthorized: requester role is not owner")
-      return { success: false, error: "Unauthorized: Only owners can create users" }
-    }
-
-    // 2. Create the user in Supabase Auth
-    console.log("Creating user in Supabase Auth...")
+    // 2. Resolve or Create the user in Supabase Auth
     const defaultPassword = process.env.NEXT_PUBLIC_DEFAULT_USER_PASSWORD;
-    
     if (!defaultPassword) {
       return { success: false, error: "System configuration error: Default password not set." }
     }
@@ -55,21 +43,24 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
     })
 
     if (authError) {
-      // If user already exists, we "repair" by proceeding to update profile/role
+      // If user already exists, we "repair" by proceeding to resolve ID and update records
       if (authError.message.includes("already registered") || authError.status === 422) {
-        console.log("User already exists, proceeding to update profile and role.")
-        // Attempt to find the existing user ID
-        const { data: existingUser } = await supabaseAdmin
+        console.log("User already exists, proceeding to resolve ID and update records.")
+        
+        // Search in profiles first as it's faster
+        const { data: existingProfile } = await supabaseAdmin
           .from("profiles")
           .select("id")
           .eq("email", email)
-          .single()
+          .maybeSingle()
         
-        if (existingUser) {
-          userId = existingUser.id;
+        if (existingProfile) {
+          userId = existingProfile.id;
         } else {
-          // If not in profiles, we can't safely proceed without the ID from auth
-          return { success: false, error: "User exists but profile record was not found." }
+          // Fallback: search in Auth directly (requires admin privileges)
+          const { data: authUsers } = await supabaseAdmin.auth.admin.listUsers()
+          const existingAuthUser = authUsers?.users.find(u => u.email === email)
+          userId = existingAuthUser?.id;
         }
       } else {
         console.error("Supabase Admin createUser error:", authError)
@@ -95,37 +86,41 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
 
     if (profileError) {
       console.error("Profile upsert error:", profileError)
-      // We don't fail here because the account exists
     }
 
     // 4. Assign Role
-    const { data: roleData, error: roleIdError } = await supabaseAdmin
+    const { data: roleData, error: roleLookupError } = await supabaseAdmin
       .from("roles")
       .select("id")
       .eq("name", roleName)
       .single()
 
-    if (roleIdError) {
-      console.error("Role lookup error:", roleIdError)
-      return { success: false, error: "Failed to assign role permissions." }
+    if (roleLookupError || !roleData) {
+      console.error("Role lookup error:", roleLookupError)
+      return { success: false, error: "Failed to resolve role permissions." }
     }
 
+    // Clear any existing roles to ensure a clean single-role state for the user
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", userId)
+
+    // Insert the new role assignment
     const { error: assignError } = await supabaseAdmin
       .from("user_roles")
-      .upsert({
+      .insert({
         user_id: userId,
         role_id: roleData.id
-      }, { onConflict: 'user_id' })
+      })
 
     if (assignError) {
       console.error("Role assignment error:", assignError)
-      return { success: false, error: "Failed to set user permissions." }
+      return { success: false, error: "Failed to assign user permissions." }
     }
 
+    console.log("User record handled successfully")
     return { success: true, userId }
-  } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "An unexpected error occurred";
-    console.error("Caught error in createNewUserRecord:", error)
-    return { success: false, error: errorMessage }
+  } catch (error: any) {
+    console.error("Unexpected error in createNewUserRecord:", error)
+    return { success: false, error: "An unexpected error occurred." }
   }
+}
 }
