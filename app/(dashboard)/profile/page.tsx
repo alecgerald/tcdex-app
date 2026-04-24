@@ -160,7 +160,7 @@ export default function ProfilePage() {
       const result = await createNewUserRecord(newUser.email, newUser.role)
       
       if (result.success) {
-        toast.success("Account created successfully! The new user can now log in.")
+        toast.success("Account created")
         setIsCreateModalOpen(false)
         setNewUser({ email: "", role: "viewer" })
       } else {
