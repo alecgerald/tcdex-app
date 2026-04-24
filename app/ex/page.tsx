@@ -2,7 +2,6 @@
 
 import { useState, useRef, useEffect, useMemo } from "react"
 import * as XLSX from "xlsx"
-import { useRouter } from "next/navigation";
 import OBDashboard from "./onboarding/page"
 import PerfDashboard from "./performance/page";
 import EngDashboard from "./engagement/page";
@@ -12,6 +11,7 @@ import OffboardingDashboard from "./offboarding/page";
 import { createClient } from "@/utils/supabase/client"
 
 const supabase = createClient()
+
 // ─── Types ───────────────────────────────────────────────
 interface RowObject {
   [key: string]: string | number
@@ -34,51 +34,23 @@ interface MetricCardProps {
 
 // ─── Lifecycle phases ─────────────────────────────────────
 const PHASES = [
-  {
-    key: "hiring",
-    label: "Hiring",
-    icon: "",
-    description: "Candidate experience, offer outcomes, recruitment speed & early retention",
-    active: true,
-  },
-  {
-    key: "onboarding",
-    label: "Onboarding",
-    icon: "",
-    description: "New hire integration, ramp-up, and early engagement",
-    active: true,
-  },
-  {
-    key: "performance",
-    label: "Performance & Manager Exp.",
-    icon: "",
-    description: "Performance reviews, manager effectiveness, and team health",
-    active: true,
-  },
-  {
-    key: "engagement",
-    label: "Engagement and Retention",
-    icon: "",
-    description: "Employee sentiment, pulse surveys, and recognition",
-    active: true,
-  },
-  {
-    key: "wellbeing",
-    label: "Wellbeing",
-    icon: "",
-    description: "Voluntary attrition, burnout signals, and wellbeing programs",
-    active: true,
-  },
-  {
-    key: "offboarding",
-    label: "Offboarding",
-    icon: "",
-    description: "Exit survey insights, knowledge transfer, and alumni engagement",
-    active: true,
-  },
+  { key: "hiring",      label: "Hiring",                   icon: "", description: "Candidate experience, offer outcomes, recruitment speed & early retention", active: true },
+  { key: "onboarding",  label: "Onboarding",               icon: "", description: "New hire integration, ramp-up, and early engagement",                       active: true },
+  { key: "performance", label: "Performance & Manager Exp.", icon: "", description: "Performance reviews, manager effectiveness, and team health",               active: true },
+  { key: "engagement",  label: "Engagement and Retention", icon: "", description: "Employee sentiment, pulse surveys, and recognition",                         active: true },
+  { key: "wellbeing",   label: "Wellbeing",                icon: "", description: "Voluntary attrition, burnout signals, and wellbeing programs",                active: true },
+  { key: "offboarding", label: "Offboarding",              icon: "", description: "Exit survey insights, knowledge transfer, and alumni engagement",             active: true },
 ] as const
 
 type PhaseKey = typeof PHASES[number]["key"]
+
+// ─── Default metrics state ────────────────────────────────
+const defaultMetrics = {
+  ce:       { value: null as number | null, loaded: false, responses: 0 },
+  oar:      { value: null as number | null, loaded: false },
+  tth:      { value: null as number | null, loaded: false },
+  turnover: { value: null as number | null, loaded: false, rate90: null as number | null },
+}
 
 // ─── helpers ─────────────────────────────────────────────
 const normalizeKey = (k: string) => k.trim().toLowerCase()
@@ -147,17 +119,10 @@ function MetricCard({ icon, title, subtitle, value, unit, accent, onFile, loaded
       <div style={{ padding: "20px 22px 22px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
+            width: 42, height: 42, borderRadius: 12,
             background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            fontWeight: 800,
-            color: accent,
-            letterSpacing: "0.5px"
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 800, color: accent, letterSpacing: "0.5px"
           }}>
             {icon}
           </div>
@@ -202,7 +167,7 @@ function BenchmarkRow({ label, value, target, accent }: { label: string; value: 
   )
 }
 
-// ─── Coming Soon placeholder ──────────────────────────────
+// ─── ComingSoon ───────────────────────────────────────────
 function ComingSoon({ phase }: { phase: typeof PHASES[number] }) {
   return (
     <div style={{
@@ -218,12 +183,8 @@ function ComingSoon({ phase }: { phase: typeof PHASES[number] }) {
       }}>
         {phase.icon}
       </div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-.02em", marginBottom: 8 }}>
-        {phase.label}
-      </div>
-      <div style={{ fontSize: 13, color: "#94a3b8", maxWidth: 360, lineHeight: 1.6, marginBottom: 20 }}>
-        {phase.description}
-      </div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-.02em", marginBottom: 8 }}>{phase.label}</div>
+      <div style={{ fontSize: 13, color: "#94a3b8", maxWidth: 360, lineHeight: 1.6, marginBottom: 20 }}>{phase.description}</div>
       <div style={{
         fontSize: 11, fontWeight: 700, color: "#94a3b8",
         background: "#f1f5f9", border: "1px solid #e2e8f0",
@@ -237,85 +198,156 @@ function ComingSoon({ phase }: { phase: typeof PHASES[number] }) {
 
 // ─── EXDashboard ──────────────────────────────────────────
 export default function EXDashboard() {
-  const [activePhase, setActivePhase] = useState<PhaseKey>("hiring")
-  const [uploadOrder, setUploadOrder] = useState<string[]>([])
-  const [mounted, setMounted] = useState(false)
-  
-  const [ceRows, setCeRows] = useState<RowObject[]>(() => {
-    try { const s = localStorage.getItem("ceRawRows"); return s ? JSON.parse(s) : [] } catch { return [] }
-  })
+  const [activePhase, setActivePhase]   = useState<PhaseKey>("hiring")
+  const [uploadOrder, setUploadOrder]   = useState<string[]>([])
+  const [mounted, setMounted]           = useState(false)
+  const [rehydrating, setRehydrating]   = useState(true)
+  const [currentUser, setCurrentUser]   = useState<string>("system")
+  const [ceRows, setCeRows]             = useState<any[]>([])
+  const [metricsData, setMetricsData]   = useState(defaultMetrics)
 
-  const [metricsData, setMetricsData] = useState(() => {
-    try {
-      const s = localStorage.getItem("metricsData")
-      return s ? JSON.parse(s) : {
-        ce:       { value: null, loaded: false, responses: 0 },
-        oar:      { value: null, loaded: false },
-        tth:      { value: null, loaded: false },
-        turnover: { value: null, loaded: false },
-      }
-    } catch {
-      return {
-        ce:       { value: null, loaded: false, responses: 0 },
-        oar:      { value: null, loaded: false },
-        tth:      { value: null, loaded: false },
-        turnover: { value: null, loaded: false },
-      }
+  // ─── Step 4: Resolve real auth user on mount ──────────────
+  useEffect(() => {
+    const resolveUser = async () => {
+      const { data } = await supabase.auth.getUser()
+      if (data?.user?.id) setCurrentUser(data.user.id)
     }
-  })
-
-  useEffect(() => {
-    localStorage.setItem("metricsData", JSON.stringify(metricsData))
-  }, [metricsData])
-  useEffect(() => {
-  setMounted(true)
+    resolveUser()
   }, [])
 
+  // ─── Step 5: Rehydrate all 4 KPIs from Supabase on mount ─
   useEffect(() => {
-  const testSupabase = async () => {
-    const { data, error } = await supabase
-      .from("candidate_experience") // 👈 CHANGE THIS to your actual table name
-      .select("*")
+    const rehydrate = async () => {
+      setRehydrating(true)
+      try {
+        await Promise.all([rehydrateCe(), rehydrateOar(), rehydrateTth(), rehydrateTurnover()])
+      } finally {
+        setRehydrating(false)
+        setMounted(true)
+      }
+    }
+    rehydrate()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-    console.log("SUPABASE DATA:", data)
-    console.log("SUPABASE ERROR:", error)
+  // ── Rehydration helpers ───────────────────────────────────
+
+  const rehydrateCe = async () => {
+    const { data } = await supabase
+      .from("candidate_experience_responses")
+      .select("*")
+    if (!data || !data.length) return
+    setCeRows(data)
+    const avg = data.reduce((s, r) => s + (r.q1_overall || 0), 0) / data.length
+    setMetricsData(prev => ({
+      ...prev,
+      ce: { value: Number(avg.toFixed(1)), loaded: true, responses: data.length },
+    }))
+    setUploadOrder(prev => prev.includes("ce") ? prev : [...prev, "ce"])
   }
 
-  testSupabase()
-}, [])
+  const rehydrateOar = async () => {
+    const { data } = await supabase
+      .from("offer_acceptance_rate")
+      .select("offers_extended, offers_accepted")
+    if (!data || !data.length) return
+    const ext = data.reduce((s, r) => s + (r.offers_extended || 0), 0)
+    const acc = data.reduce((s, r) => s + (r.offers_accepted || 0), 0)
+    const oar = ext ? Number(((acc / ext) * 100).toFixed(2)) : 0
+    setMetricsData(prev => ({ ...prev, oar: { value: oar, loaded: true } }))
+    setUploadOrder(prev => prev.includes("oar") ? prev : [...prev, "oar"])
+  }
+
+  const rehydrateTth = async () => {
+    const { data } = await supabase
+      .from("time_to_hire")
+      .select("accepted_hires_count, total_calendar_days")
+    if (!data || !data.length) return
+    const hires = data.reduce((s, r) => s + (r.accepted_hires_count || 0), 0)
+    const days  = data.reduce((s, r) => s + (r.total_calendar_days  || 0), 0)
+    const avg   = hires ? Number((days / hires).toFixed(1)) : 0
+    setMetricsData(prev => ({ ...prev, tth: { value: avg, loaded: true } }))
+    setUploadOrder(prev => prev.includes("tth") ? prev : [...prev, "tth"])
+  }
+
+  const rehydrateTurnover = async () => {
+    const { data } = await supabase
+      .from("new_hire_turnover")
+      .select("new_hires, early_exits")
+    if (!data || !data.length) return
+    const cohort = data.reduce((s, r) => s + (r.new_hires    || 0), 0)
+    const exits  = data.reduce((s, r) => s + (r.early_exits  || 0), 0)
+    const rate   = cohort ? Number(((exits / cohort) * 100).toFixed(1)) : 0
+    setMetricsData(prev => ({ ...prev, turnover: { value: rate, loaded: true, rate90: null } }))
+    setUploadOrder(prev => prev.includes("turnover") ? prev : [...prev, "turnover"])
+  }
+
   // ─── CE Handler ──────────────────────────────────────────
   const handleCe = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) return
+
     const allowedOutcomes = ["hired", "not hired"]
     const allowedLikert   = ["strongly agree", "agree", "neutral", "disagree", "strongly disagree"]
     const validRows: RowObject[] = []
     const warnings: string[] = []
+
     rows.forEach((r, i) => {
       const rowNum  = i + 2
       const outcome = (r["outcome"] as string | undefined)?.trim().toLowerCase() ?? ""
       const q1      = Number(r["q1 overall (0-10)"] ?? NaN)
       let rowValid  = true
+
       if (!allowedOutcomes.includes(outcome)) { warnings.push(`Row ${rowNum}: invalid outcome`); rowValid = false }
-      if (isNaN(q1) || q1 < 0 || q1 > 10)   { warnings.push(`Row ${rowNum}: Q1 must be 0–10`); rowValid = false }
-      ;["q2 clarity","q3 timeliness","q4 respect","q5 role understanding","q6 inclusion"].forEach((f, idx) => {
+      if (isNaN(q1) || q1 < 0 || q1 > 10)    { warnings.push(`Row ${rowNum}: Q1 must be 0–10`); rowValid = false }
+
+      ;["q2 clarity", "q3 timeliness", "q4 respect", "q5 role understanding", "q6 inclusion"].forEach((f, idx) => {
         const val = (r[f] as string | undefined)?.trim().toLowerCase() ?? ""
-        if (val && !allowedLikert.includes(val)) warnings.push(`Row ${rowNum}: Q${idx+2} invalid Likert`)
+        if (val && !allowedLikert.includes(val)) warnings.push(`Row ${rowNum}: Q${idx + 2} invalid Likert`)
       })
+
       if (rowValid) validRows.push(r)
     })
+
     if (!validRows.length) { alert("No valid rows.\n\n" + warnings.slice(0, 5).join("\n")); return }
 
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("ceRawRows") || "[]")
-    const makeKey  = (r: RowObject) => `${r["response date"]??""}|${(r["outcome"]??"").toString().trim().toLowerCase()}|${r["q1 overall (0-10)"]??""}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged   = [...existing, ...validRows.filter(r => !existingKeys.has(makeKey(r)))]
-    const allAvgQ1 = merged.reduce((s, r) => s + Number(r["q1 overall (0-10)"] || 0), 0) / merged.length
+    const { data: batch, error: batchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "candidate_experience",
+        uploaded_by: currentUser, status: "processed",
+        records_parsed: validRows.length, records_imported: validRows.length, records_rejected: warnings.length,
+      })
+      .select().single()
 
-    setMetricsData((prev: typeof metricsData) => ({ ...prev, ce: { value: Number(allAvgQ1.toFixed(1)), loaded: true, responses: merged.length } }))
-    localStorage.setItem("ceRawRows", JSON.stringify(merged))
-    setCeRows(merged)
-    setUploadOrder((prev) => [...prev.filter(k => k !== "ce"), "ce"])
+    if (batchError || !batch) { console.error("Batch insert error:", batchError); return }
+
+    const rowsToInsert = validRows.map((r) => ({
+      batch_id: batch.batch_id,
+      response_date: r["response date"]
+        ? (() => { try { const d = new Date(String(r["response date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+        : null,
+      outcome:           r["outcome"]?.toString().toLowerCase(),
+      q1_overall:        Number(r["q1 overall (0-10)"]) || null,
+      q2_clarity:        r["q2 clarity"]             || null,
+      q3_timeliness:     r["q3 timeliness"]          || null,
+      q4_respect:        r["q4 respect"]             || null,
+      q5_role_understanding: r["q5 role understanding"] || null,
+      q6_inclusion:      r["q6 inclusion"]            || null,
+      q7_improvement:    r["q7 improvement opportunity"] || null,
+      job_family:        r["job family"]              || null,
+      hiring_bu:         r["hiring bu"]               || null,
+      location:          r["location"]                || null,
+      stage:             r["stage"]                   || null,
+      uploaded_by:       currentUser,
+    }))
+
+    const { error: insertError } = await supabase.from("candidate_experience_responses").insert(rowsToInsert)
+    if (insertError) { console.error("Insert error:", insertError); return }
+
+    // Rehydrate CE fully from Supabase (includes all previous batches)
+    await rehydrateCe()
+    setUploadOrder(prev => [...prev.filter(k => k !== "ce"), "ce"])
     if (warnings.length) console.warn("CE warnings:", warnings)
   }
 
@@ -323,110 +355,195 @@ export default function EXDashboard() {
   const handleOar = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
-    const required = ["total number of offers extended","number of offers accepted"]
+
+    const required = ["total number of offers extended", "number of offers accepted"]
     const missing  = required.filter(c => !(c in rows[0]))
     if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
+
     for (let i = 0; i < rows.length; i++) {
       const ext = Number(rows[i]["total number of offers extended"])
       const acc = Number(rows[i]["number of offers accepted"])
-      if (isNaN(ext)||isNaN(acc))                         { alert(`Row ${i+2}: must be numeric`); return }
-      if (!Number.isInteger(ext)||!Number.isInteger(acc)) { alert(`Row ${i+2}: must be whole numbers`); return }
-      if (ext < 0 || acc < 0)                             { alert(`Row ${i+2}: cannot be negative`); return }
-      if (acc > ext)                                       { alert(`Row ${i+2}: accepted > extended`); return }
+      if (isNaN(ext) || isNaN(acc))                         { alert(`Row ${i + 2}: must be numeric`); return }
+      if (!Number.isInteger(ext) || !Number.isInteger(acc)) { alert(`Row ${i + 2}: must be whole numbers`); return }
+      if (ext < 0 || acc < 0)                               { alert(`Row ${i + 2}: cannot be negative`); return }
+      if (acc > ext)                                         { alert(`Row ${i + 2}: accepted > extended`); return }
     }
-    const normalizedRows = rows.map(r => ({ ...r, period: (r["reporting period"] as string|undefined) ?? "" }))
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("oarRawRows") || "[]")
-    const makeKey  = (r: RowObject) => `${r["period"]??""}|${(r["hiring bu"]??r["hiringbu"]??"").toString().trim()}|${r["location"]??""}|${r["job family"]??""}|${r["level"]??""}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged   = [...existing, ...normalizedRows.filter(r => !existingKeys.has(makeKey(r)))]
-    const totalExt = merged.reduce((s,r) => s + Number(r["total number of offers extended"]||0), 0)
-    const totalAcc = merged.reduce((s,r) => s + Number(r["number of offers accepted"]||0), 0)
-    const oar      = totalExt ? Number(((totalAcc/totalExt)*100).toFixed(2)) : 0
-    setMetricsData((prev: typeof metricsData) => ({ ...prev, oar: { value: oar, loaded: true } }))
-    localStorage.setItem("oarRawRows", JSON.stringify(merged))
-    setUploadOrder((prev) => [...prev.filter(k => k !== "oar"), "oar"])
+
+    const { data: oarBatch, error: oarBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "offer_acceptance_rate",
+        uploaded_by: currentUser, status: "processed",
+        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
+
+    if (oarBatchError || !oarBatch) { console.error("OAR batch error:", oarBatchError); return }
+
+    const oarRows = rows.map(r => ({
+      batch_id:        oarBatch.batch_id,
+      reporting_period: String(r["reporting period"] || ""),
+      hiring_bu:       r["hiring bu"] || r["hiringbu"] || null,
+      location:        r["location"]  || null,
+      candidate_type:  r["candidate type"] || null,
+      job_family:      r["job family"] || null,
+      level:           r["level"]     || null,
+      offers_extended: Number(r["total number of offers extended"]) || 0,
+      offers_accepted: Number(r["number of offers accepted"])       || 0,
+    }))
+
+    const { error: oarInsertError } = await supabase.from("offer_acceptance_rate").insert(oarRows)
+    if (oarInsertError) { console.error("OAR insert error:", oarInsertError); return }
+
+    // Rehydrate OAR fully from Supabase
+    await rehydrateOar()
+    setUploadOrder(prev => [...prev.filter(k => k !== "oar"), "oar"])
   }
 
   // ─── TTH Handler ─────────────────────────────────────────
   const handleTth = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
-    const required = ["reporting period","accepted hires count","total calendar days to hire"]
+
+    const required = ["reporting period", "accepted hires count", "total calendar days to hire"]
     const missing  = required.filter(c => !(c in rows[0]))
     if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
+
     for (let i = 0; i < rows.length; i++) {
       const h = Number(rows[i]["accepted hires count"])
       const d = Number(rows[i]["total calendar days to hire"])
-      if (isNaN(h)||isNaN(d)) { alert(`Row ${i+2}: must be numeric`); return }
-      if (h < 0 || d < 0)    { alert(`Row ${i+2}: cannot be negative`); return }
+      if (isNaN(h) || isNaN(d)) { alert(`Row ${i + 2}: must be numeric`); return }
+      if (h < 0 || d < 0)       { alert(`Row ${i + 2}: cannot be negative`); return }
     }
-    const period     = rows[0]["reporting period"] as string
-    const totalHires = rows.reduce((s,r) => s + Number(r["accepted hires count"]||0), 0)
-    const totalDays  = rows.reduce((s,r) => s + Number(r["total calendar days to hire"]||0), 0)
-    const avgTth     = totalHires ? Number((totalDays/totalHires).toFixed(1)) : 0
-    const stored     = JSON.parse(localStorage.getItem("tthData") || "{}")
-    stored[period]   = { rows, totalHires, totalDays, avg: avgTth }
-    localStorage.setItem("tthData", JSON.stringify(stored))
-    const allHires   = Object.values(stored as Record<string,{totalHires:number}>).reduce((s:number,d) => s+(d.totalHires??0), 0)
-    const allDays    = Object.values(stored as Record<string,{totalDays:number}>).reduce((s:number,d) => s+(d.totalDays??0), 0)
-    setMetricsData((prev: typeof metricsData) => ({ ...prev, tth: { value: allHires ? Number((allDays/allHires).toFixed(1)) : avgTth, loaded: true } }))
-    setUploadOrder((prev) => [...prev.filter(k => k !== "tth"), "tth"])
+
+    const { data: tthBatch, error: tthBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "time_to_hire",
+        uploaded_by: currentUser, status: "processed",
+        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
+
+    if (tthBatchError || !tthBatch) { console.error("TTH batch error:", tthBatchError); return }
+
+    const tthRows = rows.map(r => ({
+      batch_id:           tthBatch.batch_id,
+      reporting_period:   String(r["reporting period"] || ""),
+      hiring_bu:          r["hiring bu"]    || null,
+      job_family:         r["job family"]   || null,
+      level:              r["level"]        || null,
+      hiring_source:      r["hiring source"] || null,
+      accepted_hires_count: Number(r["accepted hires count"])         || 0,
+      total_calendar_days:  Number(r["total calendar days to hire"])  || 0,
+    }))
+
+    const { error: tthInsertError } = await supabase.from("time_to_hire").insert(tthRows)
+    if (tthInsertError) { console.error("TTH insert error:", tthInsertError); return }
+
+    // Rehydrate TTH fully from Supabase
+    await rehydrateTth()
+    setUploadOrder(prev => [...prev.filter(k => k !== "tth"), "tth"])
   }
 
   // ─── Turnover Handler ─────────────────────────────────────
   const handleTur = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
-    // parseSheet normalizes all keys to lowercase+trimmed already
+
     const firstRowKeys = Object.keys(rows[0])
-    // Accept either standard key or the parenthetical variant from the template
-    const hasCohort = firstRowKeys.some(k =>
-      k.startsWith("new hires in cohort") || k.includes("total number of new hires")
-    )
-    const hasLeft = firstRowKeys.some(k => k.startsWith("number of new hires who left within 12 months"))
+    const hasCohort    = firstRowKeys.some(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires"))
+    const hasLeft      = firstRowKeys.some(k => k.startsWith("number of new hires who left within 12 months"))
     const missing: string[] = []
     if (!hasCohort) missing.push("new hires in cohort / (total number of new hires in the same period)")
     if (!hasLeft)   missing.push("number of new hires who left within 12 months")
     if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
-    // Resolve actual key names (handles multi-line headers like "New Hires in Cohort\n(Total...)")
+
     const cohortKey = firstRowKeys.find(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires")) ?? "new hires in cohort"
     const leftKey   = firstRowKeys.find(k => k.startsWith("number of new hires who left within 12 months")) ?? "number of new hires who left within 12 months"
+
     for (let i = 0; i < rows.length; i++) {
       const c = Number(rows[i][cohortKey])
       const l = Number(rows[i][leftKey])
-      if (isNaN(c)||isNaN(l)) { alert(`Row ${i+2}: must be numeric`); return }
-      if (c < 0 || l < 0)    { alert(`Row ${i+2}: cannot be negative`); return }
-      if (l > c)              { alert(`Row ${i+2}: exits > cohort`); return }
+      if (isNaN(c) || isNaN(l)) { alert(`Row ${i + 2}: must be numeric`); return }
+      if (c < 0 || l < 0)       { alert(`Row ${i + 2}: cannot be negative`); return }
+      if (l > c)                 { alert(`Row ${i + 2}: exits > cohort`); return }
     }
-    const totalCohort = rows.reduce((s,r) => s + Number(r[cohortKey]||0), 0)
-    const totalLeft   = rows.reduce((s,r) => s + Number(r[leftKey]||0), 0)
-    const rate        = totalCohort ? Number(((totalLeft/totalCohort)*100).toFixed(1)) : 0
-    const has90       = "number of new hires who left within 90 days" in rows[0]
-    const left90      = has90 ? rows.reduce((s,r) => s + Number(r["number of new hires who left within 90 days"]||0), 0) : null
-    const rate90      = has90 && totalCohort ? Number(((left90!/totalCohort)*100).toFixed(1)) : null
-    const period      = (rows[0]["hire cohort"] as string|undefined) ?? "Unknown"
-    const stored      = JSON.parse(localStorage.getItem("turnoverData") || "{}")
-    stored[period]    = { rows, totalCohort, totalLeft, rate, rate90 }
-    localStorage.setItem("turnoverData", JSON.stringify(stored))
-    const allTurRows  = Object.values(stored as Record<string,{rows:RowObject[]}>).flatMap(d => d.rows||[])
-    localStorage.setItem("turnoverRawRows", JSON.stringify(allTurRows))
-    const allC = Object.values(stored as Record<string,{totalCohort:number}>).reduce((s:number,d) => s+(d.totalCohort??0), 0)
-    const allL = Object.values(stored as Record<string,{totalLeft:number}>).reduce((s:number,d) => s+(d.totalLeft??0), 0)
-    setMetricsData((prev: typeof metricsData) => ({ ...prev, turnover: { value: allC ? Number(((allL/allC)*100).toFixed(1)) : rate, loaded: true, rate90 } }))
-    setUploadOrder((prev) => [...prev.filter(k => k !== "turnover"), "turnover"])
+
+    const { data: turBatch, error: turBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "new_hire_turnover",
+        uploaded_by: currentUser, status: "processed",
+        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
+
+    if (turBatchError || !turBatch) { console.error("Turnover batch error:", turBatchError); return }
+
+    const turRowsToInsert = rows.map(r => ({
+      batch_id:       turBatch.batch_id,
+      hire_cohort:    String(r["hire cohort"] || "Unknown"),
+      delivery_unit:  r["delivery unit"]  || null,
+      job_family:     r["job family"]     || null,
+      hiring_source:  r["hiring source"]  || null,
+      new_hires:      Number(r[cohortKey]) || 0,
+      early_exits:    Number(r[leftKey])   || 0,
+    }))
+
+    const { error: turInsertError } = await supabase.from("new_hire_turnover").insert(turRowsToInsert)
+    if (turInsertError) { console.error("Turnover insert error:", turInsertError); return }
+
+    // Rehydrate turnover fully from Supabase (also pick up 90-day rate from this upload)
+    const has90   = "number of new hires who left within 90 days" in rows[0]
+    const totalC  = rows.reduce((s, r) => s + Number(r[cohortKey] || 0), 0)
+    const left90  = has90 ? rows.reduce((s, r) => s + Number(r["number of new hires who left within 90 days"] || 0), 0) : null
+    const rate90  = has90 && totalC ? Number(((left90! / totalC) * 100).toFixed(1)) : null
+
+    await rehydrateTurnover()
+
+    // Patch in rate90 after rehydration since it's not stored in DB
+    if (rate90 !== null) {
+      setMetricsData(prev => ({ ...prev, turnover: { ...prev.turnover, rate90 } }))
+    }
+
+    setUploadOrder(prev => [...prev.filter(k => k !== "turnover"), "turnover"])
   }
 
-  // ─── Clear metric ─────────────────────────────────────────
-  const clearMetric = (key: string) => {
-    setMetricsData((prev: typeof metricsData) => {
-      const updated = { ...prev, [key]: { value: null, loaded: false } }
-      localStorage.setItem("metricsData", JSON.stringify(updated))
-      return updated
-    })
-    if (key === "ce")       { localStorage.removeItem("ceRawRows"); setCeRows([]) }
-    if (key === "oar")        localStorage.removeItem("oarRawRows")
-    if (key === "tth")        localStorage.removeItem("tthData")
-    if (key === "turnover") { localStorage.removeItem("turnoverData"); localStorage.removeItem("turnoverRawRows") }
+  // ─── Step 6: Clear metric — delete from Supabase + reset state ─
+  const clearMetric = async (key: string) => {
+    const tableMap: Record<string, { table: string; uploadType: string }> = {
+      ce:       { table: "candidate_experience_responses", uploadType: "candidate_experience" },
+      oar:      { table: "offer_acceptance_rate",          uploadType: "offer_acceptance_rate" },
+      tth:      { table: "time_to_hire",                   uploadType: "time_to_hire" },
+      turnover: { table: "new_hire_turnover",              uploadType: "new_hire_turnover" },
+    }
+
+    const target = tableMap[key]
+    if (target) {
+      const { data: batches } = await supabase
+        .from("ex_batches")
+        .select("batch_id")
+        .eq("upload_type", target.uploadType)
+
+      if (batches && batches.length > 0) {
+        const batchIds = batches.map(b => b.batch_id)
+        await supabase.from(target.table).delete().in("batch_id", batchIds)
+        await supabase.from("ex_batches").delete().in("batch_id", batchIds)
+      }
+    }
+
+    // Reset in-memory state
+    if (key === "ce") setCeRows([])
+
+    setMetricsData(prev => ({
+      ...prev,
+      [key]: key === "ce"
+        ? { value: null, loaded: false, responses: 0 }
+        : key === "turnover"
+        ? { value: null, loaded: false, rate90: null }
+        : { value: null, loaded: false },
+    }))
     setUploadOrder(prev => prev.filter(k => k !== key))
   }
 
@@ -436,7 +553,7 @@ export default function EXDashboard() {
     if (!ceRows.length) return []
     const h  = ceRows.filter(r => (r.outcome as string)?.toLowerCase() === "hired")
     const nh = ceRows.filter(r => (r.outcome as string)?.toLowerCase() === "not hired")
-    const avgQ1 = (rs: RowObject[]) => rs.length ? Number((rs.reduce((s,r) => s + Number(r["q1 overall (0-10)"]||0), 0) / rs.length).toFixed(1)) : 0
+    const avgQ1 = (rs: any[]) => rs.length ? Number((rs.reduce((s, r) => s + Number(r.q1_overall || 0), 0) / rs.length).toFixed(1)) : 0
     return [
       { outcome: "Hired",     score: avgQ1(h),  count: h.length },
       { outcome: "Not Hired", score: avgQ1(nh), count: nh.length },
@@ -444,13 +561,21 @@ export default function EXDashboard() {
   }, [ceRows])
 
   const hiringMetrics = [
-    { icon: "CE", title: "Candidate Experience",  subtitle: "Avg. Candidate Experience", value: metricsData.ce.value,       unit: metricsData.ce.value != null ? "/ 10" : "",  accent: "#6366f1", onFile: handleCe,  loaded: metricsData.ce.loaded,       detail: "Survey-based\naverage score", key: "ce" },
-    { icon: "OAR", title: "Offer Acceptance Rate", subtitle: "Percentage of Accepted Offers",   value: metricsData.oar.value,      unit: metricsData.oar.value != null ? "%" : "",    accent: "#10b981", onFile: handleOar, loaded: metricsData.oar.loaded,      detail: "Target ≥ 80%",               key: "oar" },
-    { icon: "TTH", title: "Time to Hire",           subtitle: "Application → Offer Accept",   value: metricsData.tth.value,      unit: metricsData.tth.value != null ? "days" : "", accent: "#3b82f6", onFile: handleTth, loaded: metricsData.tth.loaded,      detail: "Lower is better",            key: "tth" },
+    { icon: "CE",  title: "Candidate Experience",  subtitle: "Avg. Candidate Experience",    value: metricsData.ce.value,       unit: metricsData.ce.value != null ? "/ 10" : "",   accent: "#6366f1", onFile: handleCe,  loaded: metricsData.ce.loaded,       detail: "Survey-based\naverage score", key: "ce" },
+    { icon: "OAR", title: "Offer Acceptance Rate", subtitle: "Percentage of Accepted Offers", value: metricsData.oar.value,      unit: metricsData.oar.value != null ? "%" : "",     accent: "#10b981", onFile: handleOar, loaded: metricsData.oar.loaded,      detail: "Target ≥ 80%",               key: "oar" },
+    { icon: "TTH", title: "Time to Hire",           subtitle: "Application → Offer Accept",   value: metricsData.tth.value,      unit: metricsData.tth.value != null ? "days" : "",  accent: "#3b82f6", onFile: handleTth, loaded: metricsData.tth.loaded,      detail: "Lower is better",            key: "tth" },
     { icon: "NHT", title: "New Hire Turnover",      subtitle: "Exits within 12 months",       value: metricsData.turnover.value, unit: metricsData.turnover.value != null ? "%" : "", accent: "#ec4899", onFile: handleTur, loaded: metricsData.turnover.loaded, detail: "Lower is better",            key: "turnover" },
   ]
-  
-  if (!mounted) return null
+
+  if (!mounted) return (
+    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(160deg, #f8fafc 0%, #f1f5f9 100%)", fontFamily: "'DM Sans', sans-serif" }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 32, marginBottom: 12 }}>🧑‍💼</div>
+        <div style={{ fontSize: 14, color: "#94a3b8", fontWeight: 600 }}>Loading dashboard…</div>
+      </div>
+    </div>
+  )
+
   // ─── Render ───────────────────────────────────────────────
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(160deg, #f8fafc 0%, #f1f5f9 100%)", fontFamily: "'DM Sans', sans-serif" }}>
@@ -467,41 +592,39 @@ export default function EXDashboard() {
               <h1 style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "#0f172a", letterSpacing: "-.02em" }}>Employee Experience</h1>
               <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Talent IQ</p>
             </div>
+            {rehydrating && (
+              <div style={{ marginLeft: "auto", fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#6366f1", animation: "pulse 1s infinite" }} />
+                Syncing from database…
+              </div>
+            )}
           </div>
 
           {/* ── Lifecycle phase tabs ── */}
           <div style={{ display: "flex", gap: 0, overflowX: "auto", marginBottom: -1 }}>
             {PHASES.map((phase) => {
-              const isActive   = activePhase === phase.key
-              const hasData    = phase.key === "hiring" && anyLoaded
+              const isActive = activePhase === phase.key
               return (
                 <button
                   key={phase.key}
                   onClick={() => setActivePhase(phase.key as PhaseKey)}
                   style={{
                     display: "flex", alignItems: "center", gap: 7,
-                    padding: "12px 20px",
-                    background: "transparent",
-                    border: "none",
+                    padding: "12px 20px", background: "transparent", border: "none",
                     borderBottom: isActive ? "2px solid #6366f1" : "2px solid transparent",
                     cursor: phase.active ? "pointer" : "default",
                     opacity: phase.active ? 1 : 0.4,
                     color: isActive ? "#6366f1" : "#64748b",
-                    fontSize: 13,
-                    fontWeight: isActive ? 700 : 500,
-                    fontFamily: "'DM Sans', sans-serif",
-                    whiteSpace: "nowrap",
-                    transition: "all .18s",
-                    position: "relative",
+                    fontSize: 13, fontWeight: isActive ? 700 : 500,
+                    fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
+                    transition: "all .18s", position: "relative",
                   }}
                 >
                   <span style={{ fontSize: 15 }}>{phase.icon}</span>
                   {phase.label}
-                  {/* Loaded indicator dot */}
-                  {isActive  && (
+                  {isActive && (
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981", display: "inline-block", marginLeft: 2 }} />
                   )}
-                 
                 </button>
               )
             })}
@@ -513,8 +636,6 @@ export default function EXDashboard() {
       {activePhase === "hiring" ? (
         <div style={{ padding: "36px 24px 60px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-
-         
 
             {/* Status pills */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
@@ -601,45 +722,26 @@ export default function EXDashboard() {
             )}
           </div>
         </div>
-      ) : 
-        // All other phases — coming soon
-        activePhase === "onboarding" ? (
-  <div style={{ padding: "36px 24px 60px" }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      
-      <OBDashboard />
-    </div>
-  </div>
-) : activePhase === "performance" ? (
-  <div style={{ padding: "36px 24px 60px" }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <PerfDashboard />
-    </div>
-  </div>
-) : activePhase === "engagement" ? (
-  <div style={{ padding: "36px 24px 60px" }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <EngDashboard />
-    </div>
-  </div>
-) : activePhase === "wellbeing" ? (
-  <div style={{ padding: "36px 24px 60px" }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <WellbeingDashboard />
-    </div>
-  </div>
-) : activePhase === "offboarding" ? (
-  <div style={{ padding: "36px 24px 60px" }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <OffboardingDashboard />
-    </div>
-  </div>
-) : (
-  <ComingSoon phase={PHASES.find(p => p.key === activePhase)!} />
-
+      ) : activePhase === "onboarding" ? (
+        <div style={{ padding: "36px 24px 60px" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}><OBDashboard /></div></div>
+      ) : activePhase === "performance" ? (
+        <div style={{ padding: "36px 24px 60px" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}><PerfDashboard /></div></div>
+      ) : activePhase === "engagement" ? (
+        <div style={{ padding: "36px 24px 60px" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}><EngDashboard /></div></div>
+      ) : activePhase === "wellbeing" ? (
+        <div style={{ padding: "36px 24px 60px" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}><WellbeingDashboard /></div></div>
+      ) : activePhase === "offboarding" ? (
+        <div style={{ padding: "36px 24px 60px" }}><div style={{ maxWidth: 1100, margin: "0 auto" }}><OffboardingDashboard /></div></div>
+      ) : (
+        <ComingSoon phase={PHASES.find(p => p.key === activePhase)!} />
       )}
 
-      
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+      `}</style>
     </div>
   )
 }

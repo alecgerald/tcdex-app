@@ -8,6 +8,9 @@ import WellbeingReportsPage from "../wellbeing/reports/page"
 import OffboardingReportsPage from "../offboarding/reports/page"
 
 import * as XLSX from "xlsx"
+import { createClient } from "@/utils/supabase/client"
+
+const supabase = createClient()
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
   CartesianGrid, ResponsiveContainer, LineChart, Line,
@@ -35,6 +38,7 @@ interface OarRawRow {
   "number of offers accepted"?: number | string
 }
 interface TthRawRow {
+  "reporting period"?: string
   "job family"?: string; "hiring source"?: string
   "hiring bu"?: string; level?: string
   "accepted hires count"?: number | string
@@ -617,21 +621,124 @@ export default function ReportsPage() {
 
   // ── Load data ────────────────────────────────────────────
   useEffect(() => {
-    const md = localStorage.getItem("metricsData")
-    if (md) {
-      const d = JSON.parse(md)
+    const loadFromSupabase = async () => {
       const arr: MetricData[] = []
-      if (d.ce?.loaded)       arr.push({ metric: "Candidate Experience",  value: d.ce.value  ?? 0, unit: "/ 10",   accent: "#6366f1", responses: d.ce.responses })
-      if (d.oar?.loaded)      arr.push({ metric: "Offer Acceptance Rate", value: d.oar.value ?? 0, unit: "%",      accent: "#10b981" })
-      if (d.tth?.loaded)      arr.push({ metric: "Avg. Days to Hire",     value: d.tth.value ?? 0, unit: " days",  accent: "#3b82f6" })
-      if (d.turnover?.loaded) arr.push({ metric: "New Hire Turnover",     value: d.turnover.value ?? 0, unit: "%", accent: "#ec4899" })
+
+      // ── CE ──────────────────────────────────────────────
+      const { data: ceData } = await supabase
+        .from("candidate_experience_responses")
+        .select("*")
+        .order("response_date", { ascending: true })
+
+      if (ceData && ceData.length > 0) {
+        const avgQ1 = ceData.reduce((s, r) => s + (r.q1_overall || 0), 0) / ceData.length
+        arr.push({ metric: "Candidate Experience", value: Number(avgQ1.toFixed(1)), unit: "/ 10", accent: "#6366f1", responses: ceData.length })
+        setCeRows(ceData.map(r => ({
+          outcome: (r.outcome || "").toString().trim().toLowerCase(),
+          "q1 overall (0-10)": r.q1_overall,
+          "q2 clarity": r.q2_clarity,
+          "q3 timeliness": r.q3_timeliness,
+          "q4 respect": r.q4_respect,
+          "q5 role understanding": r.q5_role_understanding,
+          "q6 inclusion": r.q6_inclusion,
+          "q7 improvement opportunity": r.q7_improvement,
+          "job family": r.job_family,
+          "hiring bu": r.hiring_bu,
+          location: r.location,
+          stage: r.stage,
+          "response date": r.response_date,
+        })))
+      }
+
+      // ── OAR ─────────────────────────────────────────────
+      const { data: oarData } = await supabase
+        .from("offer_acceptance_rate")
+        .select("*")
+
+      if (oarData && oarData.length > 0) {
+        const totalExt = oarData.reduce((s, r) => s + (r.offers_extended || 0), 0)
+        const totalAcc = oarData.reduce((s, r) => s + (r.offers_accepted || 0), 0)
+        const oarRate = totalExt ? Number(((totalAcc / totalExt) * 100).toFixed(1)) : 0
+        arr.push({ metric: "Offer Acceptance Rate", value: oarRate, unit: "%", accent: "#10b981" })
+        setOarRows(oarData.map(r => ({
+          period: r.reporting_period,
+          "hiring bu": r.hiring_bu,
+          hiringbu: r.hiring_bu,
+          location: r.location,
+          "candidate type": r.candidate_type,
+          "job family": r.job_family,
+          level: r.level,
+          "total number of offers extended": r.offers_extended,
+          "number of offers accepted": r.offers_accepted,
+        })))
+      }
+
+      // ── TTH ─────────────────────────────────────────────
+      const { data: tthRaw } = await supabase
+        .from("time_to_hire")
+        .select("*")
+
+      if (tthRaw && tthRaw.length > 0) {
+        const totalHires = tthRaw.reduce((s, r) => s + (r.accepted_hires_count || 0), 0)
+        const totalDays  = tthRaw.reduce((s, r) => s + (r.total_calendar_days || 0), 0)
+        const avgTth = totalHires ? Number((totalDays / totalHires).toFixed(1)) : 0
+        arr.push({ metric: "Avg. Days to Hire", value: avgTth, unit: " days", accent: "#3b82f6" })
+
+        // Group by period for tthData structure
+        const grouped: Record<string, { rows: TthRawRow[] }> = {}
+        tthRaw.forEach(r => {
+          const p = r.reporting_period || "Unknown"
+          if (!grouped[p]) grouped[p] = { rows: [] }
+          grouped[p].rows.push({
+            "reporting period": r.reporting_period,
+            "hiring bu": r.hiring_bu,
+            "job family": r.job_family,
+            level: r.level,
+            "hiring source": r.hiring_source,
+            "accepted hires count": r.accepted_hires_count,
+            "total calendar days to hire": r.total_calendar_days,
+          })
+        })
+        setTthData(grouped)
+      }
+
+      // ── Turnover ─────────────────────────────────────────
+      const { data: turRaw } = await supabase
+        .from("new_hire_turnover")
+        .select("*")
+
+      if (turRaw && turRaw.length > 0) {
+        const totalCohort = turRaw.reduce((s, r) => s + (r.new_hires || 0), 0)
+        const totalLeft   = turRaw.reduce((s, r) => s + (r.early_exits || 0), 0)
+        const turRate = totalCohort ? Number(((totalLeft / totalCohort) * 100).toFixed(1)) : 0
+        arr.push({ metric: "New Hire Turnover", value: turRate, unit: "%", accent: "#ec4899" })
+
+        // Group by hire_cohort for turData structure
+        const grouped: Record<string, TurnoverPeriodData> = {}
+        turRaw.forEach(r => {
+          const c = r.hire_cohort || "Unknown"
+          if (!grouped[c]) grouped[c] = { rows: [], totalCohort: 0, totalLeft: 0, rate: 0, rate90: null }
+          grouped[c].rows.push({
+            "hire cohort": r.hire_cohort,
+            "delivery unit": r.delivery_unit,
+            "job family": r.job_family,
+            "hiring source": r.hiring_source,
+            "new hires in cohort": r.new_hires,
+            "number of new hires who left within 12 months": r.early_exits,
+          })
+          grouped[c].totalCohort += r.new_hires || 0
+          grouped[c].totalLeft   += r.early_exits || 0
+        })
+        Object.values(grouped).forEach(g => {
+          g.rate = g.totalCohort ? Number(((g.totalLeft / g.totalCohort) * 100).toFixed(1)) : 0
+        })
+        setTurData(grouped)
+      }
+
       setSummaryMetrics(arr)
     }
-    const ceRaw: CeRawRow[] = JSON.parse(localStorage.getItem("ceRawRows") || "[]")
-    setCeRows(ceRaw.map(r => ({ ...r, outcome: r.outcome?.toString().trim().toLowerCase() })))
-    setOarRows(JSON.parse(localStorage.getItem("oarRawRows") || "[]"))
-    setTthData(JSON.parse(localStorage.getItem("tthData") || "{}"))
-    setTurData(JSON.parse(localStorage.getItem("turnoverData") || "{}"))
+
+    loadFromSupabase()
   }, [])
 
   // ═══════════════════════════════════════════════════════════

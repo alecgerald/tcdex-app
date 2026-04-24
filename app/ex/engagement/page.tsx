@@ -2,6 +2,9 @@
 
 import { useState, useRef, useEffect } from "react"
 import * as XLSX from "xlsx"
+import { createClient } from "@/utils/supabase/client"
+
+const supabase = createClient()
 
 interface RowObject { [key: string]: string | number }
 interface UploadZoneProps { onFile: (file: File) => void; loaded: boolean }
@@ -28,6 +31,26 @@ const parseSheet = (file: File): Promise<RowObject[]> =>
     }
     reader.readAsArrayBuffer(file)
   })
+
+// ─── Default metric state ─────────────────────────────────
+const DEFAULT_METRICS = {
+  ei:  { engagementIndex: null as number | null, eNPS: null as number | null, responses: 0, promoters: 0, passives: 0, detractors: 0, loaded: false },
+  vtr: { rate: null as number | null, separations: 0, headcount: 0, loaded: false },
+  err: { rate: null as number | null, startCount: 0, retained: 0, loaded: false },
+  its: { rate: null as number | null, responses: 0, loaded: false },
+  ner: { referralCount: 0, referralRate: null as number | null, participants: 0, activeEmployees: 0, loaded: false },
+}
+
+// ─── LIKERT helpers ───────────────────────────────────────
+const LIKERT: Record<string, number> = {
+  "strongly agree": 5, "agree": 4, "neutral": 3, "disagree": 2, "strongly disagree": 1,
+}
+const toLikert = (v: string | number | undefined): number | null => {
+  if (typeof v === "number") return v
+  return LIKERT[(v as string || "").trim().toLowerCase()] ?? null
+}
+const isAgree = (v: string | number | undefined): boolean =>
+  ["strongly agree", "agree"].includes((v as string || "").trim().toLowerCase())
 
 function UploadZone({ onFile, loaded }: UploadZoneProps) {
   const ref = useRef<HTMLInputElement>(null)
@@ -67,21 +90,13 @@ function MetricCard({ icon, title, subtitle, value, unit, accent, onFile, loaded
       <div style={{ padding: "20px 22px 22px" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
           <div style={{
-            width: 42,
-            height: 42,
-            borderRadius: 12,
+            width: 42, height: 42, borderRadius: 12,
             background: `linear-gradient(135deg, ${accent}30, ${accent}10)`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 16,
-            fontWeight: 800,
-            color: accent,
-            letterSpacing: "0.5px"
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 16, fontWeight: 800, color: accent, letterSpacing: "0.5px"
           }}>
             {icon}
           </div>
-        
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", lineHeight: 1.2 }}>{title}</div>
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
@@ -120,289 +135,396 @@ function BenchmarkRow({ label, value, target, accent, unit = "%" }: {
   )
 }
 
-// ─── LIKERT helpers ───────────────────────────────────────
-const LIKERT: Record<string, number> = {
-  "strongly agree": 5, "agree": 4, "neutral": 3, "disagree": 2, "strongly disagree": 1,
-}
-const toLikert = (v: string | number | undefined): number | null => {
-  if (typeof v === "number") return v
-  return LIKERT[(v as string || "").trim().toLowerCase()] ?? null
-}
-const isAgree = (v: string | number | undefined): boolean =>
-  ["strongly agree", "agree"].includes((v as string || "").trim().toLowerCase())
-
-// ─── EngRetDashboard ─────────────────────────────────────
+// ─── EngRetDashboard ──────────────────────────────────────
 export default function EngRetDashboard() {
   const [uploadOrder, setUploadOrder] = useState<string[]>([])
+  const [metrics, setMetrics]         = useState(DEFAULT_METRICS)
+  const [rehydrating, setRehydrating] = useState(true)
+  const [currentUser, setCurrentUser] = useState<string>("system")
 
-  const [metrics, setMetrics] = useState(() => {
-    try {
-      const s = localStorage.getItem("engRetMetricsData")
-      return s ? JSON.parse(s) : {
-        ei:   { engagementIndex: null, eNPS: null, responses: 0, promoters: 0, passives: 0, detractors: 0, loaded: false },
-        vtr:  { rate: null, separations: 0, headcount: 0, loaded: false },
-        err:  { rate: null, startCount: 0, retained: 0, loaded: false },
-        its:  { rate: null, responses: 0, loaded: false },
-        ner:  { referralCount: 0, referralRate: null, loaded: false },
-      }
-    } catch {
-      return {
-        ei:   { engagementIndex: null, eNPS: null, responses: 0, promoters: 0, passives: 0, detractors: 0, loaded: false },
-        vtr:  { rate: null, separations: 0, headcount: 0, loaded: false },
-        err:  { rate: null, startCount: 0, retained: 0, loaded: false },
-        its:  { rate: null, responses: 0, loaded: false },
-        ner:  { referralCount: 0, referralRate: null, loaded: false },
+  // ─── Step 1: Resolve real auth user on mount ─────────────
+  useEffect(() => {
+    const resolveUser = async () => {
+      const { data } = await supabase.auth.getUser()
+      if (data?.user?.id) setCurrentUser(data.user.id)
+    }
+    resolveUser()
+  }, [])
+
+  // ─── Step 2: Parallel rehydration from Supabase on mount ─
+  useEffect(() => {
+    const rehydrate = async () => {
+      setRehydrating(true)
+      try {
+        await Promise.all([
+          rehydrateEi(),
+          rehydrateVtr(),
+          rehydrateErr(),
+          rehydrateIts(),
+          rehydrateNer(),
+        ])
+      } finally {
+        setRehydrating(false)
       }
     }
-  })
+    rehydrate()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
-  useEffect(() => {
-    localStorage.setItem("engRetMetricsData", JSON.stringify(metrics))
-  }, [metrics])
+  // ── Rehydration helpers ───────────────────────────────────
+
+  const rehydrateEi = async () => {
+    const { data } = await supabase
+      .from("engagement_survey_responses")
+      .select("q1_purpose, q2_enablement, q3_commitment, q4_growth, q5_belonging, q6_enps")
+
+    if (!data || !data.length) return
+
+    const engKeys = ["q1_purpose", "q2_enablement", "q3_commitment", "q4_growth", "q5_belonging"]
+    let total = 0, count = 0
+    data.forEach(r => engKeys.forEach(k => {
+      const s = toLikert((r as any)[k])
+      if (s !== null) { total += s; count++ }
+    }))
+    const avgLikert       = count ? total / count : 0
+    const engagementIndex = count ? Number(((avgLikert - 1) / 4 * 100).toFixed(1)) : null
+
+    let promoters = 0, passives = 0, detractors = 0, eNpsResponses = 0
+    data.forEach(r => {
+      const score = Number(r.q6_enps ?? NaN)
+      if (!isNaN(score)) {
+        eNpsResponses++
+        if (score >= 9) promoters++
+        else if (score >= 7) passives++
+        else detractors++
+      }
+    })
+    const eNPS = eNpsResponses ? Number(((promoters - detractors) / eNpsResponses * 100).toFixed(1)) : null
+
+    setMetrics(prev => ({ ...prev, ei: { engagementIndex, eNPS, responses: data.length, promoters, passives, detractors, loaded: true } }))
+    setUploadOrder(prev => prev.includes("ei") ? prev : [...prev, "ei"])
+  }
+
+  const rehydrateVtr = async () => {
+    const { data } = await supabase
+      .from("voluntary_turnover")
+      .select("avg_headcount, voluntary_separations")
+
+    if (!data || !data.length) return
+
+    const headcount    = data.reduce((s, r) => s + (r.avg_headcount         || 0), 0)
+    const separations  = data.reduce((s, r) => s + (r.voluntary_separations || 0), 0)
+    const rate         = headcount ? Number(((separations / headcount) * 100).toFixed(2)) : null
+
+    setMetrics(prev => ({ ...prev, vtr: { rate, separations, headcount, loaded: true } }))
+    setUploadOrder(prev => prev.includes("vtr") ? prev : [...prev, "vtr"])
+  }
+
+  const rehydrateErr = async () => {
+    const { data } = await supabase
+      .from("employee_retention")
+      .select("employees_start, employees_end, new_hires")
+
+    if (!data || !data.length) return
+
+    const totalStart    = data.reduce((s, r) => s + (r.employees_start || 0), 0)
+    const totalEnd      = data.reduce((s, r) => s + (r.employees_end   || 0), 0)
+    const totalNewHires = data.reduce((s, r) => s + (r.new_hires       || 0), 0)
+    const retained      = totalEnd - totalNewHires
+    const rate          = totalStart ? Number(((retained / totalStart) * 100).toFixed(2)) : null
+
+    setMetrics(prev => ({ ...prev, err: { rate, startCount: totalStart, retained, loaded: true } }))
+    setUploadOrder(prev => prev.includes("err") ? prev : [...prev, "err"])
+  }
+
+  const rehydrateIts = async () => {
+    const { data } = await supabase
+      .from("intent_to_stay_responses")
+      .select("q1_intent_to_stay")
+
+    if (!data || !data.length) return
+
+    const favorable = data.filter(r => isAgree(r.q1_intent_to_stay ?? "")).length
+    const rate      = Number(((favorable / data.length) * 100).toFixed(1))
+
+    setMetrics(prev => ({ ...prev, its: { rate, responses: data.length, loaded: true } }))
+    setUploadOrder(prev => prev.includes("its") ? prev : [...prev, "its"])
+  }
+
+  const rehydrateNer = async () => {
+    const { data } = await supabase
+      .from("employee_referrals")
+      .select("referral_count, employees_referred, total_employees")
+
+    if (!data || !data.length) return
+
+    const totalReferrals    = data.reduce((s, r) => s + (r.referral_count      || 0), 0)
+    const totalParticipants = data.reduce((s, r) => s + (r.employees_referred  || 0), 0)
+    const totalActive       = data.reduce((s, r) => s + (r.total_employees     || 0), 0)
+    const referralRate      = totalActive ? Number(((totalParticipants / totalActive) * 100).toFixed(2)) : null
+
+    setMetrics(prev => ({ ...prev, ner: { referralCount: totalReferrals, referralRate, participants: totalParticipants, activeEmployees: totalActive, loaded: true } }))
+    setUploadOrder(prev => prev.includes("ner") ? prev : [...prev, "ner"])
+  }
 
   // ─── EI / eNPS Handler ───────────────────────────────────
-  // Columns: survey period, function, role level, location, tenure band,
-  //          q1 purpose, q2 enablement, q3 commitment, q4 growth, q5 belonging,
-  //          q6 enps (0-10), q7 improvement comment
   const handleEi = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
 
-    const keys = Object.keys(rows[0])
-    const engQKeys = ["q1 purpose", "q2 enablement", "q3 commitment", "q4 growth", "q5 belonging"]
-    const resolvedEngKeys = engQKeys.map(q =>
-      keys.find(k => k.startsWith(q.substring(0, 6))) ?? q
-    )
-    const eNpsKey = keys.find(k => k.includes("enps") || (k.includes("q6") && k.includes("0-10"))) ?? "q6 enps (0-10)"
+    const keys            = Object.keys(rows[0])
+    const engQKeys        = ["q1 purpose", "q2 enablement", "q3 commitment", "q4 growth", "q5 belonging"]
+    const resolvedEngKeys = engQKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
+    const eNpsKey         = keys.find(k => k.includes("enps") || (k.includes("q6") && k.includes("0-10"))) ?? "q6 enps (0-10)"
 
-    // Merge
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("eiRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["survey period"] ?? ""}|${r["function"] ?? ""}|${r["role level"] ?? ""}|${r["location"] ?? ""}|${r["tenure band"] ?? ""}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("eiRawRows", JSON.stringify(merged))
-
-    // Engagement Index: avg Likert across Q1–Q5, mapped 1-5 → 0-100%
-    let totalScore = 0; let totalItems = 0
-    merged.forEach(r => {
-      resolvedEngKeys.forEach(k => {
-        const score = toLikert(r[k])
-        if (score !== null) { totalScore += score; totalItems++ }
+    const { data: eiBatch, error: eiBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "engagement_survey", uploaded_by: currentUser,
+        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
       })
-    })
-    const avgLikert       = totalItems ? totalScore / totalItems : 0
-    const engagementIndex = totalItems ? Number(((avgLikert - 1) / 4 * 100).toFixed(1)) : null
+      .select().single()
 
-    // eNPS: Promoters (9-10) - Detractors (0-6), Passives (7-8)
-    let promoters = 0; let passives = 0; let detractors = 0; let eNpsResponses = 0
-    merged.forEach(r => {
-      const score = Number(r[eNpsKey] ?? NaN)
-      if (!isNaN(score)) {
-        eNpsResponses++
-        if (score >= 9)      promoters++
-        else if (score >= 7) passives++
-        else                 detractors++
-      }
-    })
-    const eNPS = eNpsResponses
-      ? Number(((promoters - detractors) / eNpsResponses * 100).toFixed(1))
-      : null
+    if (eiBatchError || !eiBatch) { console.error("EI batch error:", eiBatchError); return }
 
-    setMetrics((prev: typeof metrics) => ({
-      ...prev,
-      ei: {
-        engagementIndex,
-        eNPS,
-        responses:  merged.length,
-        promoters,
-        passives,
-        detractors,
-        loaded: true,
-      }
-    }))
+    const { error: eiInsertError } = await supabase
+      .from("engagement_survey_responses")
+      .insert(rows.map(r => ({
+        batch_id:               eiBatch.batch_id,
+        survey_period:          r["survey period"]          || null,
+        function:               r["function"]               || null,
+        role_level:             r["role level"]             || null,
+        location:               r["location"]               || null,
+        tenure_band:            r["tenure band"]            || null,
+        q1_purpose:             r[resolvedEngKeys[0]]       || null,
+        q2_enablement:          r[resolvedEngKeys[1]]       || null,
+        q3_commitment:          r[resolvedEngKeys[2]]       || null,
+        q4_growth:              r[resolvedEngKeys[3]]       || null,
+        q5_belonging:           r[resolvedEngKeys[4]]       || null,
+        q6_enps:                r[eNpsKey] != null ? Number(r[eNpsKey]) : null,
+        q7_improvement_comment: r["q7 improvement comment"] || null,
+      })))
+
+    if (eiInsertError) { console.error("EI insert error:", eiInsertError); return }
+
+    await rehydrateEi()
     setUploadOrder(prev => [...prev.filter(k => k !== "ei"), "ei"])
   }
 
   // ─── VTR Handler ─────────────────────────────────────────
-  // Columns: reporting period, delivery unit, job family, tenure band,
-  //          average headcount during the same period,
-  //          number of voluntary separations during the period,
-  //          voluntary turnover rate (%)
   const handleVtr = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
 
-    const keys = Object.keys(rows[0])
-    const headcountKey   = keys.find(k => k.includes("average headcount"))            ?? ""
-    const separationsKey = keys.find(k => k.includes("voluntary separations"))        ?? ""
+    const keys           = Object.keys(rows[0])
+    const headcountKey   = keys.find(k => k.includes("average headcount"))      ?? ""
+    const separationsKey = keys.find(k => k.includes("voluntary separations"))  ?? ""
 
     if (!headcountKey || !separationsKey) {
       alert("Missing columns: Average Headcount During the Same Period / Number of Voluntary Separations During the Period")
       return
     }
 
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("vtrRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["reporting period"] ?? ""}|${(r["delivery unit"] ?? "").toString().trim()}|${(r["job family"] ?? "").toString().trim()}|${(r["tenure band"] ?? "").toString().trim()}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("vtrRawRows", JSON.stringify(merged))
+    const { data: vtrBatch, error: vtrBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "voluntary_turnover", uploaded_by: currentUser,
+        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
 
-    const totalHeadcount   = merged.reduce((s, r) => s + Number(r[headcountKey]   || 0), 0)
-    const totalSeparations = merged.reduce((s, r) => s + Number(r[separationsKey] || 0), 0)
-    const rate = totalHeadcount
-      ? Number(((totalSeparations / totalHeadcount) * 100).toFixed(2))
-      : null
+    if (vtrBatchError || !vtrBatch) { console.error("VTR batch error:", vtrBatchError); return }
 
-    setMetrics((prev: typeof metrics) => ({
-      ...prev,
-      vtr: { rate, separations: totalSeparations, headcount: totalHeadcount, loaded: true }
-    }))
+    const { error: vtrInsertError } = await supabase
+      .from("voluntary_turnover")
+      .insert(rows.map(r => ({
+        batch_id:              vtrBatch.batch_id,
+        reporting_period:      String(r["reporting period"] || "Unknown"),
+        delivery_unit:         r["delivery unit"]           || null,
+        job_family:            r["job family"]              || null,
+        tenure_band:           r["tenure band"]             || null,
+        avg_headcount:         Number(r[headcountKey])      || 0,
+        voluntary_separations: Number(r[separationsKey])    || 0,
+      })))
+
+    if (vtrInsertError) { console.error("VTR insert error:", vtrInsertError); return }
+
+    await rehydrateVtr()
     setUploadOrder(prev => [...prev.filter(k => k !== "vtr"), "vtr"])
   }
 
   // ─── ERR Handler ─────────────────────────────────────────
-  // Columns: reporting period, delivery unit,
-  //          employees at start of period,
-  //          employees at end of period,
-  //          new hires during period,
-  //          employee retention rate (%)
   const handleErr = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
 
-    const keys = Object.keys(rows[0])
-    const startKey    = keys.find(k => k.includes("employees at start"))    ?? ""
-    const endKey      = keys.find(k => k.includes("employees at end"))      ?? ""
-    const newHiresKey = keys.find(k => k.includes("new hires during"))      ?? ""
+    const keys        = Object.keys(rows[0])
+    const startKey    = keys.find(k => k.includes("employees at start")) ?? ""
+    const endKey      = keys.find(k => k.includes("employees at end"))   ?? ""
+    const newHiresKey = keys.find(k => k.includes("new hires during"))   ?? ""
 
     if (!startKey || !endKey || !newHiresKey) {
       alert("Missing columns: Employees at Start of Period / Employees at End of Period / New Hires During Period")
       return
     }
 
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("errRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["reporting period"] ?? ""}|${(r["delivery unit"] ?? "").toString().trim()}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("errRawRows", JSON.stringify(merged))
+    const { data: errBatch, error: errBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "employee_retention", uploaded_by: currentUser,
+        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
 
-    // ERR = (End - New Hires) / Start × 100
-    const totalStart    = merged.reduce((s, r) => s + Number(r[startKey]    || 0), 0)
-    const totalEnd      = merged.reduce((s, r) => s + Number(r[endKey]      || 0), 0)
-    const totalNewHires = merged.reduce((s, r) => s + Number(r[newHiresKey] || 0), 0)
-    const retained      = totalEnd - totalNewHires
-    const rate = totalStart
-      ? Number(((retained / totalStart) * 100).toFixed(2))
-      : null
+    if (errBatchError || !errBatch) { console.error("ERR batch error:", errBatchError); return }
 
-    setMetrics((prev: typeof metrics) => ({
-      ...prev,
-      err: { rate, startCount: totalStart, retained, loaded: true }
-    }))
+    const { error: errInsertError } = await supabase
+      .from("employee_retention")
+      .insert(rows.map(r => ({
+        batch_id:         errBatch.batch_id,
+        reporting_period: String(r["reporting period"] || "Unknown"),
+        delivery_unit:    r["delivery unit"]            || null,
+        employees_start:  Number(r[startKey])           || 0,
+        employees_end:    Number(r[endKey])              || 0,
+        new_hires:        Number(r[newHiresKey])         || 0,
+      })))
+
+    if (errInsertError) { console.error("ERR insert error:", errInsertError); return }
+
+    await rehydrateErr()
     setUploadOrder(prev => [...prev.filter(k => k !== "err"), "err"])
   }
 
   // ─── ITS Handler ─────────────────────────────────────────
-  // Columns: survey period, function, role level, location, tenure band,
-  //          q1 intent to stay, q2 prefer to continue career here (optional),
-  //          response date
   const handleIts = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
 
-    const keys = Object.keys(rows[0])
+    const keys   = Object.keys(rows[0])
     const itsKey = keys.find(k => k.includes("intent to stay") || (k.startsWith("q1") && k.includes("intent"))) ?? "q1 intent to stay"
 
     if (!keys.some(k => k.includes("intent to stay") || (k.startsWith("q1") && k.includes("intent")))) {
       alert("Missing column: Q1 Intent to Stay"); return
     }
 
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("itsRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["survey period"] ?? ""}|${r["function"] ?? ""}|${r["role level"] ?? ""}|${r["location"] ?? ""}|${r["response date"] ?? ""}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("itsRawRows", JSON.stringify(merged))
+    const { data: itsBatch, error: itsBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "intent_to_stay", uploaded_by: currentUser,
+        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
 
-    // ITS Rate = (agree + strongly agree) / total × 100
-    const favorable = merged.filter(r => isAgree(r[itsKey])).length
-    const rate = merged.length
-      ? Number(((favorable / merged.length) * 100).toFixed(1))
-      : null
+    if (itsBatchError || !itsBatch) { console.error("ITS batch error:", itsBatchError); return }
 
-    setMetrics((prev: typeof metrics) => ({
-      ...prev,
-      its: { rate, responses: merged.length, loaded: true }
-    }))
+    const { error: itsInsertError } = await supabase
+      .from("intent_to_stay_responses")
+      .insert(rows.map(r => ({
+        batch_id:           itsBatch.batch_id,
+        survey_period:      r["survey period"]  || null,
+        function:           r["function"]        || null,
+        role_level:         r["role level"]      || null,
+        location:           r["location"]        || null,
+        tenure_band:        r["tenure band"]     || null,
+        q1_intent_to_stay:  r[itsKey]            || null,
+        q2_prefer_continue: r["q2 prefer to continue career here"] || null,
+        response_date: r["response date"]
+          ? (() => { try { const d = new Date(String(r["response date"])); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+          : null,
+      })))
+
+    if (itsInsertError) { console.error("ITS insert error:", itsInsertError); return }
+
+    await rehydrateIts()
     setUploadOrder(prev => [...prev.filter(k => k !== "its"), "its"])
   }
 
   // ─── NER Handler ─────────────────────────────────────────
-  // Columns: reporting period, delivery unit, location,
-  //          number of employee referrals,
-  //          number of employees who made at least one referral,
-  //          total active employees,
-  //          referral rate (%)
   const handleNer = async (file: File) => {
     const rows = await parseSheet(file)
     if (!rows.length) { alert("File is empty."); return }
 
-    const keys = Object.keys(rows[0])
-    const referralsKey     = keys.find(k => k.includes("number of employee referrals"))              ?? ""
-    const participantsKey  = keys.find(k => k.includes("employees who made at least one referral"))  ?? ""
-    const activeKey        = keys.find(k => k.includes("total active employees"))                    ?? ""
+    const keys            = Object.keys(rows[0])
+    const referralsKey    = keys.find(k => k.includes("number of employee referrals"))             ?? ""
+    const participantsKey = keys.find(k => k.includes("employees who made at least one referral")) ?? ""
+    const activeKey       = keys.find(k => k.includes("total active employees"))                   ?? ""
 
     if (!referralsKey) {
       alert("Missing column: Number of Employee Referrals"); return
     }
 
-    const existing: RowObject[] = JSON.parse(localStorage.getItem("nerRawRows") || "[]")
-    const makeKey = (r: RowObject) => `${r["reporting period"] ?? ""}|${(r["delivery unit"] ?? "").toString().trim()}|${(r["location"] ?? "").toString().trim()}`
-    const existingKeys = new Set(existing.map(makeKey))
-    const merged = [...existing, ...rows.filter(r => !existingKeys.has(makeKey(r)))]
-    localStorage.setItem("nerRawRows", JSON.stringify(merged))
+    const { data: nerBatch, error: nerBatchError } = await supabase
+      .from("ex_batches")
+      .insert({
+        filename: file.name, upload_type: "employee_referrals", uploaded_by: currentUser,
+        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+      })
+      .select().single()
 
-    const totalReferrals   = merged.reduce((s, r) => s + Number(r[referralsKey]    || 0), 0)
-    const totalParticipants = participantsKey ? merged.reduce((s, r) => s + Number(r[participantsKey] || 0), 0) : 0
-    const totalActive       = activeKey       ? merged.reduce((s, r) => s + Number(r[activeKey]       || 0), 0) : 0
-    const referralRate = totalActive
-      ? Number(((totalParticipants / totalActive) * 100).toFixed(2))
-      : null
+    if (nerBatchError || !nerBatch) { console.error("NER batch error:", nerBatchError); return }
 
-    setMetrics((prev: typeof metrics) => ({
-      ...prev,
-      ner: { referralCount: totalReferrals, referralRate, participants: totalParticipants, activeEmployees: totalActive, loaded: true }
-    }))
+    const { error: nerInsertError } = await supabase
+      .from("employee_referrals")
+      .insert(rows.map(r => ({
+        batch_id:           nerBatch.batch_id,
+        reporting_period:   String(r["reporting period"] || "Unknown"),
+        delivery_unit:      r["delivery unit"]            || null,
+        location:           r["location"]                 || null,
+        referral_count:     Number(r[referralsKey])       || 0,
+        employees_referred: participantsKey ? Number(r[participantsKey]) || 0 : 0,
+        total_employees:    activeKey       ? Number(r[activeKey])       || 0 : 0,
+      })))
+
+    if (nerInsertError) { console.error("NER insert error:", nerInsertError); return }
+
+    await rehydrateNer()
     setUploadOrder(prev => [...prev.filter(k => k !== "ner"), "ner"])
   }
 
-  // ─── Clear metric ─────────────────────────────────────────
-  const clearMetric = (key: string) => {
-    const defaults: Record<string, object> = {
-      ei:  { engagementIndex: null, eNPS: null, responses: 0, promoters: 0, passives: 0, detractors: 0, loaded: false },
-      vtr: { rate: null, separations: 0, headcount: 0, loaded: false },
-      err: { rate: null, startCount: 0, retained: 0, loaded: false },
-      its: { rate: null, responses: 0, loaded: false },
-      ner: { referralCount: 0, referralRate: null, participants: 0, activeEmployees: 0, loaded: false },
+  // ─── Clear metric — delete from Supabase + reset state ───
+  const clearMetric = async (key: string) => {
+    const tableMap: Record<string, string> = {
+      ei:  "engagement_survey_responses",
+      vtr: "voluntary_turnover",
+      err: "employee_retention",
+      its: "intent_to_stay_responses",
+      ner: "employee_referrals",
     }
-    setMetrics((prev: typeof metrics) => {
-      const updated = { ...prev, [key]: defaults[key] }
-      localStorage.setItem("engRetMetricsData", JSON.stringify(updated))
-      return updated
-    })
-    const lsKeys: Record<string, string[]> = {
-      ei:  ["eiRawRows"],
-      vtr: ["vtrRawRows"],
-      err: ["errRawRows"],
-      its: ["itsRawRows"],
-      ner: ["nerRawRows"],
+    const uploadTypeMap: Record<string, string> = {
+      ei:  "engagement_survey",
+      vtr: "voluntary_turnover",
+      err: "employee_retention",
+      its: "intent_to_stay",
+      ner: "employee_referrals",
     }
-    lsKeys[key]?.forEach(k => localStorage.removeItem(k))
+
+    const table      = tableMap[key]
+    const uploadType = uploadTypeMap[key]
+
+    if (table && uploadType) {
+      const { data: batches } = await supabase
+        .from("ex_batches")
+        .select("batch_id")
+        .eq("upload_type", uploadType)
+
+      if (batches && batches.length > 0) {
+        const batchIds = batches.map(b => b.batch_id)
+        await supabase.from(table).delete().in("batch_id", batchIds)
+        await supabase.from("ex_batches").delete().in("batch_id", batchIds)
+      }
+    }
+
+    // Reset in-memory state only — no localStorage
+    const defaults: typeof DEFAULT_METRICS = {
+      ...DEFAULT_METRICS,
+      [key]: DEFAULT_METRICS[key as keyof typeof DEFAULT_METRICS],
+    }
+    setMetrics(prev => ({ ...prev, [key]: defaults[key as keyof typeof DEFAULT_METRICS] }))
     setUploadOrder(prev => prev.filter(k => k !== key))
   }
 
   const anyLoaded = metrics.ei.loaded || metrics.vtr.loaded || metrics.err.loaded || metrics.its.loaded || metrics.ner.loaded
 
-  // ─── Metric card configs ──────────────────────────────────
   const metricCards = [
     {
       key: "ei", icon: "EI",
@@ -459,6 +581,15 @@ export default function EngRetDashboard() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
 
+      {/* Syncing indicator */}
+      {rehydrating && (
+        <div style={{ fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
+          <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: "#6366f1", animation: "pulse 1s infinite" }} />
+          Syncing from database…
+          <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }`}</style>
+        </div>
+      )}
+
       {/* Status pills */}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>
         {metricCards.map(m => (
@@ -485,19 +616,14 @@ export default function EngRetDashboard() {
           <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", marginBottom: 14 }}>📊 Summary Snapshot</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
 
-            {/* EI / eNPS */}
             {metrics.ei.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Engagement Index / eNPS</div>
                 <BenchmarkRow label="Engagement Index (Favorability)" value={metrics.ei.engagementIndex ?? 0} target={100} accent="#6366f1" unit="%" />
-                {/* eNPS display — can be negative so don't use bar */}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#475569", marginBottom: 12 }}>
                   <span>eNPS Score</span>
-                  <span style={{ fontWeight: 700, color: (metrics.ei.eNPS ?? 0) >= 0 ? "#6366f1" : "#ef4444" }}>
-                    {metrics.ei.eNPS ?? "—"}
-                  </span>
+                  <span style={{ fontWeight: 700, color: (metrics.ei.eNPS ?? 0) >= 0 ? "#6366f1" : "#ef4444" }}>{metrics.ei.eNPS ?? "—"}</span>
                 </div>
-                {/* eNPS breakdown */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
                   {[
                     { label: "Promoters (9–10)",  val: metrics.ei.promoters,  color: "#10b981" },
@@ -515,7 +641,6 @@ export default function EngRetDashboard() {
               </div>
             )}
 
-            {/* VTR */}
             {metrics.vtr.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Voluntary Turnover Rate</div>
@@ -530,7 +655,6 @@ export default function EngRetDashboard() {
               </div>
             )}
 
-            {/* ERR */}
             {metrics.err.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#10b981", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>Employee Retention Rate</div>
@@ -539,28 +663,26 @@ export default function EngRetDashboard() {
                   {metrics.err.retained} of {metrics.err.startCount} employees retained through end of period
                 </div>
                 {(metrics.err.rate ?? 100) < 90 && (
-                  <div style={{ fontSize: 11, color: "#b91c1c", background: "#fef2f2", borderRadius: 6, padding: "5px 8px", marginTop: 6 }}> Retention rate below 90% — investigate root causes</div>
+                  <div style={{ fontSize: 11, color: "#b91c1c", background: "#fef2f2", borderRadius: 6, padding: "5px 8px", marginTop: 6 }}>Retention rate below 90% — investigate root causes</div>
                 )}
                 <button onClick={() => clearMetric("err")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
               </div>
             )}
 
-            {/* ITS */}
             {metrics.its.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>🔮 Intent to Stay</div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#8b5cf6", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Intent to Stay</div>
                 <BenchmarkRow label="Intent to Stay Rate" value={metrics.its.rate ?? 0} target={100} accent="#8b5cf6" unit="%" />
                 <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
                   {metrics.its.responses} pulse survey responses · leading retention indicator
                 </div>
                 {(metrics.its.rate ?? 100) < 70 && (
-                  <div style={{ fontSize: 11, color: "#7c3aed", background: "#faf5ff", borderRadius: 6, padding: "5px 8px", marginTop: 6 }}> Low intent to stay — early action planning recommended</div>
+                  <div style={{ fontSize: 11, color: "#7c3aed", background: "#faf5ff", borderRadius: 6, padding: "5px 8px", marginTop: 6 }}>Low intent to stay — early action planning recommended</div>
                 )}
                 <button onClick={() => clearMetric("its")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
               </div>
             )}
 
-            {/* NER */}
             {metrics.ner.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Employee Referrals</div>
