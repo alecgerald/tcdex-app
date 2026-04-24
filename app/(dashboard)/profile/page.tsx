@@ -91,7 +91,7 @@ export default function ProfilePage() {
         setUserRole((roleData as any).roles.name)
       }
     } catch (error: any) {
-      toast.error("Error fetching profile: " + error.message)
+      toast.error("We couldn't load your profile details. Please try refreshing the page.")
     } finally {
       setLoading(false)
     }
@@ -113,9 +113,9 @@ export default function ProfilePage() {
         .eq("id", user.id)
 
       if (error) throw error
-      toast.success("Profile updated successfully")
+      toast.success("Profile updated! Your changes have been successfully saved.")
     } catch (error: any) {
-      toast.error("Error updating profile: " + error.message)
+      toast.error("We couldn't save your profile changes. Please try again.")
     } finally {
       setUpdatingProfile(false)
     }
@@ -123,12 +123,12 @@ export default function ProfilePage() {
 
   const handleUpdatePassword = async () => {
     if (passwords.newPassword !== passwords.confirmPassword) {
-      toast.error("Passwords do not match")
+      toast.error("The passwords you entered don't match. Please try again.")
       return
     }
 
     if (passwords.newPassword.length < 6) {
-      toast.error("Password must be at least 6 characters")
+      toast.error("Your new password is too short. It must be at least 6 characters long.")
       return
     }
 
@@ -140,10 +140,10 @@ export default function ProfilePage() {
 
       if (error) throw error
       
-      toast.success("Password updated successfully")
+      toast.success("Password updated! You're all set.")
       setPasswords({ newPassword: "", confirmPassword: "" })
     } catch (error: any) {
-      toast.error("Error updating password: " + error.message)
+      toast.error("We couldn't update your password. Please try again.")
     } finally {
       setUpdatingPassword(false)
     }
@@ -151,7 +151,7 @@ export default function ProfilePage() {
 
   const handleCreateUser = async () => {
     if (!newUser.email) {
-      toast.error("Please enter an email address")
+      toast.error("Please provide an email address for the new user account.")
       return
     }
 
@@ -160,15 +160,15 @@ export default function ProfilePage() {
       const result = await createNewUserRecord(newUser.email, newUser.role)
       
       if (result.success) {
-        toast.success("User created successfully!")
+        toast.success("Account created successfully! The new user can now log in.")
         setIsCreateModalOpen(false)
         setNewUser({ email: "", role: "viewer" })
       } else {
-        toast.error(result.error || "Failed to create user")
+        toast.error("We couldn't create the account: " + (result.error || "Please check the details and try again."))
       }
     } catch (error: any) {
       console.error("handleCreateUser error:", error)
-      toast.error(error.message || "Failed to create user")
+      toast.error("Something went wrong while creating the user account. Please try again.")
     } finally {
       setIsCreatingUser(false)
     }

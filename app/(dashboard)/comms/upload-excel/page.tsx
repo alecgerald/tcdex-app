@@ -271,19 +271,19 @@ export default function CommsUploadExcelPage() {
             saveAndShowData(importData)
           } catch (error) {
             console.error("Excel error:", error)
-            toast.error("Error parsing Excel file")
+            toast.error("We couldn't read this Excel file. Please make sure it's not corrupted.")
           } finally {
             setIsLoading(false)
           }
         }
         reader.readAsArrayBuffer(file)
       } else {
-        toast.error("Please upload .csv, .xlsx, or .xls files only")
+        toast.error("Unsupported file type. Please upload a .csv, .xlsx, or .xls file.")
         setIsLoading(false)
       }
     } catch (error) {
       console.error("Upload error:", error)
-      toast.error("Failed to load upload engine")
+      toast.error("The upload tool is having trouble starting. Please refresh the page.")
       setIsLoading(false)
     }
   }
@@ -323,7 +323,7 @@ export default function CommsUploadExcelPage() {
 
     if (batchError) {
       console.error("Batch insert failed:", batchError)
-      toast.error("Error creating upload batch")
+      toast.error("We couldn't start the import process. Please try again.")
       setIsLoading(false)
       return
     }
@@ -438,10 +438,10 @@ export default function CommsUploadExcelPage() {
       } else {
         setActiveSheet(null)
       }
-      toast.success(`${importData.fileName} imported and saved to database successfully`)
+      toast.success(`Success! ${importData.fileName} has been imported and saved.`)
     } catch (e) {
       console.error(e)
-      toast.error("An error occurred during database insertion")
+      toast.error("Something went wrong while saving the data. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }

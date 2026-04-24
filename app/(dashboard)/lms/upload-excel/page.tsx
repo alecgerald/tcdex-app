@@ -129,7 +129,7 @@ export default function ExcelUploadPage() {
         let jsonData = utils.sheet_to_json(sheet) as any[]
 
         if (!jsonData || jsonData.length === 0) {
-          toast.error("The uploaded file is empty")
+          toast.error("The uploaded file appears to be empty. Please check your data and try again.")
           setIsLoading(false)
           return
         }
@@ -168,7 +168,7 @@ export default function ExcelUploadPage() {
           const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
 
           if (missing.length > 0) {
-            toast.error(`Missing columns for Status Completion: ${missing.join(", ")}`)
+            toast.error(`We couldn't find the required columns for Status Completion: ${missing.join(", ")}. Please check your file headers.`)
             setIsLoading(false)
             return
           }
@@ -191,7 +191,7 @@ export default function ExcelUploadPage() {
           const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
 
           if (missing.length > 0) {
-            toast.error(`Missing columns for Assigned/Completed Courses: ${missing.join(", ")}`)
+            toast.error(`Required columns for Assigned/Completed Courses are missing: ${missing.join(", ")}. Please verify the file format.`)
             setIsLoading(false)
             return
           }
@@ -215,7 +215,7 @@ export default function ExcelUploadPage() {
           const missing = required.filter(r => !headers.some(h => h.trim().toLowerCase() === r.toLowerCase()))
 
           if (missing.length > 0) {
-            toast.error(`Missing some required columns for detailed report mapping (e.g. User Name, User Status, Delivery Unit or Department, Project Name, Course Name, Course Status, Completion Percentage).`)
+            toast.error("The detailed report is missing some required columns. Please ensure User Name, Status, Course Name, and Percentage are present.")
             setIsLoading(false)
             return
           }
@@ -244,10 +244,10 @@ export default function ExcelUploadPage() {
           setTimeout(() => applyFiltersAndProcess(jsonData, file.name), 50)
         } else {
           setStep('filter')
-          toast.success("File read successfully. Please select filters.")
+          toast.success("File read successfully! Now, please select the filters to apply.")
         }
       } catch (error) {
-        toast.error("Failed to parse Excel file")
+        toast.error("We couldn't read the Excel file. Please make sure it's a valid .xlsx, .xls, or .csv file.")
       } finally {
         setIsLoading(false)
       }
@@ -267,7 +267,7 @@ export default function ExcelUploadPage() {
       }))
 
       if (filtered.length === 0) {
-        toast.error("No records matched the selected filters")
+        toast.error("No records matched your selected filters. Please try adjusting them.")
         setIsLoading(false)
         return
       }
@@ -433,7 +433,7 @@ export default function ExcelUploadPage() {
 
       if (batchError) {
         console.error("Batch insert failed:", JSON.stringify(batchError, null, 2))
-        toast.error("Database Error (History Log): " + (batchError?.message || "Failed to create batch"))
+        toast.error("We encountered a database error while creating the import batch. Please try again.")
       }
 
       if (!batchError) {
@@ -461,7 +461,7 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_assigned_courses').insert(coursesData.slice(i, i + 500))
             if (insertError) {
                console.error("Course Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Database Error (Courses DB): " + (insertError?.message || "Failed to insert records"))
+               toast.error("Something went wrong while saving the course data. Please check your connection and try again.")
             }
           }
         } else if (importType === 'status') {
@@ -479,7 +479,7 @@ export default function ExcelUploadPage() {
             const { error: insertError } = await supabase.from('lms_status_completion').insert(statusData.slice(i, i + 500))
             if (insertError) {
                console.error("Status Data Batch insert failed:", JSON.stringify(insertError, null, 2))
-               toast.error("Database Error (Status DB): " + (insertError?.message || "Failed to insert records"))
+               toast.error("We couldn't save the status records to the database. Please try the upload again.")
             }
           }
         } else if (importType === 'detailed_report') {
@@ -503,7 +503,7 @@ export default function ExcelUploadPage() {
                const errorMsg = insertError.code === '42501' 
                  ? "Permission Denied: Please check your Supabase RLS policies for 'lms_detailed_report'." 
                  : (insertError?.message || "Failed to insert records")
-               toast.error("Database Error (Detailed DB): " + errorMsg)
+               toast.error("We couldn't save the detailed report data. Please verify your permissions and try again.")
             }
           }
         }
@@ -513,12 +513,12 @@ export default function ExcelUploadPage() {
       setColumns(Object.keys(filtered[0]).filter(c => c !== 'id'))
       setStep('preview')
       setIsLoading(false)
-      toast.success(`Processed ${filtered.length} records`)
+      toast.success(`Success! We've processed and imported ${filtered.length} records.`)
     }, 500)
   }
 
   const handleFinish = () => {
-    toast.success("File added to dashboard successfully")
+    toast.success("Great! Your file has been added to the dashboard.")
     setStep('upload')
     setRawData([])
     setProcessedData([])

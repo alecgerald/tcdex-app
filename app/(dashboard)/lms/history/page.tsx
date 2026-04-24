@@ -130,14 +130,14 @@ export default function AuditLogsPage() {
     const updatedLogs = logs.filter(log => log.id !== deleteId)
     setLogs(updatedLogs)
     setDeleteId(null)
-    toast.success("Log and underlying database records permanently removed")
+    toast.success("The log and all associated records have been permanently removed.")
   }
 
   const handleSetActive = (log: AuditLog, e: React.MouseEvent) => {
     e.stopPropagation()
     // Logic to set active data for LMS dashboard
     localStorage.setItem("lms_active_data", JSON.stringify(log))
-    toast.success(`Dashboard data updated to: ${log.fileName}`)
+    toast.success(`Success! The dashboard has been updated with data from: ${log.fileName}`)
   }
 
   const [isLoadingData, setIsLoadingData] = useState(false)
@@ -202,7 +202,7 @@ export default function AuditLogsPage() {
       setLogs(prev => prev.map(l => l.id === log.id ? { ...l, cleanedData } : l))
     } catch (e) {
       console.error("Failed fetching data", e)
-      toast.error("Failed to load historical records")
+      toast.error("We couldn't load the historical records. Please check your connection and try again.")
     } finally {
       setIsLoadingData(false)
     }
@@ -402,7 +402,7 @@ export default function AuditLogsPage() {
               onClick={() => {
                 if (selectedLog) {
                   localStorage.setItem("lms_active_data", JSON.stringify(selectedLog))
-                  toast.success("Updated dashboard data")
+                  toast.success("Your dashboard has been updated with the selected data.")
                 }
               }}
             >

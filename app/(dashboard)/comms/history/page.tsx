@@ -138,7 +138,7 @@ export default function CommsAuditLogsPage() {
     const { error } = await supabase.from('comms_batches').delete().eq('batch_id', logToDelete)
 
     if (error) {
-      toast.error("Failed to delete log");
+      toast.error("We couldn't delete the log. Please try again.")
       return;
     }
 
@@ -146,13 +146,13 @@ export default function CommsAuditLogsPage() {
     setLogs(updatedLogs)
     setLogToDelete(null)
     
-    toast.success("Log and associated data deleted successfully")
+    toast.success("Success! The log and all associated data have been deleted.")
   }
 
   const handleDeletePrompt = (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (userRole === "viewer") {
-      toast.error("You do not have permission to delete history")
+      toast.error("You don't have the required permissions to delete records from the history.")
       return
     }
     setLogToDelete(id)
@@ -186,11 +186,11 @@ export default function CommsAuditLogsPage() {
          setSelectedLog({ ...log, ...data } as CommsLog)
          setIsViewOpen(true)
       } else {
-         toast.error("Failed to load details for this log.")
+         toast.error("We couldn't load the details for this entry. It may have been removed.")
       }
     } catch (e) {
       console.error("Error loading log details:", e)
-      toast.error("Error fetching records")
+      toast.error("An error occurred while fetching the records. Please refresh and try again.")
     } finally {
       setIsProcessing(false)
     }
