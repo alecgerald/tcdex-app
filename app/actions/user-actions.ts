@@ -123,4 +123,3 @@ export async function createNewUserRecord(email: string, roleName: 'lead' | 'vie
     return { success: false, error: "An unexpected error occurred." }
   }
 }
-}
