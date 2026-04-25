@@ -94,7 +94,7 @@ const TrainingReportsDashboard: React.FC = () => {
     const toastId = toast.loading("Generating vector PDF report...");
 
     const payload = {
-      title: "VILT Training Performance Report",
+      title: "Training Reports Dashboard Report",
       description: `Analysis of virtual instructor-led training performance${selectedYear !== 'all' ? ` for year ${selectedYear}` : ''}.`,
       date: new Date().toLocaleDateString(),
       kpis: [
@@ -140,7 +140,7 @@ const TrainingReportsDashboard: React.FC = () => {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `Training_Performance_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      a.download = `Training_Reports_Dashboard_${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -167,7 +167,7 @@ const TrainingReportsDashboard: React.FC = () => {
             <FileText className="h-6 w-6 text-[#0046ab]" />
           </div>
           <div>
-            <h2 className="text-xl font-bold tracking-tight text-[#0046ab]">VILT Training Performance</h2>
+            <h2 className="text-xl font-bold tracking-tight text-[#0046ab]">Training Reports Dashboard</h2>
             <p className="text-xs text-muted-foreground uppercase font-black tracking-widest">Independent Reporting Dashboard</p>
           </div>
         </div>
