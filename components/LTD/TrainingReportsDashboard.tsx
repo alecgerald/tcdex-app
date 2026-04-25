@@ -85,17 +85,122 @@ const TrainingReportsDashboard: React.FC = () => {
     }
   }, [selectedYear]);
 
+  const handleExportPDF = useCallback(async () => {
+    if (reports.length === 0) {
+      toast.error("No data available to export.");
+      return;
+    }
+    setIsExporting(true);
+    const toastId = toast.loading("Generating vector PDF report...");
+
+    const payload = {
+      title: "Training Reports Dashboard Report",
+      description: `Analysis of virtual instructor-led training performance${selectedYear !== 'all' ? ` for year ${selectedYear}` : ''}.`,
+      date: new Date().toLocaleDateString(),
+      kpis: [
+        { title: "Total Participants", value: metrics.totalParticipants, description: "Unique learners identified." },
+        { title: "Total Completions", value: metrics.totalCompletions, description: "Total courses completed." },
+        { title: "Avg per User", value: metrics.avgPerUser, description: "Average completions per active user." },
+        { title: "Participation Rate", value: `${metrics.participationRate}%`, description: "Ratio of users with completions." }
+      ],
+      charts: [
+        {
+          title: "Department Distribution (%)",
+          data: departmentChartData.slice(0, 10).map(d => ({
+            label: d.name,
+            value: d.percentage,
+            max: 100,
+            color: "#0046ab"
+          }))
+        }
+      ],
+      tables: [
+        {
+          title: "Department Breakdown",
+          headers: ["Department", "Learner Count", "Percentage"],
+          rows: departmentChartData.map(d => [
+            d.name,
+            d.count.toString(),
+            `${d.percentage}%`
+          ])
+        }
+      ]
+    };
+
+    try {
+      const res = await fetch('/api/pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) throw new Error('Failed to generate PDF');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Training_Reports_Dashboard_${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF report downloaded!", { id: toastId });
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to generate vector PDF.", { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  }, [reports, metrics, departmentChartData, selectedYear]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
 
   if (loading) return <div className="flex h-[400px] items-center justify-center w-full"><Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" /></div>;
 
   return (
     <div className="w-full space-y-8 pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
-        <div className="flex items-center gap-4"><div className="p-3 bg-[#0046ab]/10 rounded-xl"><FileText className="h-6 w-6 text-[#0046ab]" /></div><div><h2 className="text-xl font-bold tracking-tight text-[#0046ab]">VILT Training Performance</h2><p className="text-xs text-muted-foreground uppercase font-black tracking-widest">Independent Reporting Dashboard</p></div></div>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-white dark:bg-zinc-900 p-6 rounded-2xl border shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 text-xs font-black text-muted-foreground uppercase tracking-wider"><Calendar className="h-4 w-4" /> Course Year:</div>
-          <Select value={selectedYear} onValueChange={setSelectedYear}><SelectTrigger className="w-[140px] h-10 text-sm font-bold border-zinc-200"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="all">All Time</SelectItem><SelectItem value="2023">2023</SelectItem><SelectItem value="2024">2024</SelectItem><SelectItem value="2025">2025</SelectItem><SelectItem value="2026">2026</SelectItem></SelectContent></Select>
+          <div className="p-3 bg-[#0046ab]/10 rounded-xl">
+            <FileText className="h-6 w-6 text-[#0046ab]" />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold tracking-tight text-[#0046ab]">Training Reports Dashboard</h2>
+            <p className="text-xs text-muted-foreground uppercase font-black tracking-widest">Independent Reporting Dashboard</p>
+          </div>
+        </div>
+        
+        <div className="flex flex-col sm:flex-row items-center gap-4">
+          <div className="flex items-center gap-3 bg-zinc-50 p-2 rounded-xl border">
+            <div className="flex items-center gap-2 text-xs font-black text-muted-foreground uppercase tracking-wider pl-2">
+              <Calendar className="h-3.5 w-3.5" /> 
+              <span>Year:</span>
+            </div>
+            <Select value={selectedYear} onValueChange={setSelectedYear}>
+              <SelectTrigger className="w-[120px] h-8 text-xs font-black border-none bg-transparent focus:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" className="text-xs font-black uppercase">All Time</SelectItem>
+                <SelectItem value="2023" className="text-xs font-black uppercase">2023</SelectItem>
+                <SelectItem value="2024" className="text-xs font-black uppercase">2024</SelectItem>
+                <SelectItem value="2025" className="text-xs font-black uppercase">2025</SelectItem>
+                <SelectItem value="2026" className="text-xs font-black uppercase">2026</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          <Button 
+            onClick={handleExportPDF}
+            variant="outline"
+            disabled={isExporting}
+            className="h-12 px-6 rounded-xl border-zinc-200 text-zinc-600 font-bold text-sm uppercase flex items-center gap-2 hover:bg-zinc-50 transition-all shadow-sm w-full sm:w-auto"
+          >
+            {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-[#0046ab]" />}
+            Export PDF
+          </Button>
         </div>
       </div>
       {reports.length === 0 ? (<Card className="border-dashed bg-muted/30 py-24 text-center rounded-3xl"><CardContent><AlertCircle className="mx-auto h-16 w-16 text-muted-foreground/40 mb-6" /><h3 className="text-2xl font-semibold">No Training Data Found</h3></CardContent></Card>) : (
