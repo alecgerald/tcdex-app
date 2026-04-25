@@ -24,7 +24,7 @@ export async function fetchERGDashboardData() {
   ])
 
   // Map database columns back to the frontend's expected Excel-style keys
-  const normalizedRegistry = (registry || []).map(r => ({
+  const normalizedRegistry = (registry || []).map((r: any) => ({
     "Employee ID": r.employee_id,
     "Name": r.name,
     "Email": r.email,
@@ -35,7 +35,7 @@ export async function fetchERGDashboardData() {
     "Status": r.status
   }))
 
-  const normalizedSnapshots = (snapshots || []).map(s => ({
+  const normalizedSnapshots = (snapshots || []).map((s: any) => ({
     "ERG": s.erg_name,
     "Year": s.year,
     "Growth Rate %": s.growth_rate,
@@ -53,7 +53,7 @@ export async function fetchERGDashboardData() {
     "Dec Members": s.dec_members
   }))
 
-  const normalizedLogs = (logs || []).map(l => ({
+  const normalizedLogs = (logs || []).map((l: any) => ({
     "ERG": l.erg_name,
     "Event Date": l.event_date,
     "DEIB event": l.deib_event,
@@ -62,7 +62,7 @@ export async function fetchERGDashboardData() {
     "Attendance / Participation Count": l.attendance_count
   }))
 
-  const normalizedFeedback = (feedback || []).map(f => ({
+  const normalizedFeedback = (feedback || []).map((f: any) => ({
     "ERG": f.erg_name,
     "DEIB event": f.deib_event,
     "Activity Title": f.activity_title,
@@ -73,7 +73,7 @@ export async function fetchERGDashboardData() {
     uploadDate: f.upload_date // Use upload_date for backdating support
   }))
 
-  const normalizedParticipation = (participation || []).map(p => ({
+  const normalizedParticipation = (participation || []).map((p: any) => ({
     "Employee ID": p.employee_id,
     "Name": p.name,
     "Delivery Unit / Business Unit": p.business_unit,
@@ -129,9 +129,9 @@ export async function fetchBatchData(batchId: string, templateType: string) {
   }
 
   // Normalization logic (same as in fetchERGDashboardData but for a single batch)
-  let normalized = []
+  let normalized: any[] = []
   if (templateType === 'membership_registry') {
-    normalized = data.map(r => ({
+    normalized = data.map((r: any) => ({
       "Employee ID": r.employee_id,
       "Name": r.name,
       "Email": r.email,
@@ -142,7 +142,7 @@ export async function fetchBatchData(batchId: string, templateType: string) {
       "Status": r.status
     }))
   } else if (templateType === 'membership_snapshot') {
-    normalized = data.map(s => ({
+    normalized = data.map((s: any) => ({
       "ERG": s.erg_name,
       "Year": s.year,
       "Growth Rate %": s.growth_rate,
@@ -160,7 +160,7 @@ export async function fetchBatchData(batchId: string, templateType: string) {
       "Dec Members": s.dec_members
     }))
   } else if (templateType === 'event_activity') {
-    normalized = data.map(l => ({
+    normalized = data.map((l: any) => ({
       "ERG": l.erg_name,
       "Event Date": l.event_date,
       "DEIB event": l.deib_event,
@@ -169,7 +169,7 @@ export async function fetchBatchData(batchId: string, templateType: string) {
       "Attendance / Participation Count": l.attendance_count
     }))
   } else if (templateType === 'event_feedback') {
-    normalized = data.map(f => ({
+    normalized = data.map((f: any) => ({
       "ERG": f.erg_name,
       "DEIB event": f.deib_event,
       "Activity Title": f.activity_title,
@@ -179,7 +179,7 @@ export async function fetchBatchData(batchId: string, templateType: string) {
       "Response Count": f.response_count
     }))
   } else if (templateType === 'participation_detail') {
-    normalized = data.map(p => ({
+    normalized = data.map((p: any) => ({
       "Employee ID": p.employee_id,
       "Name": p.name,
       "Delivery Unit / Business Unit": p.business_unit,

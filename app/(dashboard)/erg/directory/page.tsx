@@ -29,7 +29,7 @@ import { utils, writeFile } from "xlsx"
 import { fetchERGDashboardData } from "../actions"
 
 interface Member {
-  id: string
+  id?: string
   "Employee ID": string | number
   Name: string
   Email: string
@@ -37,6 +37,9 @@ interface Member {
   Location: string
   "Primary ERG": string
   "Join Date": string
+  uploadDate?: string
+  status?: string
+  Status?: string
   [key: string]: any
 }
 

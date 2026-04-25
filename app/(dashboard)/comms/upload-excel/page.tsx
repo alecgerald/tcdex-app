@@ -122,12 +122,36 @@ export default function CommsUploadExcelPage() {
               return obj;
             });
 
+            const cleanRows = (rows: any[], type: string) => {
+              const config: Record<string, string[]> = {
+                "facebook-visits": ["Date", "Primary"],
+                "instagram-views": ["Date", "Primary", "Views"],
+                "tiktok-overview": [
+                  "Date", "Video views", "Reached audience", "Profile views", 
+                  "Likes", "Shares", "Comments", "Website clicks", "Phone clicks", 
+                  "Leads submission", "App download clicks", "Net growth", 
+                  "New followers", "Lost followers"
+                ]
+              }
+              const required = config[type] || []
+              if (required.length === 0) return rows
+              return rows.map(row => {
+                const clean: any = {}
+                const keys = Object.keys(row)
+                required.forEach(req => {
+                  const match = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+                  if (match) clean[req] = row[match]
+                })
+                return clean
+              })
+            }
+
             const importData: ImportData = {
               id: `log-${Date.now()}`,
               fileName: file.name,
               uploadedAt: new Date().toISOString(),
               type: activeUploadType,
-              rows: mappedRows
+              rows: cleanRows(mappedRows, activeUploadType)
             };
             saveAndShowData(importData);
           }
@@ -190,30 +214,76 @@ export default function CommsUploadExcelPage() {
               }
             })
 
+            const cleanRows = (rows: any[], type: string) => {
+              const config: Record<string, string[]> = {
+                "facebook-visits": ["Date", "Primary"],
+                "instagram-views": ["Date", "Primary", "Views"],
+                "tiktok-overview": [
+                  "Date", "Video views", "Reached audience", "Profile views", 
+                  "Likes", "Shares", "Comments", "Website clicks", "Phone clicks", 
+                  "Leads submission", "App download clicks", "Net growth", 
+                  "New followers", "Lost followers"
+                ],
+                "linkedin-general": [
+                  "Date", "Impressions (organic)", "Impressions (sponsored)", "Impressions (total)",
+                  "Unique impressions (organic)", "Clicks (organic)", "Clicks (sponsored)", "Clicks (total)",
+                  "Reactions (organic)", "Reactions (sponsored)", "Reactions (total)",
+                  "Comments (organic)", "Comments (total)", "Reposts (organic)", 
+                  "Reposts (sponsored)", "Reposts (total)", "Engagement rate (organic)",
+                  "Engagement rate (sponsored)", "Engagement rate (total)"
+                ],
+                "linkedin-posts": [
+                  "Post title", "Post link", "Post type", "Campaign name", "Posted by", 
+                  "Created date", "Campaign start date", "Campaign end date", "Audience", 
+                  "Impressions", "Views", "Offsite views", "Clicks", "Click-through rate (CTR)",
+                  "Likes", "Comments", "Reposts", "Engagement rate", "Content type"
+                ]
+              }
+
+              const targetType = type === "linkedin-analytics" ? "linkedin-general" : type // Placeholder logic
+              const required = config[targetType] || []
+              if (required.length === 0) return rows
+
+              return rows.map(row => {
+                const clean: any = {}
+                const keys = Object.keys(row)
+                required.forEach(req => {
+                  const match = keys.find(k => k.trim().toLowerCase() === req.toLowerCase())
+                  if (match) clean[req] = row[match]
+                })
+                return clean
+              })
+            }
+
             const importData: ImportData = {
               id: `log-${Date.now()}`,
               fileName: file.name,
               uploadedAt: new Date().toISOString(),
               type: activeUploadType,
-              rows: allRows,
-              sheets: sheetsData
+              rows: activeUploadType === "linkedin-analytics" ? allRows : cleanRows(allRows, activeUploadType),
+              sheets: activeUploadType === "linkedin-analytics" 
+                ? Object.fromEntries(Object.entries(sheetsData).map(([name, rows], i) => [
+                    name, 
+                    cleanRows(rows, i === 0 ? "linkedin-general" : "linkedin-posts")
+                  ]))
+                : undefined
             }
             saveAndShowData(importData)
           } catch (error) {
             console.error("Excel error:", error)
-            toast.error("Error parsing Excel file")
+            toast.error("We couldn't read this Excel file. Please make sure it's not corrupted.")
           } finally {
             setIsLoading(false)
           }
         }
         reader.readAsArrayBuffer(file)
       } else {
-        toast.error("Please upload .csv, .xlsx, or .xls files only")
+        toast.error("Unsupported file type. Please upload a .csv, .xlsx, or .xls file.")
         setIsLoading(false)
       }
     } catch (error) {
       console.error("Upload error:", error)
-      toast.error("Failed to load upload engine")
+      toast.error("The upload tool is having trouble starting. Please refresh the page.")
       setIsLoading(false)
     }
   }
@@ -253,7 +323,7 @@ export default function CommsUploadExcelPage() {
 
     if (batchError) {
       console.error("Batch insert failed:", batchError)
-      toast.error("Error creating upload batch")
+      toast.error("We couldn't start the import process. Please try again.")
       setIsLoading(false)
       return
     }
@@ -368,10 +438,10 @@ export default function CommsUploadExcelPage() {
       } else {
         setActiveSheet(null)
       }
-      toast.success(`${importData.fileName} imported and saved to database successfully`)
+      toast.success(`Success! ${importData.fileName} has been imported and saved.`)
     } catch (e) {
       console.error(e)
-      toast.error("An error occurred during database insertion")
+      toast.error("Something went wrong while saving the data. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }

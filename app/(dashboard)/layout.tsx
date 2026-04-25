@@ -128,8 +128,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           .eq("user_id", user.id)
           .single()
 
-        if (roleData && (roleData as any).roles) {
-          setUserRole((roleData as any).roles.name)
+        if (roleData && typeof roleData === 'object' && 'roles' in roleData) {
+          const roles = (roleData as { roles: { name: string } | { name: string }[] }).roles;
+          const roleName = Array.isArray(roles) ? roles[0]?.name : roles?.name;
+          setUserRole(roleName || "viewer")
         } else {
           setUserRole("viewer") // Default to viewer if no role found
         }
@@ -165,12 +167,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [userRole, isRoleLoading, pathname, router])
 
-  const filteredCategories = sidebarCategories.filter(category => {
-    if (isRoleLoading) return false
-    if (userRole === "owner" || userRole === "lead") return true
-    
-    // Viewer restrictions
-    return true // All categories visible for now, items filtered below
+  const filteredCategories = sidebarCategories.filter(() => {
+    return !isRoleLoading
   }).map(category => {
     if (userRole !== "viewer") return category
 

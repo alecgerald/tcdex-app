@@ -549,7 +549,7 @@ export default function ERGDashboard() {
           {
             title: "Cross-BU Participation Matrix",
             headers: ["ERG", ...heatmapData.columns.slice(0, 8)],
-            rows: heatmapData.rows.map(r => [
+            rows: heatmapData.rows.map((r: any) => [
               r.erg,
               ...heatmapData.columns.slice(0, 8).map(col => r[col] || 0)
             ])
@@ -1393,45 +1393,45 @@ export default function ERGDashboard() {
                   </div>
 
                   {/* Data Rows */}
-                  {heatmapData.rows.map((row) => (
-                    <div key={row.erg} className="flex" style={{ gap: '4px' }}>
-                      <div 
-                        style={{ width: '200px', height: '65px', flexShrink: 0 }} 
-                        className="flex items-center justify-end px-8 font-semibold text-zinc-600 dark:text-zinc-400 border-r-2 border-zinc-100 text-[12px] leading-snug text-right"
-                      >
-                        {row.erg}
-                      </div>
-                      {heatmapData.columns.map(bu => {
-                        const val = (row as any)[bu] || 0
-                        const maxPossible = Math.max(...heatmapData.rows.flatMap(r => heatmapData.columns.map(b => (r as any)[b] || 0)))
-                        const intensity = maxPossible > 0 ? (val / maxPossible) : 0
-                        return (
+                      {heatmapData.rows.map((row: any) => (
+                        <div key={row.erg} className="flex" style={{ gap: '4px' }}>
                           <div 
-                            key={bu} 
-                            className="relative group/cell font-bold transition-all duration-200"
-                            style={{ 
-                              width: '65px', 
-                              height: '65px', 
-                              flexShrink: 0,
-                              backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
-                              border: val > 0 ? 'none' : '1px solid #e4e4e7',
-                              color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc'),
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: '14px'
-                            }}
+                            style={{ width: '200px', height: '65px', flexShrink: 0 }} 
+                            className="flex items-center justify-end px-8 font-semibold text-zinc-600 dark:text-zinc-400 border-r-2 border-zinc-100 text-[12px] leading-snug text-right"
                           >
-                            <span className="w-full text-center">{val}</span>
-                            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 px-3 py-2 bg-zinc-900 text-white rounded text-[10px] opacity-0 group-hover/cell:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all shadow-xl flex flex-col items-center">
-                              <span className="font-bold border-b border-white/20 mb-1 pb-1 w-full text-center">{row.erg}</span>
-                              <span>BU: {bu}</span>
-                              <span className="text-blue-400 font-black mt-1">Total: {val}</span>
-                              <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
-                            </div>
+                            {row.erg}
                           </div>
-                        )
-                      })}
-                    </div>
-                  ))}
+                          {heatmapData.columns.map(bu => {
+                            const val = (row as any)[bu] || 0
+                            const maxPossible = Math.max(...heatmapData.rows.flatMap((r: any) => heatmapData.columns.map(b => (r as any)[b] || 0)))
+                            const intensity = maxPossible > 0 ? (val / maxPossible) : 0
+                            return (
+                              <div 
+                                key={bu} 
+                                className="relative group/cell font-bold transition-all duration-200"
+                                style={{ 
+                                  width: '65px', 
+                                  height: '65px', 
+                                  flexShrink: 0,
+                                  backgroundColor: val > 0 ? `rgba(0, 70, 171, ${0.05 + (intensity * 0.8)})` : 'transparent', 
+                                  border: val > 0 ? 'none' : '1px solid #e4e4e7',
+                                  color: intensity > 0.5 ? 'white' : (val > 0 ? '#0046ab' : '#ccc'),
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  fontSize: '14px'
+                                }}
+                              >
+                                <span className="w-full text-center">{val}</span>
+                                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 px-3 py-2 bg-zinc-900 text-white rounded text-[10px] opacity-0 group-hover/cell:opacity-100 z-50 whitespace-nowrap pointer-events-none transition-all shadow-xl flex flex-col items-center">
+                                  <span className="font-bold border-b border-white/20 mb-1 pb-1 w-full text-center">{row.erg}</span>
+                                  <span>BU: {bu}</span>
+                                  <span className="text-blue-400 font-black mt-1">Total: {val}</span>
+                                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ))}
                 </div>
               )}
             </div>
