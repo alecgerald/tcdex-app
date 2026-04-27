@@ -6,6 +6,9 @@ import {
   CartesianGrid, ResponsiveContainer, LineChart, Line, Cell,
 } from "recharts"
 
+import { createClient } from "@/utils/supabase/client"
+
+const supabase = createClient()
 // ─── Types ───────────────────────────────────────────────
 interface MeiRawRow {
   "survey date"?: string; "function"?: string; "role level"?: string
@@ -379,11 +382,72 @@ export default function PerfReportsPage() {
   const [epiiPeriod,      setEpiiPeriod]      = useState("") // e.g. "2024 H1"
 
   useEffect(() => {
-    const s = localStorage.getItem("perfMetricsData")
-    if (s) setPerfSummary(JSON.parse(s))
-    setMeiRows(JSON.parse(localStorage.getItem("meiRawRows") || "[]"))
-    setEpiiRows(JSON.parse(localStorage.getItem("epiiRawRows") || "[]"))
-  }, [])
+  const loadFromSupabase = async () => {
+    // Load MEI rows
+    const { data: meiData } = await supabase
+      .from("manager_effectiveness_responses")
+      .select("survey_date, function, role_level, location, manager_tenure, q1_clarity, q2_support, q3_fairness, q4_feedback, q5_psychological_safety, q6_inclusion, q7_improvement_comment")
+
+    if (meiData) {
+      // Remap snake_case columns back to the flat key shape your charts expect
+      const mapped = meiData.map(r => ({
+        "survey date": r.survey_date ?? "",
+        "function": r.function ?? "",
+        "role level": r.role_level ?? "",
+        "location": r.location ?? "",
+        "manager tenure": r.manager_tenure ?? "",
+        "q1 clarity": r.q1_clarity ?? "",
+        "q2 support": r.q2_support ?? "",
+        "q3 fairness": r.q3_fairness ?? "",
+        "q4 feedback": r.q4_feedback ?? "",
+        "q5 psychological safety": r.q5_psychological_safety ?? "",
+        "q6 inclusion": r.q6_inclusion ?? "",
+        "q7 improvement comment": r.q7_improvement_comment ?? "",
+      }))
+      setMeiRows(mapped)
+
+      // Recompute summary pill
+      let total = 0, count = 0
+      meiData.forEach(r => {
+        [r.q1_clarity, r.q2_support, r.q3_fairness, r.q4_feedback, r.q5_psychological_safety, r.q6_inclusion].forEach(v => {
+          const s = toLikert(v); if (s !== null) { total += s; count++ }
+        })
+      })
+      const fav = count ? Number(((total / count - 1) / 4 * 100).toFixed(1)) : null
+      setPerfSummary((prev: any) => ({
+        ...prev,
+        mei: { value: fav, responses: meiData.length, loaded: !!meiData.length }
+      }))
+    }
+
+    // Load EPII rows
+    const { data: epiiData } = await supabase
+      .from("employee_performance_improvement")
+      .select("review_cycle, delivery_unit, job_family, total_employees, employees_improved, training_intervention")
+
+    if (epiiData) {
+      const mapped = epiiData.map(r => ({
+        "review cycle": r.review_cycle ?? "",
+        "delivery unit": r.delivery_unit ?? "",
+        "job family": r.job_family ?? "",
+        "total number of employees reviewed": r.total_employees ?? 0,
+        "number of employees showing performance improvement": r.employees_improved ?? 0,
+        "linked training intervention": r.training_intervention ?? "",
+      }))
+      setEpiiRows(mapped)
+
+      const rev = epiiData.reduce((s, r) => s + (r.total_employees || 0), 0)
+      const imp = epiiData.reduce((s, r) => s + (r.employees_improved || 0), 0)
+      const rate = rev ? Number(((imp / rev) * 100).toFixed(1)) : null
+      setPerfSummary((prev: any) => ({
+        ...prev,
+        epii: { value: rate, reviewed: rev, improved: imp, loaded: !!epiiData.length }
+      }))
+    }
+  }
+
+  loadFromSupabase()
+}, [])
 
   const meiLoaded  = !!perfSummary?.mei?.loaded
   const epiiLoaded = !!perfSummary?.epii?.loaded
@@ -589,7 +653,7 @@ export default function PerfReportsPage() {
     return { reviewed: rev, improved: imp, rate: pct(imp, rev) }
   }, [epiiFiltered, epiiReviewedKey, epiiImprovedKey])
 
-  const epiiC = (v: number) => v >= 60 ? "#10b981" : v >= 40 ? "#f59e0b" : "#ef4444"
+  const epiiC = (v: number) => v >= 60 ? "#10b981" : v >= 40 ? "#10b981" : "#ef4444"
 
   const TABS = [
     { key: "mei",  label: "Manager Effectiveness Index",  accent: "#6366f1", loaded: meiLoaded },
@@ -796,7 +860,7 @@ export default function PerfReportsPage() {
                         <XAxis dataKey="unit" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                         <Tooltip content={<CT />} />
-                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                        <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
                         <Bar dataKey="reviewed" name="Employees Reviewed" fill="#94a3b8" fillOpacity={0.6} radius={[4, 4, 0, 0]} />
                         <Bar dataKey="improved" name="Showing Improvement" fill="#10b981" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
                       </BarChart>
