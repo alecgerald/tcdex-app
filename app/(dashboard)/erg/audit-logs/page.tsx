@@ -9,7 +9,8 @@ import {
   Trash2,
   AlertTriangle,
   Eye,
-  ArrowLeft
+  ArrowLeft,
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -66,12 +67,19 @@ export default function ERGAuditLogsPage() {
 
   useEffect(() => {
     async function loadLogs() {
-      const data = await fetchERGDashboardData()
-      const enrichedLogs = data.auditLogs.map((log: any) => ({
-        ...log,
-        templateName: templateNames[log.templateType] || log.templateType
-      }))
-      setLogs(enrichedLogs)
+      setIsLoading(true)
+      try {
+        const data = await fetchERGDashboardData()
+        const enrichedLogs = data.auditLogs.map((log: any) => ({
+          ...log,
+          templateName: templateNames[log.templateType] || log.templateType
+        }))
+        setLogs(enrichedLogs)
+      } catch (error) {
+        console.error("Failed to load logs:", error)
+      } finally {
+        setIsLoading(false)
+      }
     }
     loadLogs()
   }, [])
@@ -109,6 +117,14 @@ export default function ERGAuditLogsPage() {
     log.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     log.templateName.toLowerCase().includes(searchTerm.toLowerCase())
   )
+
+  if (isLoading && logs.length === 0) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

@@ -9,7 +9,8 @@ import {
   MoreHorizontal,
   UserPlus,
   MapPin,
-  Building2
+  Building2,
+  Loader2
 } from "lucide-react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { 
@@ -120,6 +121,14 @@ export default function ERGDirectoryPage() {
     }
 
     return String(dateValue)
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" />
+      </div>
+    )
   }
 
   return (

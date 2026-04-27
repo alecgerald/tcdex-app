@@ -580,11 +580,19 @@ export default function ERGDashboard() {
       console.error(err);
       toast.error("Failed to generate PDF.", { id: toastId });
     } finally {
-      setIsExporting(false);
+      setIsLoading(false);
     }
-  };
+    };
 
-  if (membershipData.length === 0) {
+    if (isLoading) {
+    return (
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[#0046ab]" />
+      </div>
+    )
+    }
+
+    if (membershipData.length === 0) {
     return (
       <div className="space-y-6">
         <h1 className="text-3xl font-bold">ERG Dashboard</h1>
