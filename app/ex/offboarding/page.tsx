@@ -577,26 +577,36 @@ export default function OffboardingDashboard() {
 
             {/* OES Detail */}
             {metrics.oes.loaded && (
-              <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
-                <button onClick={clearOes} title="Clear OES data" style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }}>×</button>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#0ea5e9", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Offboarding Experience Score</div>
-                <BenchmarkRow label="Overall OES" value={metrics.oes.value ?? 0} target={100} accent="#0ea5e9" unit="%" />
+  <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
+    
+    <button 
+      onClick={clearOes} 
+      title="Clear OES data" 
+      style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }}
+    >
+      ×
+    </button>
 
-                {/* Per-dimension breakdown */}
-                {Object.entries(metrics.oes.itemScores).length > 0 && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f1f5f9" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", marginBottom: 8, textTransform: "uppercase", letterSpacing: ".04em" }}>Favorability by Dimension</div>
-                    {Object.entries(metrics.oes.itemScores).map(([label, score]) => (
-                      <BenchmarkRow key={label} label={label} value={score} target={100} accent="#0ea5e9" unit="%" />
-                    ))}
-                  </div>
-                )}
+    <div style={{ fontSize: 11, fontWeight: 700, color: "#0ea5e9", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+      Offboarding Experience Score
+    </div>
 
-                <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>
-                  {metrics.oes.responses} survey responses
-                </div>
-              </div>
-            )}
+    {/* ✅ Keep this */}
+    <BenchmarkRow 
+      label="Overall OES" 
+      value={metrics.oes.value ?? 0} 
+      target={100} 
+      accent="#0ea5e9" 
+      unit="%" 
+    />
+
+    {/* ✅ Keep this */}
+    <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 8 }}>
+      {metrics.oes.responses} survey responses
+    </div>
+
+  </div>
+)}
 
           </div>
         </>

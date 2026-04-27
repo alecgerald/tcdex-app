@@ -653,7 +653,7 @@ export default function PerfReportsPage() {
     return { reviewed: rev, improved: imp, rate: pct(imp, rev) }
   }, [epiiFiltered, epiiReviewedKey, epiiImprovedKey])
 
-  const epiiC = (v: number) => v >= 60 ? "#10b981" : v >= 40 ? "#f59e0b" : "#ef4444"
+  const epiiC = (v: number) => v >= 60 ? "#10b981" : v >= 40 ? "#10b981" : "#ef4444"
 
   const TABS = [
     { key: "mei",  label: "Manager Effectiveness Index",  accent: "#6366f1", loaded: meiLoaded },
@@ -860,7 +860,7 @@ export default function PerfReportsPage() {
                         <XAxis dataKey="unit" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                         <Tooltip content={<CT />} />
-                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                        <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
                         <Bar dataKey="reviewed" name="Employees Reviewed" fill="#94a3b8" fillOpacity={0.6} radius={[4, 4, 0, 0]} />
                         <Bar dataKey="improved" name="Showing Improvement" fill="#10b981" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
                       </BarChart>

@@ -365,9 +365,9 @@ export default function WellbeingReportsPage() {
         if (error) throw new Error(error.message)
 
         setUwpRows((data ?? []).map(r => ({
-          "reporting period":      r.reporting_period      ?? "",
-          "program type":          r.program_type          ?? "",
-          "program name":          r.program_name          ?? "",
+          "reporting period":      (r.reporting_period      ?? "").trim(),
+          "program type":          (r.program_type          ?? "").trim(),
+          "program name":          (r.program_name          ?? "").trim(),
           "total eligible":        r.total_eligible        ?? 0,
           "participants":          r.participants          ?? 0,
           "total usage instances": r.total_usage_instances ?? null,
@@ -492,7 +492,7 @@ export default function WellbeingReportsPage() {
     responses: ewiFiltered.length,
   }), [ewiFiltered])
 
-  const ewiColor = (v: number) => v >= 4 ? "#7C3AED" : v >= 3 ? "#f59e0b" : "#ef4444"
+  const ewiColor = (v: number) => v >= 4 ? "#7C3AED" : v >= 3 ? "#7C3AED" : "#ef4444"
 
   // ── UWP DERIVED ──────────────────────────────────────────
   const uwpAllPeriods = useMemo(() =>
@@ -508,7 +508,6 @@ export default function WellbeingReportsPage() {
 
   const uwpValueOptions = useMemo((): string[] => {
     switch (uwpFilterType) {
-      case "Reporting Period": return uniq(uwpRows.map(r => r["reporting period"]))
       case "Program Type":     return uniq(uwpRows.map(r => r["program type"]))
       case "Program Name":     return uniq(uwpRows.map(r => r["program name"]))
       default: return []
@@ -526,6 +525,7 @@ export default function WellbeingReportsPage() {
   }, [uwpRows, uwpYear, uwpPeriod])
 
   const uwpFiltered = useMemo(() => {
+    console.log("uwpFilterType:", uwpFilterType, "uwpFilterValue:", uwpFilterValue, "rows:", uwpPeriodFiltered.length, "sample:", JSON.stringify(uwpPeriodFiltered[0]))
     if (!uwpFilterType || !uwpFilterValue) return uwpPeriodFiltered
     return uwpPeriodFiltered.filter(r => {
       switch (uwpFilterType) {
@@ -593,7 +593,7 @@ export default function WellbeingReportsPage() {
     }
   }, [uwpFiltered])
 
-  const uwpColor = (v: number) => v >= 30 ? "#059669" : v >= 15 ? "#f59e0b" : "#ef4444"
+  const uwpColor = (v: number) => v >= 30 ? "#059669" : v >= 15 ? "#059669" : "#059669"
 
   // ── Global headline values (unfiltered) ──────────────────
   const globalEwiScore = useMemo(() => avgOf(ewiRows, [0,1,2,3,4,5,6]), [ewiRows])
@@ -841,8 +841,7 @@ export default function WellbeingReportsPage() {
                         <XAxis dataKey="name" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                         <Tooltip content={<CT />} />
-                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                        <Bar dataKey="eligible"     name="Total Eligible" fill="#94a3b8" fillOpacity={0.5}  radius={[4, 4, 0, 0]} />
+<Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />                        <Bar dataKey="eligible"     name="Total Eligible" fill="#94a3b8" fillOpacity={0.5}  radius={[4, 4, 0, 0]} />
                         <Bar dataKey="participants" name="Participants"   fill="#059669" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>

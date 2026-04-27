@@ -141,6 +141,8 @@ export default function EngRetDashboard() {
   const [metrics, setMetrics]         = useState(DEFAULT_METRICS)
   const [rehydrating, setRehydrating] = useState(true)
   const [currentUser, setCurrentUser] = useState<string>("system")
+  // ─── Error state (matches onboarding / perf dashboards) ──
+  const [error, setError]             = useState<string | null>(null)
 
   // ─── Step 1: Resolve real auth user on mount ─────────────
   useEffect(() => {
@@ -253,15 +255,17 @@ export default function EngRetDashboard() {
 
   const rehydrateNer = async () => {
     const { data } = await supabase
-      .from("employee_referrals")
-      .select("referral_count, employees_referred, total_employees")
+  .from("employee_referrals")
+  .select("referral_count, employees_referred, total_employees, referral_rate")
 
     if (!data || !data.length) return
 
     const totalReferrals    = data.reduce((s, r) => s + (r.referral_count      || 0), 0)
     const totalParticipants = data.reduce((s, r) => s + (r.employees_referred  || 0), 0)
     const totalActive       = data.reduce((s, r) => s + (r.total_employees     || 0), 0)
-    const referralRate      = totalActive ? Number(((totalParticipants / totalActive) * 100).toFixed(2)) : null
+const referralRate = data.some(r => r.referral_rate != null)
+  ? Number((data.reduce((s, r) => s + (Number(r.referral_rate) || 0), 0) / data.length).toFixed(2))
+  : null
 
     setMetrics(prev => ({ ...prev, ner: { referralCount: totalReferrals, referralRate, participants: totalParticipants, activeEmployees: totalActive, loaded: true } }))
     setUploadOrder(prev => prev.includes("ner") ? prev : [...prev, "ner"])
@@ -269,216 +273,288 @@ export default function EngRetDashboard() {
 
   // ─── EI / eNPS Handler ───────────────────────────────────
   const handleEi = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys            = Object.keys(rows[0])
-    const engQKeys        = ["q1 purpose", "q2 enablement", "q3 commitment", "q4 growth", "q5 belonging"]
-    const resolvedEngKeys = engQKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
-    const eNpsKey         = keys.find(k => k.includes("enps") || (k.includes("q6") && k.includes("0-10"))) ?? "q6 enps (0-10)"
+      const keys = Object.keys(rows[0])
 
-    const { data: eiBatch, error: eiBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "engagement_survey", uploaded_by: currentUser,
-        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
+      // ── Column validation ─────────────────────────────────
+      const hasQ1 = keys.some(k => k.startsWith("q1"))
+      const hasQ2 = keys.some(k => k.startsWith("q2"))
+      const hasQ3 = keys.some(k => k.startsWith("q3"))
+      const hasQ4 = keys.some(k => k.startsWith("q4"))
+      const hasQ5 = keys.some(k => k.startsWith("q5"))
 
-    if (eiBatchError || !eiBatch) { console.error("EI batch error:", eiBatchError); return }
+      if (!hasQ1 || !hasQ2 || !hasQ3 || !hasQ4 || !hasQ5) {
+        const missing = [
+          !hasQ1 && "Q1 Purpose",
+          !hasQ2 && "Q2 Enablement",
+          !hasQ3 && "Q3 Commitment",
+          !hasQ4 && "Q4 Growth",
+          !hasQ5 && "Q5 Belonging",
+        ].filter(Boolean).join(", ")
+        throw new Error(`File does not appear to be an Engagement Survey export. Missing columns: ${missing}.`)
+      }
 
-    const { error: eiInsertError } = await supabase
-      .from("engagement_survey_responses")
-      .insert(rows.map(r => ({
-        batch_id:               eiBatch.batch_id,
-        survey_period:          r["survey period"]          || null,
-        function:               r["function"]               || null,
-        role_level:             r["role level"]             || null,
-        location:               r["location"]               || null,
-        tenure_band:            r["tenure band"]            || null,
-        q1_purpose:             r[resolvedEngKeys[0]]       || null,
-        q2_enablement:          r[resolvedEngKeys[1]]       || null,
-        q3_commitment:          r[resolvedEngKeys[2]]       || null,
-        q4_growth:              r[resolvedEngKeys[3]]       || null,
-        q5_belonging:           r[resolvedEngKeys[4]]       || null,
-        q6_enps:                r[eNpsKey] != null ? Number(r[eNpsKey]) : null,
-        q7_improvement_comment: r["q7 improvement comment"] || null,
-      })))
+      const engQKeys        = ["q1 purpose", "q2 enablement", "q3 commitment", "q4 growth", "q5 belonging"]
+      const resolvedEngKeys = engQKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
+      const eNpsKey         = keys.find(k => k.includes("enps") || (k.includes("q6") && k.includes("0-10"))) ?? "q6 enps (0-10)"
 
-    if (eiInsertError) { console.error("EI insert error:", eiInsertError); return }
+      const { data: eiBatch, error: eiBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "engagement_survey", uploaded_by: currentUser,
+          status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
 
-    await rehydrateEi()
-    setUploadOrder(prev => [...prev.filter(k => k !== "ei"), "ei"])
+      if (eiBatchError || !eiBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const { error: eiInsertError } = await supabase
+        .from("engagement_survey_responses")
+        .insert(rows.map(r => ({
+          batch_id:               eiBatch.batch_id,
+          survey_period:          r["survey period"]          || null,
+          function:               r["function"]               || null,
+          role_level:             r["role level"]             || null,
+          location:               r["location"]               || null,
+          tenure_band:            r["tenure band"]            || null,
+          q1_purpose:             r[resolvedEngKeys[0]]       || null,
+          q2_enablement:          r[resolvedEngKeys[1]]       || null,
+          q3_commitment:          r[resolvedEngKeys[2]]       || null,
+          q4_growth:              r[resolvedEngKeys[3]]       || null,
+          q5_belonging:           r[resolvedEngKeys[4]]       || null,
+          q6_enps:                r[eNpsKey] != null ? Number(r[eNpsKey]) : null,
+          q7_improvement_comment: r["q7 improvement comment"] || null,
+        })))
+
+      if (eiInsertError) throw new Error("Failed to save Engagement Survey responses. Please try again.")
+
+      await rehydrateEi()
+      setUploadOrder(prev => [...prev.filter(k => k !== "ei"), "ei"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
   }
 
   // ─── VTR Handler ─────────────────────────────────────────
   const handleVtr = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys           = Object.keys(rows[0])
-    const headcountKey   = keys.find(k => k.includes("average headcount"))      ?? ""
-    const separationsKey = keys.find(k => k.includes("voluntary separations"))  ?? ""
+      const keys           = Object.keys(rows[0])
+      const headcountKey   = keys.find(k => k.includes("average headcount"))     ?? ""
+      const separationsKey = keys.find(k => k.includes("voluntary separations")) ?? ""
 
-    if (!headcountKey || !separationsKey) {
-      alert("Missing columns: Average Headcount During the Same Period / Number of Voluntary Separations During the Period")
-      return
+      // ── Column validation ─────────────────────────────────
+      if (!headcountKey && !separationsKey) {
+        throw new Error(
+          "File does not appear to be a Voluntary Turnover export. Missing columns: " +
+          "Average Headcount During the Same Period, Number of Voluntary Separations During the Period."
+        )
+      }
+      if (!headcountKey)   throw new Error("Missing column: Average Headcount During the Same Period.")
+      if (!separationsKey) throw new Error("Missing column: Number of Voluntary Separations During the Period.")
+
+      const { data: vtrBatch, error: vtrBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "voluntary_turnover", uploaded_by: currentUser,
+          status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (vtrBatchError || !vtrBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const { error: vtrInsertError } = await supabase
+        .from("voluntary_turnover")
+        .insert(rows.map(r => ({
+          batch_id:              vtrBatch.batch_id,
+          reporting_period:      String(r["reporting period"] || "Unknown"),
+          delivery_unit:         r["delivery unit"]           || null,
+          job_family:            r["job family"]              || null,
+          tenure_band:           r["tenure band"]             || null,
+          avg_headcount:         Number(r[headcountKey])      || 0,
+          voluntary_separations: Number(r[separationsKey])    || 0,
+        })))
+
+      if (vtrInsertError) throw new Error("Failed to save Voluntary Turnover records. Please try again.")
+
+      await rehydrateVtr()
+      setUploadOrder(prev => [...prev.filter(k => k !== "vtr"), "vtr"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: vtrBatch, error: vtrBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "voluntary_turnover", uploaded_by: currentUser,
-        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (vtrBatchError || !vtrBatch) { console.error("VTR batch error:", vtrBatchError); return }
-
-    const { error: vtrInsertError } = await supabase
-      .from("voluntary_turnover")
-      .insert(rows.map(r => ({
-        batch_id:              vtrBatch.batch_id,
-        reporting_period:      String(r["reporting period"] || "Unknown"),
-        delivery_unit:         r["delivery unit"]           || null,
-        job_family:            r["job family"]              || null,
-        tenure_band:           r["tenure band"]             || null,
-        avg_headcount:         Number(r[headcountKey])      || 0,
-        voluntary_separations: Number(r[separationsKey])    || 0,
-      })))
-
-    if (vtrInsertError) { console.error("VTR insert error:", vtrInsertError); return }
-
-    await rehydrateVtr()
-    setUploadOrder(prev => [...prev.filter(k => k !== "vtr"), "vtr"])
   }
 
   // ─── ERR Handler ─────────────────────────────────────────
   const handleErr = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys        = Object.keys(rows[0])
-    const startKey    = keys.find(k => k.includes("employees at start")) ?? ""
-    const endKey      = keys.find(k => k.includes("employees at end"))   ?? ""
-    const newHiresKey = keys.find(k => k.includes("new hires during"))   ?? ""
+      const keys        = Object.keys(rows[0])
+      const startKey    = keys.find(k => k.includes("employees at start")) ?? ""
+      const endKey      = keys.find(k => k.includes("employees at end"))   ?? ""
+      const newHiresKey = keys.find(k => k.includes("new hires during"))   ?? ""
 
-    if (!startKey || !endKey || !newHiresKey) {
-      alert("Missing columns: Employees at Start of Period / Employees at End of Period / New Hires During Period")
-      return
+      // ── Column validation ─────────────────────────────────
+      const missingCols = [
+        !startKey    && "Employees at Start of Period",
+        !endKey      && "Employees at End of Period",
+        !newHiresKey && "New Hires During Period",
+      ].filter(Boolean)
+
+      if (missingCols.length === 3) {
+        throw new Error("File does not appear to be an Employee Retention export. Missing columns: " + missingCols.join(", ") + ".")
+      }
+      if (missingCols.length > 0) {
+        throw new Error("Missing column" + (missingCols.length > 1 ? "s" : "") + ": " + missingCols.join(", ") + ".")
+      }
+
+      const { data: errBatch, error: errBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "employee_retention", uploaded_by: currentUser,
+          status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (errBatchError || !errBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const { error: errInsertError } = await supabase
+        .from("employee_retention")
+        .insert(rows.map(r => ({
+          batch_id:         errBatch.batch_id,
+          reporting_period: String(r["reporting period"] || "Unknown"),
+          delivery_unit:    r["delivery unit"]            || null,
+          employees_start:  Number(r[startKey])           || 0,
+          employees_end:    Number(r[endKey])              || 0,
+          new_hires:        Number(r[newHiresKey])         || 0,
+        })))
+
+      if (errInsertError) throw new Error("Failed to save Employee Retention records. Please try again.")
+
+      await rehydrateErr()
+      setUploadOrder(prev => [...prev.filter(k => k !== "err"), "err"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: errBatch, error: errBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "employee_retention", uploaded_by: currentUser,
-        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (errBatchError || !errBatch) { console.error("ERR batch error:", errBatchError); return }
-
-    const { error: errInsertError } = await supabase
-      .from("employee_retention")
-      .insert(rows.map(r => ({
-        batch_id:         errBatch.batch_id,
-        reporting_period: String(r["reporting period"] || "Unknown"),
-        delivery_unit:    r["delivery unit"]            || null,
-        employees_start:  Number(r[startKey])           || 0,
-        employees_end:    Number(r[endKey])              || 0,
-        new_hires:        Number(r[newHiresKey])         || 0,
-      })))
-
-    if (errInsertError) { console.error("ERR insert error:", errInsertError); return }
-
-    await rehydrateErr()
-    setUploadOrder(prev => [...prev.filter(k => k !== "err"), "err"])
   }
 
   // ─── ITS Handler ─────────────────────────────────────────
   const handleIts = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys   = Object.keys(rows[0])
-    const itsKey = keys.find(k => k.includes("intent to stay") || (k.startsWith("q1") && k.includes("intent"))) ?? "q1 intent to stay"
+      const keys   = Object.keys(rows[0])
+      const itsKey = keys.find(k => k.includes("intent to stay") || (k.startsWith("q1") && k.includes("intent"))) ?? ""
 
-    if (!keys.some(k => k.includes("intent to stay") || (k.startsWith("q1") && k.includes("intent")))) {
-      alert("Missing column: Q1 Intent to Stay"); return
+      // ── Column validation ─────────────────────────────────
+      if (!itsKey) {
+        throw new Error("File does not appear to be an Intent to Stay export. Missing column: Q1 Intent to Stay.")
+      }
+
+      const { data: itsBatch, error: itsBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "intent_to_stay", uploaded_by: currentUser,
+          status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (itsBatchError || !itsBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const { error: itsInsertError } = await supabase
+        .from("intent_to_stay_responses")
+        .insert(rows.map(r => ({
+          batch_id:           itsBatch.batch_id,
+          survey_period:      r["survey period"]  || null,
+          function:           r["function"]        || null,
+          role_level:         r["role level"]      || null,
+          location:           r["location"]        || null,
+          tenure_band:        r["tenure band"]     || null,
+          q1_intent_to_stay:  r[itsKey]            || null,
+          q2_prefer_continue: r["q2 prefer to continue career here"] || null,
+          response_date: r["response date"]
+            ? (() => { try { const d = new Date(String(r["response date"])); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+            : null,
+        })))
+
+      if (itsInsertError) throw new Error("Failed to save Intent to Stay responses. Please try again.")
+
+      await rehydrateIts()
+      setUploadOrder(prev => [...prev.filter(k => k !== "its"), "its"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: itsBatch, error: itsBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "intent_to_stay", uploaded_by: currentUser,
-        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (itsBatchError || !itsBatch) { console.error("ITS batch error:", itsBatchError); return }
-
-    const { error: itsInsertError } = await supabase
-      .from("intent_to_stay_responses")
-      .insert(rows.map(r => ({
-        batch_id:           itsBatch.batch_id,
-        survey_period:      r["survey period"]  || null,
-        function:           r["function"]        || null,
-        role_level:         r["role level"]      || null,
-        location:           r["location"]        || null,
-        tenure_band:        r["tenure band"]     || null,
-        q1_intent_to_stay:  r[itsKey]            || null,
-        q2_prefer_continue: r["q2 prefer to continue career here"] || null,
-        response_date: r["response date"]
-          ? (() => { try { const d = new Date(String(r["response date"])); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
-          : null,
-      })))
-
-    if (itsInsertError) { console.error("ITS insert error:", itsInsertError); return }
-
-    await rehydrateIts()
-    setUploadOrder(prev => [...prev.filter(k => k !== "its"), "its"])
   }
 
   // ─── NER Handler ─────────────────────────────────────────
   const handleNer = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys            = Object.keys(rows[0])
-    const referralsKey    = keys.find(k => k.includes("number of employee referrals"))             ?? ""
-    const participantsKey = keys.find(k => k.includes("employees who made at least one referral")) ?? ""
-    const activeKey       = keys.find(k => k.includes("total active employees"))                   ?? ""
+      const keys            = Object.keys(rows[0])
+      const referralsKey    = keys.find(k => k.includes("number of employee referrals"))             ?? ""
+      const participantsKey = keys.find(k =>
+  k.includes("at least one") ||
+  k.includes("employees who made") ||
+  k.includes("employees referred")
+) ?? ""
+console.log("participantsKey resolved:", participantsKey)
+console.log("sample row value:", rows[0][participantsKey])
+      const activeKey       = keys.find(k => k.includes("total active employees"))                   ?? ""
+console.log("NER keys:", Object.keys(rows[0]))
+      
+      // ── Column validation ─────────────────────────────────
+      if (!referralsKey) {
+        throw new Error("File does not appear to be an Employee Referrals export. Missing column: Number of Employee Referrals.")
+      }
 
-    if (!referralsKey) {
-      alert("Missing column: Number of Employee Referrals"); return
+      const { data: nerBatch, error: nerBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "employee_referrals", uploaded_by: currentUser,
+          status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (nerBatchError || !nerBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const { error: nerInsertError } = await supabase
+        .from("employee_referrals")
+        .insert(rows.map(r => ({
+          batch_id:           nerBatch.batch_id,
+          reporting_period:   String(r["reporting period"] || "Unknown"),
+          delivery_unit:      r["delivery unit"]            || null,
+          location:           r["location"]                 || null,
+          referral_count:     Number(r[referralsKey])       || 0,
+          employees_referred: r[participantsKey] != null ? Number(r[participantsKey]) || 0 : 0,
+          total_employees:    r[activeKey]       != null ? Number(r[activeKey])       || 0 : 0,
+        })))
+
+      if (nerInsertError) throw new Error("Failed to save Employee Referral records. Please try again.")
+
+      await rehydrateNer()
+      setUploadOrder(prev => [...prev.filter(k => k !== "ner"), "ner"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: nerBatch, error: nerBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "employee_referrals", uploaded_by: currentUser,
-        status: "processed", records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (nerBatchError || !nerBatch) { console.error("NER batch error:", nerBatchError); return }
-
-    const { error: nerInsertError } = await supabase
-      .from("employee_referrals")
-      .insert(rows.map(r => ({
-        batch_id:           nerBatch.batch_id,
-        reporting_period:   String(r["reporting period"] || "Unknown"),
-        delivery_unit:      r["delivery unit"]            || null,
-        location:           r["location"]                 || null,
-        referral_count:     Number(r[referralsKey])       || 0,
-        employees_referred: participantsKey ? Number(r[participantsKey]) || 0 : 0,
-        total_employees:    activeKey       ? Number(r[activeKey])       || 0 : 0,
-      })))
-
-    if (nerInsertError) { console.error("NER insert error:", nerInsertError); return }
-
-    await rehydrateNer()
-    setUploadOrder(prev => [...prev.filter(k => k !== "ner"), "ner"])
   }
 
   // ─── Clear metric — delete from Supabase + reset state ───
@@ -514,7 +590,6 @@ export default function EngRetDashboard() {
       }
     }
 
-    // Reset in-memory state only — no localStorage
     const defaults: typeof DEFAULT_METRICS = {
       ...DEFAULT_METRICS,
       [key]: DEFAULT_METRICS[key as keyof typeof DEFAULT_METRICS],
@@ -581,6 +656,35 @@ export default function EngRetDashboard() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
 
+      {/* ── Error banner (matches onboarding / perf dashboards) ── */}
+      {error && (
+        <div style={{
+          background: "#fef2f2",
+          border: "1px solid #fca5a5",
+          borderRadius: 10,
+          padding: "12px 16px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1 }}>
+            <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>⚠</span>
+            <span style={{ fontSize: 12, color: "#b91c1c", lineHeight: 1.5 }}>{error}</span>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "#b91c1c", fontSize: 16, lineHeight: 1, flexShrink: 0,
+              padding: "0 2px",
+            }}
+            title="Dismiss"
+          >×</button>
+        </div>
+      )}
+
       {/* Syncing indicator */}
       {rehydrating && (
         <div style={{ fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 6, marginBottom: 16 }}>
@@ -618,27 +722,31 @@ export default function EngRetDashboard() {
 
             {metrics.ei.loaded && (
               <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Engagement Index / eNPS</div>
-                <BenchmarkRow label="Engagement Index (Favorability)" value={metrics.ei.engagementIndex ?? 0} target={100} accent="#6366f1" unit="%" />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#475569", marginBottom: 12 }}>
-                  <span>eNPS Score</span>
-                  <span style={{ fontWeight: 700, color: (metrics.ei.eNPS ?? 0) >= 0 ? "#6366f1" : "#ef4444" }}>{metrics.ei.eNPS ?? "—"}</span>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
-                  {[
-                    { label: "Promoters (9–10)",  val: metrics.ei.promoters,  color: "#10b981" },
-                    { label: "Passives (7–8)",    val: metrics.ei.passives,   color: "#f59e0b" },
-                    { label: "Detractors (0–6)",  val: metrics.ei.detractors, color: "#ef4444" },
-                  ].map(d => (
-                    <div key={d.label} style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 10px", border: "1px solid #e2e8f0" }}>
-                      <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 2 }}>{d.label}</div>
-                      <div style={{ fontSize: 16, fontWeight: 800, color: d.color }}>{d.val}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 11, color: "#94a3b8" }}>{metrics.ei.responses} survey responses</div>
-                <button onClick={() => clearMetric("ei")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
-              </div>
+  <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+    Engagement Index
+  </div>
+
+  <BenchmarkRow 
+    label="Engagement Index (Favorability)" 
+    value={metrics.ei.engagementIndex ?? 0} 
+    target={100} 
+    accent="#6366f1" 
+    unit="%" 
+  />
+
+  {/* ✅ Keep this */}
+  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 10 }}>
+    {metrics.ei.responses} survey responses
+  </div>
+
+  <button 
+    onClick={() => clearMetric("ei")} 
+    style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} 
+    title="Clear"
+  >
+    ×
+  </button>
+</div>
             )}
 
             {metrics.vtr.loaded && (
@@ -684,28 +792,41 @@ export default function EngRetDashboard() {
             )}
 
             {metrics.ner.loaded && (
-              <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}> Employee Referrals</div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#475569", marginBottom: 12 }}>
-                  <span>Total Referrals</span>
-                  <span style={{ fontWeight: 700, color: "#f59e0b" }}>{metrics.ner.referralCount}</span>
-                </div>
-                {metrics.ner.referralRate != null && (
-                  <BenchmarkRow label="Referral Rate (Employees Participating)" value={metrics.ner.referralRate} target={20} accent="#f59e0b" unit="%" />
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
-                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 10px", border: "1px solid #e2e8f0" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 2 }}>Participating Employees</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#f59e0b" }}>{metrics.ner.participants ?? 0}</div>
-                  </div>
-                  <div style={{ background: "#f8fafc", borderRadius: 8, padding: "8px 10px", border: "1px solid #e2e8f0" }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#94a3b8", marginBottom: 2 }}>Active Employees</div>
-                    <div style={{ fontSize: 16, fontWeight: 800, color: "#f59e0b" }}>{(metrics.ner.activeEmployees ?? 0).toLocaleString()}</div>
-                  </div>
-                </div>
-                <button onClick={() => clearMetric("ner")} style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} title="Clear">×</button>
-              </div>
-            )}
+  <div style={{ background: "#fff", borderRadius: 14, boxShadow: "0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.06)", padding: "18px 22px", position: "relative" }}>
+    
+    <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>
+      Employee Referrals
+    </div>
+
+    {/* ✅ Keep this */}
+    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#475569", marginBottom: 12 }}>
+      <span>Total Referrals</span>
+      <span style={{ fontWeight: 700, color: "#f59e0b" }}>
+        {metrics.ner.referralCount}
+      </span>
+    </div>
+
+    {/* ✅ Keep this */}
+    {metrics.ner.referralRate != null && (
+      <BenchmarkRow 
+        label="Referral Rate (Employees Participating)" 
+        value={metrics.ner.referralRate} 
+        target={20} 
+        accent="#f59e0b" 
+        unit="%" 
+      />
+    )}
+
+    <button 
+      onClick={() => clearMetric("ner")} 
+      style={{ position: "absolute", top: 12, right: 12, background: "#ef4444", color: "#fff", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 10, cursor: "pointer" }} 
+      title="Clear"
+    >
+      ×
+    </button>
+
+  </div>
+)}
 
           </div>
         </>

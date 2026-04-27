@@ -205,6 +205,8 @@ export default function EXDashboard() {
   const [currentUser, setCurrentUser]   = useState<string>("system")
   const [ceRows, setCeRows]             = useState<any[]>([])
   const [metricsData, setMetricsData]   = useState(defaultMetrics)
+  // ─── Error state (matches all other dashboards) ───────────
+  const [error, setError]               = useState<string | null>(null)
 
   // ─── Step 4: Resolve real auth user on mount ──────────────
   useEffect(() => {
@@ -284,230 +286,287 @@ export default function EXDashboard() {
 
   // ─── CE Handler ──────────────────────────────────────────
   const handleCe = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) return
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const allowedOutcomes = ["hired", "not hired"]
-    const allowedLikert   = ["strongly agree", "agree", "neutral", "disagree", "strongly disagree"]
-    const validRows: RowObject[] = []
-    const warnings: string[] = []
+      // ── Column validation ─────────────────────────────────
+      const keys            = Object.keys(rows[0])
+      const hasOutcome      = keys.some(k => k === "outcome")
+      const hasQ1           = keys.some(k => k.includes("q1 overall"))
 
-    rows.forEach((r, i) => {
-      const rowNum  = i + 2
-      const outcome = (r["outcome"] as string | undefined)?.trim().toLowerCase() ?? ""
-      const q1      = Number(r["q1 overall (0-10)"] ?? NaN)
-      let rowValid  = true
+      if (!hasOutcome && !hasQ1) {
+        throw new Error("File does not appear to be a Candidate Experience export. Missing columns: Outcome, Q1 Overall (0-10).")
+      }
+      if (!hasOutcome) throw new Error("Missing column: Outcome.")
+      if (!hasQ1)      throw new Error("Missing column: Q1 Overall (0-10).")
 
-      if (!allowedOutcomes.includes(outcome)) { warnings.push(`Row ${rowNum}: invalid outcome`); rowValid = false }
-      if (isNaN(q1) || q1 < 0 || q1 > 10)    { warnings.push(`Row ${rowNum}: Q1 must be 0–10`); rowValid = false }
+      const allowedOutcomes = ["hired", "not hired"]
+      const allowedLikert   = ["strongly agree", "agree", "neutral", "disagree", "strongly disagree"]
+      const validRows: RowObject[] = []
+      const warnings: string[] = []
 
-      ;["q2 clarity", "q3 timeliness", "q4 respect", "q5 role understanding", "q6 inclusion"].forEach((f, idx) => {
-        const val = (r[f] as string | undefined)?.trim().toLowerCase() ?? ""
-        if (val && !allowedLikert.includes(val)) warnings.push(`Row ${rowNum}: Q${idx + 2} invalid Likert`)
+      rows.forEach((r, i) => {
+        const rowNum  = i + 2
+        const outcome = (r["outcome"] as string | undefined)?.trim().toLowerCase() ?? ""
+        const q1      = Number(r["q1 overall (0-10)"] ?? NaN)
+        let rowValid  = true
+
+        if (!allowedOutcomes.includes(outcome)) { warnings.push(`Row ${rowNum}: invalid outcome "${outcome}" — expected "Hired" or "Not Hired"`); rowValid = false }
+        if (isNaN(q1) || q1 < 0 || q1 > 10)    { warnings.push(`Row ${rowNum}: Q1 must be 0–10`); rowValid = false }
+
+        ;["q2 clarity", "q3 timeliness", "q4 respect", "q5 role understanding", "q6 inclusion"].forEach((f, idx) => {
+          const val = (r[f] as string | undefined)?.trim().toLowerCase() ?? ""
+          if (val && !allowedLikert.includes(val)) warnings.push(`Row ${rowNum}: Q${idx + 2} invalid Likert value`)
+        })
+
+        if (rowValid) validRows.push(r)
       })
 
-      if (rowValid) validRows.push(r)
-    })
+      if (!validRows.length) {
+        throw new Error(
+          "No valid rows found. First issue: " + (warnings[0] ?? "unknown error") +
+          (warnings.length > 1 ? ` (and ${warnings.length - 1} more).` : ".")
+        )
+      }
 
-    if (!validRows.length) { alert("No valid rows.\n\n" + warnings.slice(0, 5).join("\n")); return }
+      const { data: batch, error: batchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "candidate_experience",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: validRows.length, records_imported: validRows.length, records_rejected: warnings.length,
+        })
+        .select().single()
 
-    const { data: batch, error: batchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "candidate_experience",
-        uploaded_by: currentUser, status: "processed",
-        records_parsed: validRows.length, records_imported: validRows.length, records_rejected: warnings.length,
-      })
-      .select().single()
+      if (batchError || !batch) throw new Error("Failed to create upload batch. Please try again.")
 
-    if (batchError || !batch) { console.error("Batch insert error:", batchError); return }
+      const rowsToInsert = validRows.map((r) => ({
+        batch_id: batch.batch_id,
+        response_date: r["response date"]
+          ? (() => { try { const d = new Date(String(r["response date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+          : null,
+        outcome:               r["outcome"]?.toString().toLowerCase(),
+        q1_overall:            Number(r["q1 overall (0-10)"]) || null,
+        q2_clarity:            r["q2 clarity"]               || null,
+        q3_timeliness:         r["q3 timeliness"]            || null,
+        q4_respect:            r["q4 respect"]               || null,
+        q5_role_understanding: r["q5 role understanding"]    || null,
+        q6_inclusion:          r["q6 inclusion"]             || null,
+        q7_improvement:        r["q7 improvement opportunity"] || null,
+        job_family:            r["job family"]               || null,
+        hiring_bu:             r["hiring bu"]                || null,
+        location:              r["location"]                 || null,
+        stage:                 r["stage"]                    || null,
+        uploaded_by:           currentUser,
+      }))
 
-    const rowsToInsert = validRows.map((r) => ({
-      batch_id: batch.batch_id,
-      response_date: r["response date"]
-        ? (() => { try { const d = new Date(String(r["response date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
-        : null,
-      outcome:           r["outcome"]?.toString().toLowerCase(),
-      q1_overall:        Number(r["q1 overall (0-10)"]) || null,
-      q2_clarity:        r["q2 clarity"]             || null,
-      q3_timeliness:     r["q3 timeliness"]          || null,
-      q4_respect:        r["q4 respect"]             || null,
-      q5_role_understanding: r["q5 role understanding"] || null,
-      q6_inclusion:      r["q6 inclusion"]            || null,
-      q7_improvement:    r["q7 improvement opportunity"] || null,
-      job_family:        r["job family"]              || null,
-      hiring_bu:         r["hiring bu"]               || null,
-      location:          r["location"]                || null,
-      stage:             r["stage"]                   || null,
-      uploaded_by:       currentUser,
-    }))
+      const { error: insertError } = await supabase.from("candidate_experience_responses").insert(rowsToInsert)
+      if (insertError) throw new Error("Failed to save Candidate Experience responses. Please try again.")
 
-    const { error: insertError } = await supabase.from("candidate_experience_responses").insert(rowsToInsert)
-    if (insertError) { console.error("Insert error:", insertError); return }
+      await rehydrateCe()
+      setUploadOrder(prev => [...prev.filter(k => k !== "ce"), "ce"])
+      if (warnings.length) console.warn("CE warnings:", warnings)
 
-    // Rehydrate CE fully from Supabase (includes all previous batches)
-    await rehydrateCe()
-    setUploadOrder(prev => [...prev.filter(k => k !== "ce"), "ce"])
-    if (warnings.length) console.warn("CE warnings:", warnings)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
   }
 
   // ─── OAR Handler ─────────────────────────────────────────
   const handleOar = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const required = ["total number of offers extended", "number of offers accepted"]
-    const missing  = required.filter(c => !(c in rows[0]))
-    if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
+      // ── Column validation ─────────────────────────────────
+      const required = ["total number of offers extended", "number of offers accepted"]
+      const missing  = required.filter(c => !(c in rows[0]))
 
-    for (let i = 0; i < rows.length; i++) {
-      const ext = Number(rows[i]["total number of offers extended"])
-      const acc = Number(rows[i]["number of offers accepted"])
-      if (isNaN(ext) || isNaN(acc))                         { alert(`Row ${i + 2}: must be numeric`); return }
-      if (!Number.isInteger(ext) || !Number.isInteger(acc)) { alert(`Row ${i + 2}: must be whole numbers`); return }
-      if (ext < 0 || acc < 0)                               { alert(`Row ${i + 2}: cannot be negative`); return }
-      if (acc > ext)                                         { alert(`Row ${i + 2}: accepted > extended`); return }
+      if (missing.length === 2) {
+        throw new Error("File does not appear to be an Offer Acceptance Rate export. Missing columns: " + missing.join(", ") + ".")
+      }
+      if (missing.length > 0) {
+        throw new Error("Missing column" + (missing.length > 1 ? "s" : "") + ": " + missing.join(", ") + ".")
+      }
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const ext = Number(rows[i]["total number of offers extended"])
+        const acc = Number(rows[i]["number of offers accepted"])
+        if (isNaN(ext) || isNaN(acc))                         throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (!Number.isInteger(ext) || !Number.isInteger(acc)) throw new Error(`Row ${i + 2}: values must be whole numbers.`)
+        if (ext < 0 || acc < 0)                               throw new Error(`Row ${i + 2}: values cannot be negative.`)
+        if (acc > ext)                                         throw new Error(`Row ${i + 2}: offers accepted (${acc}) cannot exceed offers extended (${ext}).`)
+      }
+
+      const { data: oarBatch, error: oarBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "offer_acceptance_rate",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (oarBatchError || !oarBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const oarRows = rows.map(r => ({
+        batch_id:        oarBatch.batch_id,
+        reporting_period: String(r["reporting period"] || ""),
+        hiring_bu:       r["hiring bu"] || r["hiringbu"] || null,
+        location:        r["location"]  || null,
+        candidate_type:  r["candidate type"] || null,
+        job_family:      r["job family"] || null,
+        level:           r["level"]     || null,
+        offers_extended: Number(r["total number of offers extended"]) || 0,
+        offers_accepted: Number(r["number of offers accepted"])       || 0,
+      }))
+
+      const { error: oarInsertError } = await supabase.from("offer_acceptance_rate").insert(oarRows)
+      if (oarInsertError) throw new Error("Failed to save Offer Acceptance Rate records. Please try again.")
+
+      await rehydrateOar()
+      setUploadOrder(prev => [...prev.filter(k => k !== "oar"), "oar"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: oarBatch, error: oarBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "offer_acceptance_rate",
-        uploaded_by: currentUser, status: "processed",
-        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (oarBatchError || !oarBatch) { console.error("OAR batch error:", oarBatchError); return }
-
-    const oarRows = rows.map(r => ({
-      batch_id:        oarBatch.batch_id,
-      reporting_period: String(r["reporting period"] || ""),
-      hiring_bu:       r["hiring bu"] || r["hiringbu"] || null,
-      location:        r["location"]  || null,
-      candidate_type:  r["candidate type"] || null,
-      job_family:      r["job family"] || null,
-      level:           r["level"]     || null,
-      offers_extended: Number(r["total number of offers extended"]) || 0,
-      offers_accepted: Number(r["number of offers accepted"])       || 0,
-    }))
-
-    const { error: oarInsertError } = await supabase.from("offer_acceptance_rate").insert(oarRows)
-    if (oarInsertError) { console.error("OAR insert error:", oarInsertError); return }
-
-    // Rehydrate OAR fully from Supabase
-    await rehydrateOar()
-    setUploadOrder(prev => [...prev.filter(k => k !== "oar"), "oar"])
   }
 
   // ─── TTH Handler ─────────────────────────────────────────
   const handleTth = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const required = ["reporting period", "accepted hires count", "total calendar days to hire"]
-    const missing  = required.filter(c => !(c in rows[0]))
-    if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
+      // ── Column validation ─────────────────────────────────
+      const required = ["reporting period", "accepted hires count", "total calendar days to hire"]
+      const missing  = required.filter(c => !(c in rows[0]))
 
-    for (let i = 0; i < rows.length; i++) {
-      const h = Number(rows[i]["accepted hires count"])
-      const d = Number(rows[i]["total calendar days to hire"])
-      if (isNaN(h) || isNaN(d)) { alert(`Row ${i + 2}: must be numeric`); return }
-      if (h < 0 || d < 0)       { alert(`Row ${i + 2}: cannot be negative`); return }
+      if (missing.length === required.length) {
+        throw new Error("File does not appear to be a Time to Hire export. Missing columns: " + missing.join(", ") + ".")
+      }
+      if (missing.length > 0) {
+        throw new Error("Missing column" + (missing.length > 1 ? "s" : "") + ": " + missing.join(", ") + ".")
+      }
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const h = Number(rows[i]["accepted hires count"])
+        const d = Number(rows[i]["total calendar days to hire"])
+        if (isNaN(h) || isNaN(d)) throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (h < 0 || d < 0)       throw new Error(`Row ${i + 2}: values cannot be negative.`)
+      }
+
+      const { data: tthBatch, error: tthBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "time_to_hire",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (tthBatchError || !tthBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const tthRows = rows.map(r => ({
+        batch_id:             tthBatch.batch_id,
+        reporting_period:     String(r["reporting period"] || ""),
+        hiring_bu:            r["hiring bu"]    || null,
+        job_family:           r["job family"]   || null,
+        level:                r["level"]        || null,
+        hiring_source:        r["hiring source"] || null,
+        accepted_hires_count: Number(r["accepted hires count"])        || 0,
+        total_calendar_days:  Number(r["total calendar days to hire"]) || 0,
+      }))
+
+      const { error: tthInsertError } = await supabase.from("time_to_hire").insert(tthRows)
+      if (tthInsertError) throw new Error("Failed to save Time to Hire records. Please try again.")
+
+      await rehydrateTth()
+      setUploadOrder(prev => [...prev.filter(k => k !== "tth"), "tth"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: tthBatch, error: tthBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "time_to_hire",
-        uploaded_by: currentUser, status: "processed",
-        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (tthBatchError || !tthBatch) { console.error("TTH batch error:", tthBatchError); return }
-
-    const tthRows = rows.map(r => ({
-      batch_id:           tthBatch.batch_id,
-      reporting_period:   String(r["reporting period"] || ""),
-      hiring_bu:          r["hiring bu"]    || null,
-      job_family:         r["job family"]   || null,
-      level:              r["level"]        || null,
-      hiring_source:      r["hiring source"] || null,
-      accepted_hires_count: Number(r["accepted hires count"])         || 0,
-      total_calendar_days:  Number(r["total calendar days to hire"])  || 0,
-    }))
-
-    const { error: tthInsertError } = await supabase.from("time_to_hire").insert(tthRows)
-    if (tthInsertError) { console.error("TTH insert error:", tthInsertError); return }
-
-    // Rehydrate TTH fully from Supabase
-    await rehydrateTth()
-    setUploadOrder(prev => [...prev.filter(k => k !== "tth"), "tth"])
   }
 
   // ─── Turnover Handler ─────────────────────────────────────
   const handleTur = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const firstRowKeys = Object.keys(rows[0])
-    const hasCohort    = firstRowKeys.some(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires"))
-    const hasLeft      = firstRowKeys.some(k => k.startsWith("number of new hires who left within 12 months"))
-    const missing: string[] = []
-    if (!hasCohort) missing.push("new hires in cohort / (total number of new hires in the same period)")
-    if (!hasLeft)   missing.push("number of new hires who left within 12 months")
-    if (missing.length) { alert(`Missing columns: ${missing.join(", ")}`); return }
+      // ── Column validation ─────────────────────────────────
+      const firstRowKeys = Object.keys(rows[0])
+      const hasCohort    = firstRowKeys.some(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires"))
+      const hasLeft      = firstRowKeys.some(k => k.startsWith("number of new hires who left within 12 months"))
 
-    const cohortKey = firstRowKeys.find(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires")) ?? "new hires in cohort"
-    const leftKey   = firstRowKeys.find(k => k.startsWith("number of new hires who left within 12 months")) ?? "number of new hires who left within 12 months"
+      if (!hasCohort && !hasLeft) {
+        throw new Error(
+          "File does not appear to be a New Hire Turnover export. Missing columns: " +
+          "New Hires in Cohort, Number of New Hires Who Left Within 12 Months."
+        )
+      }
+      if (!hasCohort) throw new Error("Missing column: New Hires in Cohort / Total Number of New Hires in the Same Period.")
+      if (!hasLeft)   throw new Error("Missing column: Number of New Hires Who Left Within 12 Months.")
 
-    for (let i = 0; i < rows.length; i++) {
-      const c = Number(rows[i][cohortKey])
-      const l = Number(rows[i][leftKey])
-      if (isNaN(c) || isNaN(l)) { alert(`Row ${i + 2}: must be numeric`); return }
-      if (c < 0 || l < 0)       { alert(`Row ${i + 2}: cannot be negative`); return }
-      if (l > c)                 { alert(`Row ${i + 2}: exits > cohort`); return }
+      const cohortKey = firstRowKeys.find(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires")) ?? "new hires in cohort"
+      const leftKey   = firstRowKeys.find(k => k.startsWith("number of new hires who left within 12 months")) ?? "number of new hires who left within 12 months"
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const c = Number(rows[i][cohortKey])
+        const l = Number(rows[i][leftKey])
+        if (isNaN(c) || isNaN(l)) throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (c < 0 || l < 0)       throw new Error(`Row ${i + 2}: values cannot be negative.`)
+        if (l > c)                 throw new Error(`Row ${i + 2}: exits (${l}) cannot exceed cohort size (${c}).`)
+      }
+
+      const { data: turBatch, error: turBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "new_hire_turnover",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (turBatchError || !turBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const turRowsToInsert = rows.map(r => ({
+        batch_id:      turBatch.batch_id,
+        hire_cohort:   String(r["hire cohort"] || "Unknown"),
+        delivery_unit: r["delivery unit"]  || null,
+        job_family:    r["job family"]     || null,
+        hiring_source: r["hiring source"]  || null,
+        new_hires:     Number(r[cohortKey]) || 0,
+        early_exits:   Number(r[leftKey])   || 0,
+      }))
+
+      const { error: turInsertError } = await supabase.from("new_hire_turnover").insert(turRowsToInsert)
+      if (turInsertError) throw new Error("Failed to save New Hire Turnover records. Please try again.")
+
+      // Rehydrate turnover + patch in optional 90-day rate
+      const has90  = "number of new hires who left within 90 days" in rows[0]
+      const totalC = rows.reduce((s, r) => s + Number(r[cohortKey] || 0), 0)
+      const left90 = has90 ? rows.reduce((s, r) => s + Number(r["number of new hires who left within 90 days"] || 0), 0) : null
+      const rate90 = has90 && totalC ? Number(((left90! / totalC) * 100).toFixed(1)) : null
+
+      await rehydrateTurnover()
+      if (rate90 !== null) {
+        setMetricsData(prev => ({ ...prev, turnover: { ...prev.turnover, rate90 } }))
+      }
+      setUploadOrder(prev => [...prev.filter(k => k !== "turnover"), "turnover"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: turBatch, error: turBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name, upload_type: "new_hire_turnover",
-        uploaded_by: currentUser, status: "processed",
-        records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
-      })
-      .select().single()
-
-    if (turBatchError || !turBatch) { console.error("Turnover batch error:", turBatchError); return }
-
-    const turRowsToInsert = rows.map(r => ({
-      batch_id:       turBatch.batch_id,
-      hire_cohort:    String(r["hire cohort"] || "Unknown"),
-      delivery_unit:  r["delivery unit"]  || null,
-      job_family:     r["job family"]     || null,
-      hiring_source:  r["hiring source"]  || null,
-      new_hires:      Number(r[cohortKey]) || 0,
-      early_exits:    Number(r[leftKey])   || 0,
-    }))
-
-    const { error: turInsertError } = await supabase.from("new_hire_turnover").insert(turRowsToInsert)
-    if (turInsertError) { console.error("Turnover insert error:", turInsertError); return }
-
-    // Rehydrate turnover fully from Supabase (also pick up 90-day rate from this upload)
-    const has90   = "number of new hires who left within 90 days" in rows[0]
-    const totalC  = rows.reduce((s, r) => s + Number(r[cohortKey] || 0), 0)
-    const left90  = has90 ? rows.reduce((s, r) => s + Number(r["number of new hires who left within 90 days"] || 0), 0) : null
-    const rate90  = has90 && totalC ? Number(((left90! / totalC) * 100).toFixed(1)) : null
-
-    await rehydrateTurnover()
-
-    // Patch in rate90 after rehydration since it's not stored in DB
-    if (rate90 !== null) {
-      setMetricsData(prev => ({ ...prev, turnover: { ...prev.turnover, rate90 } }))
-    }
-
-    setUploadOrder(prev => [...prev.filter(k => k !== "turnover"), "turnover"])
   }
 
   // ─── Step 6: Clear metric — delete from Supabase + reset state ─
@@ -533,7 +592,6 @@ export default function EXDashboard() {
       }
     }
 
-    // Reset in-memory state
     if (key === "ce") setCeRows([])
 
     setMetricsData(prev => ({
@@ -636,6 +694,35 @@ export default function EXDashboard() {
       {activePhase === "hiring" ? (
         <div style={{ padding: "36px 24px 60px" }}>
           <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+
+            {/* ── Error banner (matches all other dashboards) ── */}
+            {error && (
+              <div style={{
+                background: "#fef2f2",
+                border: "1px solid #fca5a5",
+                borderRadius: 10,
+                padding: "12px 16px",
+                marginBottom: 20,
+                display: "flex",
+                alignItems: "flex-start",
+                justifyContent: "space-between",
+                gap: 12,
+              }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1 }}>
+                  <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>⚠</span>
+                  <span style={{ fontSize: 12, color: "#b91c1c", lineHeight: 1.5 }}>{error}</span>
+                </div>
+                <button
+                  onClick={() => setError(null)}
+                  style={{
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "#b91c1c", fontSize: 16, lineHeight: 1, flexShrink: 0,
+                    padding: "0 2px",
+                  }}
+                  title="Dismiss"
+                >×</button>
+              </div>
+            )}
 
             {/* Status pills */}
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28 }}>

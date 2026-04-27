@@ -636,7 +636,7 @@ export default function OffboardingReportsPage() {
     oesFiltered.filter(r => r.open_comment?.trim())
   , [oesFiltered])
 
-  const OES_COLORS = ["#0ea5e9", "#38bdf8", "#7dd3fc", "#bae6fd"]
+  const OES_COLORS = ["#0ea5e9", "#0ea5e9", "#0ea5e9", "#0ea5e9"]
 
   const TABS = [
     { key: "eicr", label: "Exit Interview Completion Rate", accent: "#6366f1", loaded: eicrLoaded, loading: eicrLoading },
@@ -757,7 +757,7 @@ export default function OffboardingReportsPage() {
                         <XAxis dataKey="unit" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                         <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                         <Tooltip content={<CT />} />
-                        <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                        <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
                         <Bar dataKey="exits"     name="Eligible Exits"       fill="#94a3b8" fillOpacity={0.55} radius={[4, 4, 0, 0]} />
                         <Bar dataKey="completed" name="Completed Interviews" fill="#6366f1" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
                         {eicrFig2.some(d => d.waived > 0) && (
@@ -868,7 +868,7 @@ export default function OffboardingReportsPage() {
                         <Bar dataKey="fav" name="Favorability" radius={[0, 6, 6, 0]}>
                           {oesFig2.map((d, i) => (
                             <Cell key={i}
-                              fill={d.dimension === oesLowestDim?.dimension ? "#ef4444" : OES_COLORS[i % OES_COLORS.length]}
+                              fill={d.dimension === oesLowestDim?.dimension ? "#0ea5e9" : OES_COLORS[i % OES_COLORS.length]}
                               fillOpacity={d.dimension === oesLowestDim?.dimension ? 1 : 0.8}
                             />
                           ))}

@@ -583,7 +583,7 @@ export default function OnboardingReportsPage() {
     ].filter(d => d.value > 0)
   }, [ttpFiltered])
 
-  const ttpC = (d: number) => d <= 45 ? "#22c55e" : d <= 75 ? "#f59e0b" : "#ef4444"
+  const ttpC = (d: number) => d <= 45 ? "#22c55e" : d <= 75 ? "#22c55e" : "#ef4444"
 
   // ═══════ NHE DERIVED ════════════════════════════════════
 
@@ -825,7 +825,7 @@ export default function OnboardingReportsPage() {
     return Object.entries(map).map(([modality, d]) => ({ modality, rate: pct(d.c, d.e) }))
   }, [tcrFiltered])
 
-  const tcrC = (r: number) => r >= 90 ? "#06b6d4" : r >= 70 ? "#f59e0b" : "#ef4444"
+  const tcrC = (r: number) => r >= 90 ? "#06b6d4" : r >= 70 ? "#06b6d4" : "#ef4444"
 
   // ═══════════════════════════════════════════════════════════
   //  RENDER
@@ -1056,23 +1056,9 @@ export default function OnboardingReportsPage() {
                       </div>
                     )}
                   </FigCard>
+                  
                 )}
-                {nheVisibleFigs.includes("Fig 4") && (
-                  <FigCard fig="Fig 4" title="Category Health — Radar View" subtitle="Radar chart · favorability % across all 10 dimensions">
-                    {nheFig3.length === 0 ? <EmptyChart msg="No data in selection" /> : (
-                      <ResponsiveContainer width="100%" height={360}>
-                        <RadarChart data={nheFig3} margin={{ top: 20, right: 30, bottom: 20, left: 30 }}>
-                          <PolarGrid stroke="#e2e8f0" />
-                          <PolarAngleAxis dataKey="subject" tick={{ fill: "#475569", fontSize: 12, fontWeight: 600 }} />
-                          <PolarRadiusAxis angle={90} domain={[0, 100]} tick={{ fill: "#94a3b8", fontSize: 10 }} tickCount={5} />
-                          <Radar name="Favorability %" dataKey="value" stroke="#8b5cf6" fill="#8b5cf6" fillOpacity={0.22} strokeWidth={2.5} />
-                          <Tooltip formatter={(v) => [`${v}%`, "Favorability"]} />
-                          <Legend wrapperStyle={{ fontSize: 12 }} />
-                        </RadarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </FigCard>
-                )}
+                
               </>
             )}
           </div>
@@ -1268,7 +1254,7 @@ export default function OnboardingReportsPage() {
                             <XAxis dataKey="role" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                             <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                             <Tooltip content={<CT />} />
-                            <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                            <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
                             <Bar dataKey="Enrolled"  fill="#94a3b8" fillOpacity={0.6} radius={[4, 4, 0, 0]} />
                             <Bar dataKey="Completed" radius={[4, 4, 0, 0]}>{tcrFig2.map((d, i) => <Cell key={i} fill={tcrC(d.rate)} />)}</Bar>
                           </BarChart>
@@ -1306,7 +1292,7 @@ export default function OnboardingReportsPage() {
         )}
 
       </div>
-      <div style={{ textAlign: "center", marginTop: 52, fontSize: 11, color: "#cbd5e1" }}>EX Onboarding Dashboard · Phase 1 MVP · Powered by Supabase</div>
+      <div style={{ textAlign: "center", marginTop: 52, fontSize: 11, color: "#cbd5e1" }}></div>
     </div>
   )
 }

@@ -129,6 +129,8 @@ export default function PerfDashboard() {
   const [perfMetrics, setPerfMetrics]   = useState(defaultPerfMetrics)
   const [rehydrating, setRehydrating]   = useState(true)
   const [currentUser, setCurrentUser]   = useState<string>("system")
+  // ─── Error state (mirrors onboarding dashboard) ───────────
+  const [error, setError]               = useState<string | null>(null)
 
   // ─── Resolve real auth user on mount ─────────────────────
   useEffect(() => {
@@ -199,107 +201,143 @@ export default function PerfDashboard() {
 
   // ─── MEI Handler ─────────────────────────────────────────
   const handleMei = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys        = Object.keys(rows[0])
-    const qKeys       = ["q1 clarity", "q2 support", "q3 fairness", "q4 feedback", "q5 psychological safety", "q6 inclusion"]
-    const resolvedQKeys = qKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
+      const keys = Object.keys(rows[0])
 
-    const { data: meiBatch, error: meiBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name,
-        upload_type: "manager_effectiveness",
-        uploaded_by: currentUser,
-        status: "processed",
-        records_parsed: rows.length,
-        records_imported: rows.length,
-        records_rejected: 0,
-      })
-      .select()
-      .single()
+      // ── Column validation ─────────────────────────────────
+      const hasQ1 = keys.some(k => k.startsWith("q1"))
+      const hasQ2 = keys.some(k => k.startsWith("q2"))
+      const hasQ3 = keys.some(k => k.startsWith("q3"))
+      const hasQ4 = keys.some(k => k.startsWith("q4"))
+      const hasQ5 = keys.some(k => k.startsWith("q5"))
+      const hasQ6 = keys.some(k => k.startsWith("q6"))
 
-    if (meiBatchError || !meiBatch) { console.error("MEI batch error:", meiBatchError); return }
+      if (!hasQ1 || !hasQ2 || !hasQ3 || !hasQ4 || !hasQ5 || !hasQ6) {
+        const missing = [
+          !hasQ1 && "Q1 Clarity",
+          !hasQ2 && "Q2 Support",
+          !hasQ3 && "Q3 Fairness",
+          !hasQ4 && "Q4 Feedback",
+          !hasQ5 && "Q5 Psychological Safety",
+          !hasQ6 && "Q6 Inclusion",
+        ].filter(Boolean).join(", ")
+        throw new Error(`File does not appear to be a Manager Effectiveness survey export. Missing columns: ${missing}.`)
+      }
 
-    const meiRowsToInsert = rows.map(r => ({
-      batch_id: meiBatch.batch_id,
-      survey_date: r["survey date"]
-        ? (() => { try { const d = new Date(String(r["survey date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
-        : null,
-      function:                r["function"]              || null,
-      role_level:              r["role level"]            || null,
-      location:                r["location"]              || null,
-      manager_tenure:          r["manager tenure"]        || null,
-      q1_clarity:              r[resolvedQKeys[0]]        || null,
-      q2_support:              r[resolvedQKeys[1]]        || null,
-      q3_fairness:             r[resolvedQKeys[2]]        || null,
-      q4_feedback:             r[resolvedQKeys[3]]        || null,
-      q5_psychological_safety: r[resolvedQKeys[4]]        || null,
-      q6_inclusion:            r[resolvedQKeys[5]]        || null,
-      q7_improvement_comment:  r["q7 improvement comment"] || null,
-    }))
+      const qKeys       = ["q1 clarity", "q2 support", "q3 fairness", "q4 feedback", "q5 psychological safety", "q6 inclusion"]
+      const resolvedQKeys = qKeys.map(q => keys.find(k => k.startsWith(q.substring(0, 6))) ?? q)
 
-    const { error: meiInsertError } = await supabase
-      .from("manager_effectiveness_responses")
-      .insert(meiRowsToInsert)
+      const { data: meiBatch, error: meiBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name,
+          upload_type: "manager_effectiveness",
+          uploaded_by: currentUser,
+          status: "processed",
+          records_parsed: rows.length,
+          records_imported: rows.length,
+          records_rejected: 0,
+        })
+        .select()
+        .single()
 
-    if (meiInsertError) { console.error("MEI insert error:", meiInsertError); return }
+      if (meiBatchError || !meiBatch) throw new Error("Failed to create upload batch. Please try again.")
 
-    // Rehydrate MEI fully from Supabase (includes all previous batches)
-    await rehydrateMei()
-    setUploadOrder(prev => [...prev.filter(k => k !== "mei"), "mei"])
+      const meiRowsToInsert = rows.map(r => ({
+        batch_id: meiBatch.batch_id,
+        survey_date: r["survey date"]
+          ? (() => { try { const d = new Date(String(r["survey date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+          : null,
+        function:                r["function"]              || null,
+        role_level:              r["role level"]            || null,
+        location:                r["location"]              || null,
+        manager_tenure:          r["manager tenure"]        || null,
+        q1_clarity:              r[resolvedQKeys[0]]        || null,
+        q2_support:              r[resolvedQKeys[1]]        || null,
+        q3_fairness:             r[resolvedQKeys[2]]        || null,
+        q4_feedback:             r[resolvedQKeys[3]]        || null,
+        q5_psychological_safety: r[resolvedQKeys[4]]        || null,
+        q6_inclusion:            r[resolvedQKeys[5]]        || null,
+        q7_improvement_comment:  r["q7 improvement comment"] || null,
+      }))
+
+      const { error: meiInsertError } = await supabase
+        .from("manager_effectiveness_responses")
+        .insert(meiRowsToInsert)
+
+      if (meiInsertError) throw new Error("Failed to save MEI responses. Please try again.")
+
+      await rehydrateMei()
+      setUploadOrder(prev => [...prev.filter(k => k !== "mei"), "mei"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
   }
 
   // ─── EPII Handler ─────────────────────────────────────────
   const handleEpii = async (file: File) => {
-    const rows = await parseSheet(file)
-    if (!rows.length) { alert("File is empty."); return }
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
 
-    const keys        = Object.keys(rows[0])
-    const reviewedKey = keys.find(k => k.includes("total number of employees reviewed"))     ?? ""
-    const improvedKey = keys.find(k => k.includes("number of employees showing performance")) ?? ""
+      const keys        = Object.keys(rows[0])
+      const reviewedKey = keys.find(k => k.includes("total number of employees reviewed"))     ?? ""
+      const improvedKey = keys.find(k => k.includes("number of employees showing performance")) ?? ""
 
-    if (!reviewedKey || !improvedKey) {
-      alert("Missing columns: Total Number of Employees Reviewed / Number of Employees Showing Performance Improvement")
-      return
+      // ── Column validation ─────────────────────────────────
+      if (!reviewedKey && !improvedKey) {
+        throw new Error(
+          "File does not appear to be a Performance Improvement export. Missing columns: " +
+          "Total Number of Employees Reviewed, Number of Employees Showing Performance Improvement."
+        )
+      }
+      if (!reviewedKey) throw new Error("Missing column: Total Number of Employees Reviewed.")
+      if (!improvedKey) throw new Error("Missing column: Number of Employees Showing Performance Improvement.")
+
+      const { data: epiiBatch, error: epiiBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name,
+          upload_type: "employee_performance_improvement",
+          uploaded_by: currentUser,
+          status: "processed",
+          records_parsed: rows.length,
+          records_imported: rows.length,
+          records_rejected: 0,
+        })
+        .select()
+        .single()
+
+      if (epiiBatchError || !epiiBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const epiiRowsToInsert = rows.map(r => ({
+        batch_id:              epiiBatch.batch_id,
+        review_cycle:          String(r["review cycle"] || "Unknown"),
+        delivery_unit:         r["delivery unit"]                || null,
+        job_family:            r["job family"]                   || null,
+        total_employees:       Number(r[reviewedKey])            || 0,
+        employees_improved:    Number(r[improvedKey])            || 0,
+        training_intervention: r["linked training intervention"] || null,
+      }))
+
+      const { error: epiiInsertError } = await supabase
+        .from("employee_performance_improvement")
+        .insert(epiiRowsToInsert)
+
+      if (epiiInsertError) throw new Error("Failed to save EPII records. Please try again.")
+
+      await rehydrateEpii()
+      setUploadOrder(prev => [...prev.filter(k => k !== "epii"), "epii"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
     }
-
-    const { data: epiiBatch, error: epiiBatchError } = await supabase
-      .from("ex_batches")
-      .insert({
-        filename: file.name,
-        upload_type: "employee_performance_improvement",
-        uploaded_by: currentUser,
-        status: "processed",
-        records_parsed: rows.length,
-        records_imported: rows.length,
-        records_rejected: 0,
-      })
-      .select()
-      .single()
-
-    if (epiiBatchError || !epiiBatch) { console.error("EPII batch error:", epiiBatchError); return }
-
-    const epiiRowsToInsert = rows.map(r => ({
-      batch_id:              epiiBatch.batch_id,
-      review_cycle:          String(r["review cycle"] || "Unknown"),
-      delivery_unit:         r["delivery unit"]                || null,
-      job_family:            r["job family"]                   || null,
-      total_employees:       Number(r[reviewedKey])            || 0,
-      employees_improved:    Number(r[improvedKey])            || 0,
-      training_intervention: r["linked training intervention"] || null,
-    }))
-
-    const { error: epiiInsertError } = await supabase
-      .from("employee_performance_improvement")
-      .insert(epiiRowsToInsert)
-
-    if (epiiInsertError) { console.error("EPII insert error:", epiiInsertError); return }
-
-    // Rehydrate EPII fully from Supabase (includes all previous batches)
-    await rehydrateEpii()
-    setUploadOrder(prev => [...prev.filter(k => k !== "epii"), "epii"])
   }
 
   // ─── Clear metric — delete from Supabase + reset state ───
@@ -323,7 +361,6 @@ export default function PerfDashboard() {
       }
     }
 
-    // Reset in-memory state only — no localStorage
     setPerfMetrics(prev => ({
       ...prev,
       [key]: key === "mei"
@@ -360,6 +397,35 @@ export default function PerfDashboard() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+
+      {/* ── Error banner (matches onboarding dashboard) ─────── */}
+      {error && (
+        <div style={{
+          background: "#fef2f2",
+          border: "1px solid #fca5a5",
+          borderRadius: 10,
+          padding: "12px 16px",
+          marginBottom: 20,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, flex: 1 }}>
+            <span style={{ fontSize: 15, flexShrink: 0, marginTop: 1 }}>⚠</span>
+            <span style={{ fontSize: 12, color: "#b91c1c", lineHeight: 1.5 }}>{error}</span>
+          </div>
+          <button
+            onClick={() => setError(null)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "#b91c1c", fontSize: 16, lineHeight: 1, flexShrink: 0,
+              padding: "0 2px",
+            }}
+            title="Dismiss"
+          >×</button>
+        </div>
+      )}
 
       {/* Syncing indicator */}
       {rehydrating && (

@@ -1633,7 +1633,7 @@ export default function ReportsPage() {
                           <XAxis dataKey="bu" tick={{ fill: "#475569", fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
                           <YAxis tick={{ fill: "#94a3b8", fontSize: 12 }} />
                           <Tooltip content={<CT />} />
-                          <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                          <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 12, paddingBottom: 8 }} />
                           <Bar dataKey="extended" name="Offers Extended" fill="#94a3b8" fillOpacity={0.6} radius={[4, 4, 0, 0]} />
                           <Bar dataKey="accepted" name="Offers Accepted" fill="#10b981" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
                         </BarChart>
@@ -1877,7 +1877,7 @@ export default function ReportsPage() {
       </div></div>}
 
       <div style={{ textAlign: "center", padding: "40px 0", fontSize: 11, color: "#cbd5e1" }}>
-        EX Reports · Phase 1 MVP · Data persists in local storage
+        
       </div>
     </div>
   )
