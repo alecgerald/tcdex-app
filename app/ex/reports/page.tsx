@@ -46,6 +46,7 @@ interface TthRawRow {
 }
 interface TthPeriodData { rows: TthRawRow[] }
 interface TurnoverRawRow {
+  [key: string]: unknown
   "hire cohort"?: string; "delivery unit"?: string; "job family"?: string
   "hiring source"?: string
   "new hires in cohort"?: number | string
@@ -1155,7 +1156,7 @@ export default function ReportsPage() {
     turFiltered.forEach(r => {
       const k = (r["delivery unit"] as string || "Unknown").trim()
       if (!map[k]) map[k] = { c: 0, e: 0 }
-      map[k].c += toNum(r[turCohortKey])
+      map[k].c += toNum(r[turCohortKey] as string | number | undefined)
       map[k].e += toNum(r["number of new hires who left within 12 months"])
     })
     return Object.entries(map).map(([unit, d]) => ({
@@ -1170,7 +1171,7 @@ export default function ReportsPage() {
   const tthC = (avg: number) => avg <= 30 ? "#3b82f6" : avg <= 60 ? "#f59e0b" : "#ef4444"
 
   const turHeadline = useMemo(() => {
-    const c   = turFiltered.reduce((s, r) => s + toNum(r[turCohortKey]), 0)
+    const c   = turFiltered.reduce((s, r) => s + toNum(r[turCohortKey] as string | number | undefined), 0)
     const e   = turFiltered.reduce((s, r) => s + toNum(r["number of new hires who left within 12 months"]), 0)
     const l90 = turFiltered.reduce((s, r) => s + toNum(r["number of new hires who left within 90 days"]), 0)
     return { cohort: c, exits: e, rate: pct(e, c), rate90: c && l90 > 0 ? pct(l90, c) : null }
