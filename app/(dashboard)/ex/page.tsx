@@ -27,6 +27,7 @@ interface MetricCardProps {
   value: string | number | null
   unit?: string
   accent: string
+  onFile: (file: File) => void
   loaded: boolean
   detail?: string
 }
@@ -52,9 +53,58 @@ const defaultMetrics = {
 }
 
 
+// ─── helpers ─────────────────────────────────────────────
+const normalizeKey = (k: string) => k.trim().toLowerCase()
+
+const parseSheet = (file: File): Promise<RowObject[]> =>
+  new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onload = (evt) => {
+      const arrayBuffer = evt.target?.result
+      if (!arrayBuffer) return resolve([])
+      const wb = XLSX.read(arrayBuffer, { type: "array" })
+      const rows = XLSX.utils.sheet_to_json<RowObject>(wb.Sheets[wb.SheetNames[0]])
+      const norm = rows.map((row) => {
+        const obj: RowObject = {}
+        Object.keys(row).forEach((k) => { obj[normalizeKey(k)] = row[k] })
+        return obj
+      })
+      resolve(norm)
+    }
+    reader.readAsArrayBuffer(file)
+  })
+
+// ─── UploadZone ───────────────────────────────────────────
+function UploadZone({ onFile, loaded }: UploadZoneProps) {
+  const ref = useRef<HTMLInputElement>(null)
+  const [drag, setDrag] = useState(false)
+  const handle = (file?: File) => { if (file) onFile(file) }
+  return (
+    <div
+      onClick={() => ref.current?.click()}
+      onDragOver={(e) => { e.preventDefault(); setDrag(true) }}
+      onDragLeave={() => setDrag(false)}
+      onDrop={(e) => { e.preventDefault(); setDrag(false); handle(e.dataTransfer.files[0]) }}
+      style={{
+        border: `1.5px dashed ${drag ? "#6366f1" : loaded ? "#22c55e" : "#cbd5e1"}`,
+        borderRadius: 10, padding: "12px 10px", cursor: "pointer",
+        background: drag ? "#eef2ff" : loaded ? "#f0fdf4" : "#f8fafc",
+        textAlign: "center", fontSize: 12,
+        color: loaded ? "#16a34a" : "#94a3b8",
+        transition: "all .2s", marginBottom: 16, userSelect: "none",
+      }}
+    >
+      <input ref={ref} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => handle(e.target.files?.[0])} />
+      {loaded
+        ? <><span style={{ fontSize: 16 }}>✓</span> File loaded</>
+        : <><span style={{ fontSize: 16 }}>↑</span><br />Drop or click to upload<br />.xlsx / .xls / .csv</>
+      }
+    </div>
+  )
+}
 
 // ─── MetricCard ───────────────────────────────────────────
-function MetricCard({ icon, title, subtitle, value, unit, accent, loaded, detail }: MetricCardProps) {
+function MetricCard({ icon, title, subtitle, value, unit, accent, onFile, loaded, detail }: MetricCardProps) {
   return (
     <div
       style={{
@@ -82,6 +132,7 @@ function MetricCard({ icon, title, subtitle, value, unit, accent, loaded, detail
             <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>{subtitle}</div>
           </div>
         </div>
+        <UploadZone onFile={onFile} loaded={loaded} />
         <div style={{
           background: `linear-gradient(135deg, ${accent}10, ${accent}05)`,
           border: "1px solid " + accent + "22", borderRadius: 12, padding: "14px 16px",
@@ -234,6 +285,291 @@ export default function EXDashboard() {
     setUploadOrder(prev => prev.includes("turnover") ? prev : [...prev, "turnover"])
   }
 
+  // ─── CE Handler ──────────────────────────────────────────
+  const handleCe = async (file: File) => {
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+
+      // ── Column validation ─────────────────────────────────
+      const keys            = Object.keys(rows[0])
+      const hasOutcome      = keys.some(k => k === "outcome")
+      const hasQ1           = keys.some(k => k.includes("q1 overall"))
+
+      if (!hasOutcome && !hasQ1) {
+        throw new Error("File does not appear to be a Candidate Experience export. Missing columns: Outcome, Q1 Overall (0-10).")
+      }
+      if (!hasOutcome) throw new Error("Missing column: Outcome.")
+      if (!hasQ1)      throw new Error("Missing column: Q1 Overall (0-10).")
+
+      const allowedOutcomes = ["hired", "not hired"]
+      const allowedLikert   = ["strongly agree", "agree", "neutral", "disagree", "strongly disagree"]
+      const validRows: RowObject[] = []
+      const warnings: string[] = []
+
+      rows.forEach((r, i) => {
+        const rowNum  = i + 2
+        const outcome = (r["outcome"] as string | undefined)?.trim().toLowerCase() ?? ""
+        const q1      = Number(r["q1 overall (0-10)"] ?? NaN)
+        let rowValid  = true
+
+        if (!allowedOutcomes.includes(outcome)) { warnings.push(`Row ${rowNum}: invalid outcome "${outcome}" — expected "Hired" or "Not Hired"`); rowValid = false }
+        if (isNaN(q1) || q1 < 0 || q1 > 10)    { warnings.push(`Row ${rowNum}: Q1 must be 0–10`); rowValid = false }
+
+        ;["q2 clarity", "q3 timeliness", "q4 respect", "q5 role understanding", "q6 inclusion"].forEach((f, idx) => {
+          const val = (r[f] as string | undefined)?.trim().toLowerCase() ?? ""
+          if (val && !allowedLikert.includes(val)) warnings.push(`Row ${rowNum}: Q${idx + 2} invalid Likert value`)
+        })
+
+        if (rowValid) validRows.push(r)
+      })
+
+      if (!validRows.length) {
+        throw new Error(
+          "No valid rows found. First issue: " + (warnings[0] ?? "unknown error") +
+          (warnings.length > 1 ? ` (and ${warnings.length - 1} more).` : ".")
+        )
+      }
+
+      const { data: batch, error: batchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "candidate_experience",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: validRows.length, records_imported: validRows.length, records_rejected: warnings.length,
+        })
+        .select().single()
+
+      if (batchError || !batch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const rowsToInsert = validRows.map((r) => ({
+        batch_id: batch.batch_id,
+        response_date: r["response date"]
+          ? (() => { try { const d = new Date(String(r["response date"]).trim()); return isNaN(d.getTime()) ? null : d.toISOString().split("T")[0] } catch { return null } })()
+          : null,
+        outcome:               r["outcome"]?.toString().toLowerCase(),
+        q1_overall:            Number(r["q1 overall (0-10)"]) || null,
+        q2_clarity:            r["q2 clarity"]               || null,
+        q3_timeliness:         r["q3 timeliness"]            || null,
+        q4_respect:            r["q4 respect"]               || null,
+        q5_role_understanding: r["q5 role understanding"]    || null,
+        q6_inclusion:          r["q6 inclusion"]             || null,
+        q7_improvement:        r["q7 improvement opportunity"] || null,
+        job_family:            r["job family"]               || null,
+        hiring_bu:             r["hiring bu"]                || null,
+        location:              r["location"]                 || null,
+        stage:                 r["stage"]                    || null,
+        uploaded_by:           currentUser,
+      }))
+
+      const { error: insertError } = await supabase.from("candidate_experience_responses").insert(rowsToInsert)
+      if (insertError) throw new Error("Failed to save Candidate Experience responses. Please try again.")
+
+      await rehydrateCe()
+      setUploadOrder(prev => [...prev.filter(k => k !== "ce"), "ce"])
+      if (warnings.length) console.warn("CE warnings:", warnings)
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
+  }
+
+  // ─── OAR Handler ─────────────────────────────────────────
+  const handleOar = async (file: File) => {
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+
+      // ── Column validation ─────────────────────────────────
+      const required = ["total number of offers extended", "number of offers accepted"]
+      const missing  = required.filter(c => !(c in rows[0]))
+
+      if (missing.length === 2) {
+        throw new Error("File does not appear to be an Offer Acceptance Rate export. Missing columns: " + missing.join(", ") + ".")
+      }
+      if (missing.length > 0) {
+        throw new Error("Missing column" + (missing.length > 1 ? "s" : "") + ": " + missing.join(", ") + ".")
+      }
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const ext = Number(rows[i]["total number of offers extended"])
+        const acc = Number(rows[i]["number of offers accepted"])
+        if (isNaN(ext) || isNaN(acc))                         throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (!Number.isInteger(ext) || !Number.isInteger(acc)) throw new Error(`Row ${i + 2}: values must be whole numbers.`)
+        if (ext < 0 || acc < 0)                               throw new Error(`Row ${i + 2}: values cannot be negative.`)
+        if (acc > ext)                                         throw new Error(`Row ${i + 2}: offers accepted (${acc}) cannot exceed offers extended (${ext}).`)
+      }
+
+      const { data: oarBatch, error: oarBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "offer_acceptance_rate",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (oarBatchError || !oarBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const oarRows = rows.map(r => ({
+        batch_id:        oarBatch.batch_id,
+        reporting_period: String(r["reporting period"] || ""),
+        hiring_bu:       r["hiring bu"] || r["hiringbu"] || null,
+        location:        r["location"]  || null,
+        candidate_type:  r["candidate type"] || null,
+        job_family:      r["job family"] || null,
+        level:           r["level"]     || null,
+        offers_extended: Number(r["total number of offers extended"]) || 0,
+        offers_accepted: Number(r["number of offers accepted"])       || 0,
+      }))
+
+      const { error: oarInsertError } = await supabase.from("offer_acceptance_rate").insert(oarRows)
+      if (oarInsertError) throw new Error("Failed to save Offer Acceptance Rate records. Please try again.")
+
+      await rehydrateOar()
+      setUploadOrder(prev => [...prev.filter(k => k !== "oar"), "oar"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
+  }
+
+  // ─── TTH Handler ─────────────────────────────────────────
+  const handleTth = async (file: File) => {
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+
+      // ── Column validation ─────────────────────────────────
+      const required = ["reporting period", "accepted hires count", "total calendar days to hire"]
+      const missing  = required.filter(c => !(c in rows[0]))
+
+      if (missing.length === required.length) {
+        throw new Error("File does not appear to be a Time to Hire export. Missing columns: " + missing.join(", ") + ".")
+      }
+      if (missing.length > 0) {
+        throw new Error("Missing column" + (missing.length > 1 ? "s" : "") + ": " + missing.join(", ") + ".")
+      }
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const h = Number(rows[i]["accepted hires count"])
+        const d = Number(rows[i]["total calendar days to hire"])
+        if (isNaN(h) || isNaN(d)) throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (h < 0 || d < 0)       throw new Error(`Row ${i + 2}: values cannot be negative.`)
+      }
+
+      const { data: tthBatch, error: tthBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "time_to_hire",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (tthBatchError || !tthBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const tthRows = rows.map(r => ({
+        batch_id:             tthBatch.batch_id,
+        reporting_period:     String(r["reporting period"] || ""),
+        hiring_bu:            r["hiring bu"]    || null,
+        job_family:           r["job family"]   || null,
+        level:                r["level"]        || null,
+        hiring_source:        r["hiring source"] || null,
+        accepted_hires_count: Number(r["accepted hires count"])        || 0,
+        total_calendar_days:  Number(r["total calendar days to hire"]) || 0,
+      }))
+
+      const { error: tthInsertError } = await supabase.from("time_to_hire").insert(tthRows)
+      if (tthInsertError) throw new Error("Failed to save Time to Hire records. Please try again.")
+
+      await rehydrateTth()
+      setUploadOrder(prev => [...prev.filter(k => k !== "tth"), "tth"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
+  }
+
+  // ─── Turnover Handler ─────────────────────────────────────
+  const handleTur = async (file: File) => {
+    setError(null)
+    try {
+      const rows = await parseSheet(file)
+      if (!rows.length) throw new Error("File is empty.")
+
+      // ── Column validation ─────────────────────────────────
+      const firstRowKeys = Object.keys(rows[0])
+      const hasCohort    = firstRowKeys.some(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires"))
+      const hasLeft      = firstRowKeys.some(k => k.startsWith("number of new hires who left within 12 months"))
+
+      if (!hasCohort && !hasLeft) {
+        throw new Error(
+          "File does not appear to be a New Hire Turnover export. Missing columns: " +
+          "New Hires in Cohort, Number of New Hires Who Left Within 12 Months."
+        )
+      }
+      if (!hasCohort) throw new Error("Missing column: New Hires in Cohort / Total Number of New Hires in the Same Period.")
+      if (!hasLeft)   throw new Error("Missing column: Number of New Hires Who Left Within 12 Months.")
+
+      const cohortKey = firstRowKeys.find(k => k.startsWith("new hires in cohort") || k.includes("total number of new hires")) ?? "new hires in cohort"
+      const leftKey   = firstRowKeys.find(k => k.startsWith("number of new hires who left within 12 months")) ?? "number of new hires who left within 12 months"
+
+      // ── Row-level validation ──────────────────────────────
+      for (let i = 0; i < rows.length; i++) {
+        const c = Number(rows[i][cohortKey])
+        const l = Number(rows[i][leftKey])
+        if (isNaN(c) || isNaN(l)) throw new Error(`Row ${i + 2}: values must be numeric.`)
+        if (c < 0 || l < 0)       throw new Error(`Row ${i + 2}: values cannot be negative.`)
+        if (l > c)                 throw new Error(`Row ${i + 2}: exits (${l}) cannot exceed cohort size (${c}).`)
+      }
+
+      const { data: turBatch, error: turBatchError } = await supabase
+        .from("ex_batches")
+        .insert({
+          filename: file.name, upload_type: "new_hire_turnover",
+          uploaded_by: currentUser, status: "processed",
+          records_parsed: rows.length, records_imported: rows.length, records_rejected: 0,
+        })
+        .select().single()
+
+      if (turBatchError || !turBatch) throw new Error("Failed to create upload batch. Please try again.")
+
+      const turRowsToInsert = rows.map(r => ({
+        batch_id:      turBatch.batch_id,
+        hire_cohort:   String(r["hire cohort"] || "Unknown"),
+        delivery_unit: r["delivery unit"]  || null,
+        job_family:    r["job family"]     || null,
+        hiring_source: r["hiring source"]  || null,
+        new_hires:     Number(r[cohortKey]) || 0,
+        early_exits:   Number(r[leftKey])   || 0,
+      }))
+
+      const { error: turInsertError } = await supabase.from("new_hire_turnover").insert(turRowsToInsert)
+      if (turInsertError) throw new Error("Failed to save New Hire Turnover records. Please try again.")
+
+      // Rehydrate turnover + patch in optional 90-day rate
+      const has90  = "number of new hires who left within 90 days" in rows[0]
+      const totalC = rows.reduce((s, r) => s + Number(r[cohortKey] || 0), 0)
+      const left90 = has90 ? rows.reduce((s, r) => s + Number(r["number of new hires who left within 90 days"] || 0), 0) : null
+      const rate90 = has90 && totalC ? Number(((left90! / totalC) * 100).toFixed(1)) : null
+
+      await rehydrateTurnover()
+      if (rate90 !== null) {
+        setMetricsData(prev => ({ ...prev, turnover: { ...prev.turnover, rate90 } }))
+      }
+      setUploadOrder(prev => [...prev.filter(k => k !== "turnover"), "turnover"])
+
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unexpected error occurred.")
+    }
+  }
+
 
   // ─── Step 6: Clear metric — delete from Supabase + reset state ─
   const clearMetric = async (key: string) => {
@@ -285,10 +621,10 @@ export default function EXDashboard() {
   }, [ceRows])
 
   const hiringMetrics = [
-    { icon: "CE",  title: "Candidate Experience",  subtitle: "Avg. Candidate Experience",    value: metricsData.ce.value,       unit: metricsData.ce.value != null ? "/ 10" : "",   accent: "#6366f1", loaded: metricsData.ce.loaded,       detail: "Survey-based\naverage score", key: "ce" },
-    { icon: "OAR", title: "Offer Acceptance Rate", subtitle: "Percentage of Accepted Offers", value: metricsData.oar.value,      unit: metricsData.oar.value != null ? "%" : "",     accent: "#10b981", loaded: metricsData.oar.loaded,      detail: "Target ≥ 80%",               key: "oar" },
-    { icon: "TTH", title: "Time to Hire",           subtitle: "Application → Offer Accept",   value: metricsData.tth.value,      unit: metricsData.tth.value != null ? "days" : "",  accent: "#3b82f6", loaded: metricsData.tth.loaded,      detail: "Lower is better",            key: "tth" },
-    { icon: "NHT", title: "New Hire Turnover",      subtitle: "Exits within 12 months",       value: metricsData.turnover.value, unit: metricsData.turnover.value != null ? "%" : "", accent: "#ec4899", loaded: metricsData.turnover.loaded, detail: "Lower is better",            key: "turnover" },
+    { icon: "CE",  title: "Candidate Experience",  subtitle: "Avg. Candidate Experience",    value: metricsData.ce.value,       unit: metricsData.ce.value != null ? "/ 10" : "",   accent: "#6366f1", onFile: handleCe,  loaded: metricsData.ce.loaded,       detail: "Survey-based\naverage score", key: "ce" },
+    { icon: "OAR", title: "Offer Acceptance Rate", subtitle: "Percentage of Accepted Offers", value: metricsData.oar.value,      unit: metricsData.oar.value != null ? "%" : "",     accent: "#10b981", onFile: handleOar, loaded: metricsData.oar.loaded,      detail: "Target ≥ 80%",               key: "oar" },
+    { icon: "TTH", title: "Time to Hire",           subtitle: "Application → Offer Accept",   value: metricsData.tth.value,      unit: metricsData.tth.value != null ? "days" : "",  accent: "#3b82f6", onFile: handleTth, loaded: metricsData.tth.loaded,      detail: "Lower is better",            key: "tth" },
+    { icon: "NHT", title: "New Hire Turnover",      subtitle: "Exits within 12 months",       value: metricsData.turnover.value, unit: metricsData.turnover.value != null ? "%" : "", accent: "#ec4899", onFile: handleTur, loaded: metricsData.turnover.loaded, detail: "Lower is better",            key: "turnover" },
   ]
 
   if (!mounted) return (
