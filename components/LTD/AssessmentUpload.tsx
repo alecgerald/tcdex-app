@@ -247,23 +247,6 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
     reader.readAsArrayBuffer(selectedFile);
   };
 
-  const handleResetData = async () => {
-    if (!window.confirm("CRITICAL: This will permanently delete ALL data. Continue?")) return;
-    setUploading(true);
-    try {
-      await supabase.from('competency_scores').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('indicator_responses').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('participants').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      setMessage('Database cleared.');
-      toast.success('All data wiped.');
-      if (onUploadSuccess) onUploadSuccess();
-    } catch (err: any) {
-      toast.error('Reset failed: ' + err.message);
-    } finally {
-      setUploading(false);
-    }
-  };
-
   return (
     <Card className="w-full">
       <CardHeader>
@@ -272,9 +255,6 @@ const AssessmentUpload: React.FC<AssessmentUploadProps> = ({
             <CardTitle>Assessment Data Upload</CardTitle>
             <CardDescription>Upload Pre or Post Assessment Excel files (Microsoft Forms Export)</CardDescription>
           </div>
-          <Button variant="destructive" size="sm" onClick={handleResetData} disabled={uploading}>
-            Wipe All Data
-          </Button>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">

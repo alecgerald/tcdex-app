@@ -175,13 +175,13 @@ const VILTTrackerDashboard: React.FC = () => {
 
       // Sort: Year DESC, Cohort ASC
       uniqueSessions.sort((a, b) => {
-        const yearA = String(a.year || "");
-        const yearB = String(b.year || "");
-        const cohortA = String(a.cohort || "");
-        const cohortB = String(b.cohort || "");
-
-        if (yearA !== yearB) return yearB.localeCompare(yearA);
-        return cohortA.localeCompare(cohortB);
+        const yA = String(a.year || "");
+        const yB = String(b.year || "");
+        if (yA !== yB) return yB > yA ? 1 : -1;
+        
+        const cA = String(a.cohort || "");
+        const cB = String(b.cohort || "");
+        return cA.localeCompare(cB);
       });
 
       setSessions(uniqueSessions);
