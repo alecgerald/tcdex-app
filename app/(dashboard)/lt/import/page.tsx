@@ -98,19 +98,6 @@ export default function LTImportPage() {
               </div>
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base font-bold">Training Reports</CardTitle>
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent className="max-w-[250px] p-3 text-[10px] leading-relaxed">
-                      <p className="font-bold mb-1">SQL Schema Note:</p>
-                      <code className="block p-1 bg-zinc-100 dark:bg-zinc-800 rounded border font-mono">
-                        ALTER TABLE training_reports ADD COLUMN employee_id TEXT, ADD COLUMN employee_name TEXT;
-                      </code>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
               </div>
             </div>
             <CardDescription className="text-xs">

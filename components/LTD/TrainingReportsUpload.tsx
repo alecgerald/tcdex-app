@@ -155,17 +155,6 @@ const TrainingReportsUpload: React.FC<TrainingReportsUploadProps> = ({ onUploadS
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 flex gap-3">
-          <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
-          <div className="text-[10px] space-y-1">
-            <p className="font-bold text-blue-900 dark:text-blue-100">SQL Schema Update Required:</p>
-            <code className="block p-1.5 bg-white dark:bg-zinc-950 rounded border font-mono">
-              ALTER TABLE training_reports ADD COLUMN employee_id TEXT, ADD COLUMN employee_name TEXT;
-              ALTER TABLE training_reports ALTER COLUMN participant_id DROP NOT NULL;
-            </code>
-          </div>
-        </div>
-
         <div className="grid w-full items-center gap-1.5">
           <Label htmlFor="training-direct-upload" className="text-[10px] font-bold uppercase text-muted-foreground">Select Excel/CSV File</Label>
           <Input 
