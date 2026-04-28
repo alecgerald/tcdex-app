@@ -43,8 +43,8 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const workbook = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
@@ -64,7 +64,7 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
         let statusIdx = -1;
 
         for (let i = 0; i < Math.min(jsonData.length, 50); i++) {
-          const row = jsonData[i].map(cell => String(cell || "").toLowerCase().trim());
+          const row = (jsonData[i] || []).map(cell => String(cell || "").toLowerCase().trim());
           const eIdx = row.indexOf("email");
           const cIdx = row.indexOf("course");
           
@@ -74,7 +74,6 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
             courseIdx = cIdx;
             firstNameIdx = row.indexOf("first name");
             lastNameIdx = row.indexOf("last name");
-            // Expanded date header detection
             enrolledOnIdx = row.findIndex(c => 
               c === "enrolled on" || c === "date" || c === "completion date" || c === "completed at" || c === "time"
             );
@@ -99,18 +98,39 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
             const email = String(row[emailIdx] || "").trim().toLowerCase();
             const courseName = String(row[courseIdx] || "").trim();
             
-            if (!email || !courseName) {
-              if (row.some(cell => cell !== null && cell !== "")) {
-                errorCount++;
-              }
-              continue;
-            }
+            if (!email || !courseName || email === "email") continue;
 
             const firstName = firstNameIdx !== -1 ? String(row[firstNameIdx] || "").trim() : "";
             const lastName = lastNameIdx !== -1 ? String(row[lastNameIdx] || "").trim() : "";
             const fullName = `${firstName} ${lastName}`.trim();
             const status = statusIdx !== -1 ? String(row[statusIdx] || "").trim() : "Unknown";
-            const completedAt = enrolledOnIdx !== -1 ? row[enrolledOnIdx] : null;
+            let rawDate = enrolledOnIdx !== -1 ? row[enrolledOnIdx] : null;
+            let completedAt: string | null = null;
+
+            // Robust Date Handling
+            if (rawDate) {
+              if (rawDate instanceof Date) {
+                completedAt = rawDate.toISOString();
+              } else {
+                const dateStr = String(rawDate).trim();
+                const d = new Date(dateStr);
+                if (!isNaN(d.getTime())) {
+                  completedAt = d.toISOString();
+                } else {
+                  // Fallback for M/D/YYYY or D/M/YYYY
+                  const parts = dateStr.split(/[\/\-.]/);
+                  if (parts.length === 3) {
+                    const year = parts[2].length === 2 ? 2000 + Number(parts[2]) : Number(parts[2]);
+                    const month = Number(parts[0]) - 1;
+                    const day = Number(parts[1]);
+                    const fallbackDate = new Date(year, month, day);
+                    if (!isNaN(fallbackDate.getTime())) {
+                      completedAt = fallbackDate.toISOString();
+                    }
+                  }
+                }
+              }
+            }
 
             toInsert.push({
               email,

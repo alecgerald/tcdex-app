@@ -325,8 +325,17 @@ const SelfPacedDashboard: React.FC = () => {
     const years = new Set<string>();
     rawRecords.forEach(r => {
       if (r.completed_at) {
-        const year = new Date(r.completed_at).getFullYear().toString();
-        years.add(year);
+        let date = new Date(r.completed_at);
+        if (isNaN(date.getTime())) {
+          // Fallback parsing for common strings
+          const parts = String(r.completed_at).split(/[\/\-.]/);
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? 2000 + Number(parts[2]) : Number(parts[2]);
+            if (year > 2000 && year < 2100) years.add(year.toString());
+          }
+        } else {
+          years.add(date.getFullYear().toString());
+        }
       }
     });
     return Array.from(years).sort((a, b) => b.localeCompare(a));
