@@ -116,8 +116,13 @@ const PostLearningDashboard: React.FC = () => {
 
         // Sort: Year DESC, Cohort ASC
         uniqueSessions.sort((a, b) => {
-          if (a.year !== b.year) return b.year - a.year;
-          return a.cohort.localeCompare(b.cohort);
+          const yA = Number(a.year) || 0;
+          const yB = Number(b.year) || 0;
+          if (yA !== yB) return yB - yA;
+          
+          const cA = String(a.cohort || "");
+          const cB = String(b.cohort || "");
+          return cA.localeCompare(cB);
         });
         
         setSessions(uniqueSessions);
