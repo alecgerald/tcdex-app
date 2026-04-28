@@ -112,7 +112,7 @@ const TrainingReportsUpload: React.FC<TrainingReportsUploadProps> = ({ onUploadS
         for (const row of batch) {
           const employeeId = String(row[usernameCol] || "").trim();
           const employeeName = nameCol !== -1 ? String(row[nameCol] || "").trim() : "";
-          const courseName = String(row[courseIdx] || "").trim();
+          const courseName = String(row[courseCol] || "").trim();
           const status = String(row[statusCol] || "").trim();
           const hours = parseFloat(String(row[hoursCol] || "0")) || 0;
           const deliveryUnit = String(row[deptCol] || "").trim();

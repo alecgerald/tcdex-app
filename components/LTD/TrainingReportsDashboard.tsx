@@ -85,17 +85,38 @@ const TrainingReportsDashboard: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      let query = supabase.from('training_reports').select('employee_id, employee_name, course_name, status, hours, delivery_unit');
-      if (selectedYear !== "all") query = query.ilike('course_name', `%${selectedYear}%`);
-      const { data, error } = await query;
-      if (error) throw error;
-      setReports(data || []);
+      let allData: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      
+      while (true) {
+        let query = supabase
+          .from('training_reports')
+          .select('employee_id, employee_name, course_name, status, hours, delivery_unit')
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+          
+        if (selectedYear !== "all") {
+          query = query.ilike('course_name', `%${selectedYear}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        
+        allData = [...allData, ...data];
+        if (data.length < pageSize) break;
+        page++;
+        if (page > 10) break; // Safety cap
+      }
+      
+      setReports(allData);
     } catch (error) {
       console.error('Error fetching Training Reports data:', error);
+      toast.error("Failed to sync report data.");
     } finally {
       setLoading(false);
     }
-  }, [selectedYear]);
+  }, [selectedYear, supabase]);
 
   const handleExportPDF = useCallback(async () => {
     if (reports.length === 0) {
