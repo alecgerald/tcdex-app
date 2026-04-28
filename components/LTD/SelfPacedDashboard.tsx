@@ -556,6 +556,12 @@ const SelfPacedDashboard: React.FC = () => {
 
   return (
     <div className="w-full space-y-8 pb-20 px-4">
+      {/* Debug Row */}
+      <div className="bg-zinc-900 text-zinc-400 p-2 rounded-lg text-[10px] font-mono flex gap-4">
+        <span>DEBUG: Raw Records: {rawRecords.length}</span>
+        <span>Detected Years: {availableYears.join(", ") || "None"}</span>
+      </div>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-6 rounded-2xl border shadow-sm">
         <div className="flex items-center gap-4">
