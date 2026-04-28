@@ -63,21 +63,26 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
         let enrolledOnIdx = -1;
         let statusIdx = -1;
 
+        console.log("LMS Upload: Scanning first 50 rows for headers...");
+
         for (let i = 0; i < Math.min(jsonData.length, 50); i++) {
           const row = (jsonData[i] || []).map(cell => String(cell || "").toLowerCase().trim());
-          const eIdx = row.indexOf("email");
-          const cIdx = row.indexOf("course");
+          
+          // Flexible search for Email and Course columns
+          const eIdx = row.findIndex(c => c === "email" || c.includes("email"));
+          const cIdx = row.findIndex(c => c === "course" || c.includes("course") || c.includes("module"));
           
           if (eIdx !== -1 && cIdx !== -1) {
+            console.log(`LMS Upload: Found headers at row ${i}`, row);
             headerRowIndex = i;
             emailIdx = eIdx;
             courseIdx = cIdx;
-            firstNameIdx = row.indexOf("first name");
-            lastNameIdx = row.indexOf("last name");
+            firstNameIdx = row.findIndex(c => c.includes("first name") || c === "name");
+            lastNameIdx = row.findIndex(c => c.includes("last name"));
             enrolledOnIdx = row.findIndex(c => 
-              c === "enrolled on" || c === "date" || c === "completion date" || c === "completed at" || c === "time"
+              c.includes("enrolled") || c === "date" || c.includes("completion") || c.includes("time")
             );
-            statusIdx = row.indexOf("status");
+            statusIdx = row.findIndex(c => c.includes("status"));
             break;
           }
         }
