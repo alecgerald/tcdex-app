@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Loader2, FileUp, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Button } from '@/components/ui/button';
+
 /*
   SQL MIGRATION:
   Run this in your Supabase SQL Editor if table is not ready:
@@ -31,11 +33,22 @@ interface LMSUploadProps {
 const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const supabase = createClient();
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFile(file);
+      setMessage(null);
+    }
+  };
+
+  const processUpload = async () => {
+    if (!selectedFile) {
+      toast.error("Please select a file first.");
+      return;
+    }
 
     setLoading(true);
     setMessage(null);
@@ -171,6 +184,11 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
         const summary = `${insertedCount} records inserted, ${errorCount} errors`;
         setMessage(summary);
         toast.success("Upload successful!");
+        setSelectedFile(null);
+        
+        // Reset file input
+        const fileInput = document.getElementById('lms-file-input') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
         
         if (onUploadSuccess) onUploadSuccess();
       } catch (error: any) {
@@ -181,7 +199,7 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(selectedFile);
   };
 
   return (
@@ -200,14 +218,24 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
           <Label htmlFor="lms-file-input" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
             Select Report File
           </Label>
-          <Input 
-            id="lms-file-input"
-            type="file" 
-            accept=".csv, .xlsx, .xls" 
-            onChange={handleFileUpload}
-            disabled={loading}
-            className="text-xs cursor-pointer file:text-[#0046ab] file:font-bold"
-          />
+          <div className="flex gap-2">
+            <Input 
+              id="lms-file-input"
+              type="file" 
+              accept=".csv, .xlsx, .xls" 
+              onChange={handleFileChange}
+              disabled={loading}
+              className="text-xs cursor-pointer file:text-[#0046ab] file:font-bold"
+            />
+            <Button 
+              onClick={processUpload}
+              disabled={loading || !selectedFile}
+              className="h-9 px-4 rounded-md font-black text-xs uppercase tracking-wider bg-[#0046ab] hover:bg-blue-700 transition-all flex items-center gap-2 shrink-0"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+              Sync Data
+            </Button>
+          </div>
         </div>
 
         {loading && (
