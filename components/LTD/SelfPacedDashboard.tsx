@@ -94,7 +94,7 @@ const extractCourseCode = (courseName: string): string => {
 const SelfPacedDashboard: React.FC = () => {
   // Force re-scan
   const [loading, setLoading] = useState(true);
-  const [records, setRecords] = useState<LMSCompletion[]>([]);
+  const [rawRecords, setRawRecords] = useState<LMSCompletion[]>([]);
   const [selectedYear, setSelectedYear] = useState<string>("all");
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
@@ -104,12 +104,27 @@ const SelfPacedDashboard: React.FC = () => {
     const requiredCodes = REQUIRED_COURSE_CODES.map(c => c.toUpperCase());
     const requiredSet = new Set(requiredCodes);
 
-    // Filter by Year
-    const filtered = records.filter(item => {
+    // 1. Filter by Year FIRST (before deduplication)
+    const yearFiltered = rawRecords.filter(item => {
       if (selectedYear === "all") return true;
       if (!item.completed_at) return false;
-      return new Date(item.completed_at).getFullYear().toString() === selectedYear;
+      try {
+        const date = new Date(item.completed_at);
+        return !isNaN(date.getTime()) && date.getFullYear().toString() === selectedYear;
+      } catch (e) {
+        return false;
+      }
     });
+
+    // 2. Deduplicate within the selected timeframe
+    const uniqueMap = new Map();
+    // We iterate forward; later entries (newer uploads) will overwrite older ones
+    for (const r of yearFiltered) {
+      const code = extractCourseCode(r.course_name);
+      const key = `${r.email.toLowerCase()}-${code}`;
+      uniqueMap.set(key, r);
+    }
+    const filtered = Array.from(uniqueMap.values());
 
     const completedRecords = filtered.filter(c => 
       c.status?.toLowerCase().includes('completed') || c.status?.toLowerCase() === 'complete'
@@ -158,7 +173,7 @@ const SelfPacedDashboard: React.FC = () => {
     // 3. Course-wise Stats Table
     const courseStatsMap: Record<string, { count: number, name: string }> = {};
     requiredCodes.forEach(code => {
-      const recordWithTitle = records.find(r => extractCourseCode(r.course_name) === code);
+      const recordWithTitle = rawRecords.find(r => extractCourseCode(r.course_name) === code);
       courseStatsMap[code] = { 
         count: 0, 
         name: recordWithTitle?.course_name.split(' (')[0] || `Module ${code}` 
@@ -190,9 +205,10 @@ const SelfPacedDashboard: React.FC = () => {
         participationRate: totalLearners > 0 ? (totalParticipantsWithCompletions / totalLearners * 100).toFixed(1) : "0"
       },
       histogramData: Object.entries(bins).map(([range, count]) => ({ range, count })),
-      allCoursesStats
+      allCoursesStats,
+      currentViewRecords: filtered // Export for Individual Progress Tracker
     };
-  }, [records, selectedYear]);
+  }, [rawRecords, selectedYear]);
 
   const handleExportPDF = useCallback(async () => {
     setIsExporting(true);
@@ -279,10 +295,10 @@ const SelfPacedDashboard: React.FC = () => {
         .order('completed_at', { ascending: false });
 
       if (error) throw error;
-      setRecords(lmsData || []);
+      setRawRecords(lmsData || []);
     } catch (error) {
       console.error('Error fetching LMS data:', error);
-      toast.error("Failed to sync records.");
+      toast.error("Failed to sync rawRecords.");
     } finally {
       setLoading(false);
     }
@@ -295,14 +311,26 @@ const SelfPacedDashboard: React.FC = () => {
   // Derived Participants List
   const participants = useMemo(() => {
     const map = new Map<string, string | null>();
-    records.forEach(r => {
+    rawRecords.forEach(r => {
       const email = r.email.toLowerCase();
       if (!map.has(email)) map.set(email, r.name);
     });
     return Array.from(map.entries())
       .map(([email, name]) => ({ email, name }))
       .sort((a, b) => (a.name || a.email).localeCompare(b.name || b.email));
-  }, [records]);
+  }, [rawRecords]);
+
+  // Available Years for filter
+  const availableYears = useMemo(() => {
+    const years = new Set<string>();
+    rawRecords.forEach(r => {
+      if (r.completed_at) {
+        const year = new Date(r.completed_at).getFullYear().toString();
+        years.add(year);
+      }
+    });
+    return Array.from(years).sort((a, b) => b.localeCompare(a));
+  }, [rawRecords]);
 
   const selectedParticipant = useMemo(() => 
     participants.find(p => p.email === selectedEmail),
@@ -311,7 +339,7 @@ const SelfPacedDashboard: React.FC = () => {
   const handleStatusChange = async (courseCode: string, newStatus: string) => {
     if (!selectedEmail) return;
     
-    const existing = records.find(r => 
+    const existing = rawRecords.find(r => 
       r.email.toLowerCase() === selectedEmail.toLowerCase() && 
       extractCourseCode(r.course_name) === courseCode.toUpperCase()
     );
@@ -320,14 +348,16 @@ const SelfPacedDashboard: React.FC = () => {
 
     // Optimistic Update
     if (existing) {
-      setRecords(prev => prev.map(r => 
-        r.id === existing.id ? { ...r, status: newStatus, completed_at: completedAt } : r
+      setRawRecords(prev => prev.map(r => 
+        (r.email.toLowerCase() === selectedEmail.toLowerCase() && extractCourseCode(r.course_name) === courseCode.toUpperCase())
+          ? { ...r, status: newStatus, completed_at: completedAt } 
+          : r
       ));
     } else {
       const pName = selectedParticipant?.name || selectedEmail.split('@')[0];
-      const knownTitle = records.find(r => extractCourseCode(r.course_name) === courseCode.toUpperCase())?.course_name || `${courseCode} Module (${courseCode})`;
+      const knownTitle = rawRecords.find(r => extractCourseCode(r.course_name) === courseCode.toUpperCase())?.course_name || `${courseCode} Module (${courseCode})`;
       const tempId = `temp-${Date.now()}`;
-      setRecords(prev => [{
+      setRawRecords(prev => [{
         id: tempId,
         email: selectedEmail.toLowerCase(),
         name: pName,
@@ -339,17 +369,26 @@ const SelfPacedDashboard: React.FC = () => {
 
     try {
       if (existing) {
-        await supabase.from('lms_completions').update({ status: newStatus, completed_at: completedAt }).eq('id', existing.id);
+        // Update ALL potential duplicates in the database by email and course code pattern
+        const { error } = await supabase
+          .from('lms_completions')
+          .update({ status: newStatus, completed_at: completedAt })
+          .eq('email', selectedEmail.toLowerCase())
+          .ilike('course_name', `%${courseCode.toUpperCase()}%`);
+          
+        if (error) throw error;
       } else {
         const pName = selectedParticipant?.name || selectedEmail.split('@')[0];
-        const knownTitle = records.find(r => extractCourseCode(r.course_name) === courseCode.toUpperCase())?.course_name || `${courseCode} Module (${courseCode})`;
-        await supabase.from('lms_completions').insert([{
+        const knownTitle = rawRecords.find(r => extractCourseCode(r.course_name) === courseCode.toUpperCase())?.course_name || `${courseCode} Module (${courseCode})`;
+        const { error } = await supabase.from('lms_completions').insert([{
           email: selectedEmail.toLowerCase(),
           name: pName,
           course_name: knownTitle,
           status: newStatus,
           completed_at: completedAt
         }]);
+        
+        if (error) throw error;
       }
       toast.success(`${courseCode} updated.`);
     } catch (err: any) {
@@ -363,7 +402,7 @@ const SelfPacedDashboard: React.FC = () => {
   const participantTrackData = useMemo(() => {
     if (!selectedEmail) return [];
     return REQUIRED_COURSE_CODES.map(code => {
-      const record = records.find(r => 
+      const record = rawRecords.find(r => 
         r.email.toLowerCase() === selectedEmail.toLowerCase() && 
         extractCourseCode(r.course_name) === code.toUpperCase()
       );
@@ -374,7 +413,7 @@ const SelfPacedDashboard: React.FC = () => {
         completed_at: record?.completed_at
       };
     });
-  }, [selectedEmail, records]);
+  }, [selectedEmail, rawRecords]);
 
   const filteredCourseStats = useMemo(() => {
     return processed.allCoursesStats.filter(c => 
@@ -395,7 +434,7 @@ const SelfPacedDashboard: React.FC = () => {
       // Map for quick status lookup: email -> course_name -> record
       const lookup = new Map<string, Map<string, LMSCompletion>>();
 
-      records.forEach(r => {
+      rawRecords.forEach(r => {
         const email = r.email.toLowerCase();
         emails.add(email);
         courses.add(r.course_name);
@@ -408,7 +447,7 @@ const SelfPacedDashboard: React.FC = () => {
         const lowerStatus = rawStatus.toLowerCase();
         const isCompleted = lowerStatus.includes('completed');
         
-        // Store/Update record: Prefer completed records or the latest status
+        // Store/Update record: Prefer completed rawRecords or the latest status
         const existing = emailMap.get(r.course_name);
         if (!existing || (!existing.status?.toLowerCase().includes('completed') && isCompleted)) {
           emailMap.set(r.course_name, r);
@@ -542,9 +581,10 @@ const SelfPacedDashboard: React.FC = () => {
             <Select value={selectedYear} onValueChange={setSelectedYear}>
               <SelectTrigger className="w-[120px] h-8 text-xs font-black border-none bg-transparent focus:ring-0"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="2024">2024</SelectItem>
-                <SelectItem value="2025">2025</SelectItem>
+                <SelectItem value="all" className="text-xs font-black uppercase">All Time</SelectItem>
+                {availableYears.map(year => (
+                  <SelectItem key={year} value={year} className="text-xs font-black uppercase">{year}</SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

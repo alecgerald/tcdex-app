@@ -74,7 +74,10 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
             courseIdx = cIdx;
             firstNameIdx = row.indexOf("first name");
             lastNameIdx = row.indexOf("last name");
-            enrolledOnIdx = row.indexOf("enrolled on");
+            // Expanded date header detection
+            enrolledOnIdx = row.findIndex(c => 
+              c === "enrolled on" || c === "date" || c === "completion date" || c === "completed at" || c === "time"
+            );
             statusIdx = row.indexOf("status");
             break;
           }
