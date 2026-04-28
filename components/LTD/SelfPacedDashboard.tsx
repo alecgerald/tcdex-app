@@ -292,7 +292,8 @@ const SelfPacedDashboard: React.FC = () => {
       const { data: lmsData, error } = await supabase
         .from('lms_completions')
         .select('id, email, name, course_name, status, completed_at')
-        .order('completed_at', { ascending: false });
+        .order('completed_at', { ascending: false })
+        .limit(10000);
 
       if (error) throw error;
       setRawRecords(lmsData || []);
