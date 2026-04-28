@@ -13,6 +13,13 @@ interface TrainingReportsUploadProps {
   onUploadSuccess?: () => void;
 }
 
+import { Button } from '@/components/ui/button';
+import { FileUp } from 'lucide-react';
+
+interface TrainingReportsUploadProps {
+  onUploadSuccess?: () => void;
+}
+
 /**
  * TrainingReportsUpload
  * 
@@ -21,18 +28,29 @@ interface TrainingReportsUploadProps {
  */
 const TrainingReportsUpload: React.FC<TrainingReportsUploadProps> = ({ onUploadSuccess }) => {
   const [loading, setLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; inserted: number } | null>(null);
   const supabase = createClient();
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFile(file);
+      setProgress(null);
+    }
+  };
+
+  const processUpload = async () => {
+    if (!selectedFile) {
+      toast.error("Please select a file first.");
+      return;
+    }
 
     setLoading(true);
     setProgress(null);
 
     try {
-      const data = await file.arrayBuffer();
+      const data = await selectedFile.arrayBuffer();
       const workbook = XLSX.read(data);
       const worksheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
@@ -134,6 +152,11 @@ const TrainingReportsUpload: React.FC<TrainingReportsUploadProps> = ({ onUploadS
       }
 
       toast.success(`Upload complete: ${insertedCount} rows inserted.`);
+      setSelectedFile(null);
+      // Reset input
+      const fileInput = document.getElementById('training-direct-upload') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+
       if (onUploadSuccess) onUploadSuccess();
     } catch (error) {
       console.error("Upload error:", error);
@@ -157,14 +180,24 @@ const TrainingReportsUpload: React.FC<TrainingReportsUploadProps> = ({ onUploadS
       <CardContent className="space-y-4">
         <div className="grid w-full items-center gap-1.5">
           <Label htmlFor="training-direct-upload" className="text-[10px] font-bold uppercase text-muted-foreground">Select Excel/CSV File</Label>
-          <Input 
-            id="training-direct-upload" 
-            type="file" 
-            accept=".xlsx, .xls, .csv" 
-            onChange={handleFileUpload}
-            disabled={loading}
-            className="text-xs"
-          />
+          <div className="flex gap-2">
+            <Input 
+              id="training-direct-upload" 
+              type="file" 
+              accept=".xlsx, .xls, .csv" 
+              onChange={handleFileChange}
+              disabled={loading}
+              className="text-xs cursor-pointer"
+            />
+            <Button 
+              onClick={processUpload}
+              disabled={loading || !selectedFile}
+              className="h-9 px-4 rounded-md font-black text-xs uppercase tracking-wider bg-[#0046ab] hover:bg-blue-700 transition-all flex items-center gap-2 shrink-0"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+              Sync Data
+            </Button>
+          </div>
         </div>
 
         {loading && (

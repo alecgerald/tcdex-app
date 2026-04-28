@@ -289,13 +289,27 @@ const SelfPacedDashboard: React.FC = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { data: lmsData, error } = await supabase
-        .from('lms_completions')
-        .select('id, email, name, course_name, status, completed_at')
-        .order('completed_at', { ascending: false });
+      let allData: LMSCompletion[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      
+      while (true) {
+        const { data, error } = await supabase
+          .from('lms_completions')
+          .select('id, email, name, course_name, status, completed_at')
+          .order('completed_at', { ascending: false })
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
-      if (error) throw error;
-      setRawRecords(lmsData || []);
+        if (error) throw error;
+        if (!data || data.length === 0) break;
+        
+        allData = [...allData, ...data];
+        if (data.length < pageSize) break; // Reached the end
+        page++;
+        if (page > 10) break; // Safety cap at 11,000 rows
+      }
+      
+      setRawRecords(allData);
     } catch (error) {
       console.error('Error fetching LMS data:', error);
       toast.error("Failed to sync rawRecords.");
@@ -325,8 +339,17 @@ const SelfPacedDashboard: React.FC = () => {
     const years = new Set<string>();
     rawRecords.forEach(r => {
       if (r.completed_at) {
-        const year = new Date(r.completed_at).getFullYear().toString();
-        years.add(year);
+        let date = new Date(r.completed_at);
+        if (isNaN(date.getTime())) {
+          // Fallback parsing for common strings
+          const parts = String(r.completed_at).split(/[\/\-.]/);
+          if (parts.length === 3) {
+            const year = parts[2].length === 2 ? 2000 + Number(parts[2]) : Number(parts[2]);
+            if (year > 2000 && year < 2100) years.add(year.toString());
+          }
+        } else {
+          years.add(date.getFullYear().toString());
+        }
       }
     });
     return Array.from(years).sort((a, b) => b.localeCompare(a));

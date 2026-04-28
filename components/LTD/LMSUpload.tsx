@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Loader2, FileUp, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 
+import { Button } from '@/components/ui/button';
+
 /*
   SQL MIGRATION:
   Run this in your Supabase SQL Editor if table is not ready:
@@ -31,11 +33,22 @@ interface LMSUploadProps {
 const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const supabase = createClient();
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFile(file);
+      setMessage(null);
+    }
+  };
+
+  const processUpload = async () => {
+    if (!selectedFile) {
+      toast.error("Please select a file first.");
+      return;
+    }
 
     setLoading(true);
     setMessage(null);
@@ -43,8 +56,8 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const workbook = XLSX.read(bstr, { type: 'binary', cellDates: true });
+        const data = evt.target?.result;
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const worksheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
 
@@ -63,22 +76,26 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
         let enrolledOnIdx = -1;
         let statusIdx = -1;
 
+        console.log("LMS Upload: Scanning first 50 rows for headers...");
+
         for (let i = 0; i < Math.min(jsonData.length, 50); i++) {
-          const row = jsonData[i].map(cell => String(cell || "").toLowerCase().trim());
-          const eIdx = row.indexOf("email");
-          const cIdx = row.indexOf("course");
+          const row = (jsonData[i] || []).map(cell => String(cell || "").toLowerCase().trim());
+          
+          // Flexible search for Email and Course columns
+          const eIdx = row.findIndex(c => c === "email" || c.includes("email"));
+          const cIdx = row.findIndex(c => c === "course" || c.includes("course") || c.includes("module"));
           
           if (eIdx !== -1 && cIdx !== -1) {
+            console.log(`LMS Upload: Found headers at row ${i}`, row);
             headerRowIndex = i;
             emailIdx = eIdx;
             courseIdx = cIdx;
-            firstNameIdx = row.indexOf("first name");
-            lastNameIdx = row.indexOf("last name");
-            // Expanded date header detection
+            firstNameIdx = row.findIndex(c => c.includes("first name") || c === "name");
+            lastNameIdx = row.findIndex(c => c.includes("last name"));
             enrolledOnIdx = row.findIndex(c => 
-              c === "enrolled on" || c === "date" || c === "completion date" || c === "completed at" || c === "time"
+              c.includes("enrolled") || c === "date" || c.includes("completion") || c.includes("time")
             );
-            statusIdx = row.indexOf("status");
+            statusIdx = row.findIndex(c => c.includes("status"));
             break;
           }
         }
@@ -99,18 +116,39 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
             const email = String(row[emailIdx] || "").trim().toLowerCase();
             const courseName = String(row[courseIdx] || "").trim();
             
-            if (!email || !courseName) {
-              if (row.some(cell => cell !== null && cell !== "")) {
-                errorCount++;
-              }
-              continue;
-            }
+            if (!email || !courseName || email === "email") continue;
 
             const firstName = firstNameIdx !== -1 ? String(row[firstNameIdx] || "").trim() : "";
             const lastName = lastNameIdx !== -1 ? String(row[lastNameIdx] || "").trim() : "";
             const fullName = `${firstName} ${lastName}`.trim();
             const status = statusIdx !== -1 ? String(row[statusIdx] || "").trim() : "Unknown";
-            const completedAt = enrolledOnIdx !== -1 ? row[enrolledOnIdx] : null;
+            let rawDate = enrolledOnIdx !== -1 ? row[enrolledOnIdx] : null;
+            let completedAt: string | null = null;
+
+            // Robust Date Handling
+            if (rawDate) {
+              if (rawDate instanceof Date) {
+                completedAt = rawDate.toISOString();
+              } else {
+                const dateStr = String(rawDate).trim();
+                const d = new Date(dateStr);
+                if (!isNaN(d.getTime())) {
+                  completedAt = d.toISOString();
+                } else {
+                  // Fallback for M/D/YYYY or D/M/YYYY
+                  const parts = dateStr.split(/[\/\-.]/);
+                  if (parts.length === 3) {
+                    const year = parts[2].length === 2 ? 2000 + Number(parts[2]) : Number(parts[2]);
+                    const month = Number(parts[0]) - 1;
+                    const day = Number(parts[1]);
+                    const fallbackDate = new Date(year, month, day);
+                    if (!isNaN(fallbackDate.getTime())) {
+                      completedAt = fallbackDate.toISOString();
+                    }
+                  }
+                }
+              }
+            }
 
             toInsert.push({
               email,
@@ -146,6 +184,11 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
         const summary = `${insertedCount} records inserted, ${errorCount} errors`;
         setMessage(summary);
         toast.success("Upload successful!");
+        setSelectedFile(null);
+        
+        // Reset file input
+        const fileInput = document.getElementById('lms-file-input') as HTMLInputElement;
+        if (fileInput) fileInput.value = '';
         
         if (onUploadSuccess) onUploadSuccess();
       } catch (error: any) {
@@ -156,7 +199,7 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
       }
     };
 
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(selectedFile);
   };
 
   return (
@@ -175,14 +218,24 @@ const LMSUpload: React.FC<LMSUploadProps> = ({ onUploadSuccess }) => {
           <Label htmlFor="lms-file-input" className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
             Select Report File
           </Label>
-          <Input 
-            id="lms-file-input"
-            type="file" 
-            accept=".csv, .xlsx, .xls" 
-            onChange={handleFileUpload}
-            disabled={loading}
-            className="text-xs cursor-pointer file:text-[#0046ab] file:font-bold"
-          />
+          <div className="flex gap-2">
+            <Input 
+              id="lms-file-input"
+              type="file" 
+              accept=".csv, .xlsx, .xls" 
+              onChange={handleFileChange}
+              disabled={loading}
+              className="text-xs cursor-pointer file:text-[#0046ab] file:font-bold"
+            />
+            <Button 
+              onClick={processUpload}
+              disabled={loading || !selectedFile}
+              className="h-9 px-4 rounded-md font-black text-xs uppercase tracking-wider bg-[#0046ab] hover:bg-blue-700 transition-all flex items-center gap-2 shrink-0"
+            >
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileUp className="h-4 w-4" />}
+              Sync Data
+            </Button>
+          </div>
         </div>
 
         {loading && (
