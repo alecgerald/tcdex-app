@@ -48,9 +48,21 @@ const TrainingReportsDashboard: React.FC = () => {
   
   const metrics = useMemo(() => {
     if (reports.length === 0) return { totalParticipants: 0, totalCompletions: 0, avgPerUser: 0, participationRate: 0 };
-    const distinctEmployees = new Set(reports.map(r => r.employee_id));
+    
+    // Deduplicate reports by employee_id and course_name
+    // We use a Map and iterate forward; later entries (newer uploads) will overwrite older ones
+    const uniqueMap = new Map();
+    
+    for (const r of reports) {
+      const key = `${r.employee_id}-${r.course_name}`;
+      uniqueMap.set(key, r);
+    }
+
+    const uniqueReports = Array.from(uniqueMap.values());
+
+    const distinctEmployees = new Set(uniqueReports.map(r => r.employee_id));
     const totalParticipants = distinctEmployees.size;
-    const completions = reports.filter(r => r.status.toLowerCase().includes('completed'));
+    const completions = uniqueReports.filter(r => r.status.toLowerCase().includes('completed'));
     const totalCompletions = completions.length;
     const employeesWithCompletions = new Set(completions.map(r => r.employee_id));
     const avgPerUser = employeesWithCompletions.size > 0 ? totalCompletions / employeesWithCompletions.size : 0;
